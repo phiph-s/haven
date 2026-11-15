@@ -1,0 +1,166 @@
+<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+:root{--bg:#141311;--bg-2:#191816;--bg-3:#201f1c;--bg-4:#2a2825;--line:#34322d;--line-soft:#262521;--wire:#5e5a50;--text:#ece8df;--text-2:#bdb8ac;--text-3:#938e82;--paper:#ece8df;--on-paper:#171613;--run:#85cadd;--need:#f5a524;--bad:#f2806f;--ok:#9ccba4;--need-wash:rgb(245 165 36/.08);--sans:system-ui,-apple-system,"Segoe UI",sans-serif;--serif:Georgia,"Times New Roman",serif;--mono:ui-monospace,"SF Mono",Menlo,monospace;--r:3px;--warm:#ffa85a;color-scheme:dark}
+*{box-sizing:border-box}body{margin:0;padding:18px;background:var(--bg);color:var(--text);font:400 14.5px/1.5 var(--sans);word-spacing:.05em}
+h1{margin:0 0 4px;font:400 26px/1.2 var(--serif)}.eyebrow{display:block;font:500 11px/1.3 var(--mono);letter-spacing:.04em;color:var(--text-3);text-transform:uppercase}
+.intro{max-width:900px;color:var(--text-2);margin:0 0 22px}
+.row{display:flex;flex-wrap:wrap;gap:22px;align-items:flex-start}
+.shot{width:340px}.shot>.cap{margin:0 0 8px}.shot>.cap b{font:400 17px var(--serif);display:block;color:var(--text)}
+.shot>.cap span{font-size:12.5px;color:var(--text-3)}
+.phone{width:340px;height:700px;border:1px solid var(--line);border-radius:26px;background:#0f0e0d;overflow:hidden;display:flex;flex-direction:column;position:relative}
+.sb{display:flex;justify-content:space-between;padding:10px 20px 4px;font:500 11px var(--mono);color:var(--text-3)}
+.scr{flex:1;overflow:auto;padding:6px 16px 16px}
+.nav{display:flex;border-top:1px solid var(--line-soft);background:#121110}
+.nav div{flex:1;text-align:center;padding:9px 0 12px;font-size:11px;color:var(--text-3)}.nav div.on{color:var(--text)}
+.nav svg{display:block;margin:0 auto 3px;width:20px;height:20px;stroke:currentColor;fill:none;stroke-width:1.6}
+.top{display:flex;justify-content:space-between;align-items:center;margin:6px 0 12px}
+.top h2{margin:0;font:400 24px/1.2 var(--serif)}
+.pill{font:500 11.5px var(--mono);border:1px solid var(--line);border-radius:20px;padding:2px 9px;color:var(--text-2)}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.tile{position:relative;background:var(--bg-2);border:1px solid var(--line);border-radius:14px;padding:12px;min-height:104px;cursor:pointer;overflow:hidden;transition:background .2s,border-color .2s}
+.tile.lit{background:linear-gradient(0deg,rgb(255 168 90/.07),rgb(255 168 90/.07)),var(--bg-2);border-color:rgb(255 168 90/.45)}
+.tile .n{font-weight:600;font-size:14px}.tile .s{font-size:12px;color:var(--text-3)}
+.tile .t{font:500 20px var(--sans);margin-top:10px}.tile .t small{font-size:12px;color:var(--text-3);font-weight:400}
+.bulb{position:absolute;right:10px;top:10px;width:30px;height:30px;border-radius:50%;border:1px solid var(--line);display:grid;place-items:center;background:var(--bg-3)}
+.bulb svg{width:16px;height:16px;stroke:var(--text-3);fill:none;stroke-width:1.7}
+.lit .bulb{background:var(--warm);border-color:var(--warm)}.lit .bulb svg{stroke:#2b1a08}
+.sec{margin:18px 0 8px;display:flex;justify-content:space-between;align-items:baseline}.sec .eyebrow{margin:0}.sec a{font-size:12px;color:var(--text-3)}
+.wide{grid-column:span 2}
+.card{background:var(--bg-2);border:1px solid var(--line);border-radius:14px;padding:12px}
+.kv{display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-top:1px solid var(--line-soft);font-size:13.5px}.kv:first-child{border-top:0}
+.kv .l{color:var(--text-2)}.kv .h{display:block;font-size:11.5px;color:var(--text-3)}
+.mono{font-family:var(--mono);font-size:12.5px}
+.sw{width:38px;height:22px;border-radius:11px;background:var(--bg-4);border:1px solid var(--line);position:relative;flex:none;cursor:pointer}
+.sw::after{content:"";position:absolute;left:2px;top:2px;width:16px;height:16px;border-radius:50%;background:var(--text-3);transition:left .15s}
+.sw.on{background:var(--warm);border-color:var(--warm)}.sw.on::after{left:18px;background:#2b1a08}
+.sw.on.plain{background:var(--paper);border-color:var(--paper)}.sw.on.plain::after{background:var(--on-paper)}
+.big{height:56px;border-radius:14px;background:var(--bg-3);border:1px solid var(--line);position:relative;overflow:hidden;margin:4px 0 6px;cursor:pointer}
+.big .f{position:absolute;inset:0 auto 0 0;background:linear-gradient(90deg,rgb(255 168 90/.35),rgb(255 168 90/.75))}
+.big .lab{position:absolute;left:14px;top:50%;transform:translateY(-50%);font-weight:600}.big .pc{position:absolute;right:14px;top:50%;transform:translateY(-50%);font:500 13px var(--mono)}
+.scenes{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+.scene{text-align:center;font-size:11px;color:var(--text-2);cursor:pointer}
+.scene i{display:block;height:44px;border-radius:12px;border:1px solid var(--line);margin-bottom:4px}
+.scene.on i{outline:2px solid var(--paper);outline-offset:2px}
+.lamp{display:flex;align-items:center;gap:10px;padding:9px 0;border-top:1px solid var(--line-soft)}.lamp:first-child{border-top:0}
+.lamp .c{width:26px;height:26px;border-radius:50%;border:1px solid var(--line);flex:none;background:var(--bg-3)}
+.lamp .m{flex:1;min-width:0}.lamp .m b{display:block;font-weight:500;font-size:13.5px}.lamp .m span{font-size:11.5px;color:var(--text-3)}
+.bar{height:4px;background:var(--bg-4);border-radius:2px;margin-top:5px;overflow:hidden}.bar i{display:block;height:100%;background:var(--warm)}
+.seg{display:flex;border:1px solid var(--line);border-radius:9px;overflow:hidden;margin-top:6px}
+.seg div{flex:1;text-align:center;padding:6px 0;font-size:12.5px;color:var(--text-2);cursor:pointer}.seg div+div{border-left:1px solid var(--line)}
+.seg div.on{background:var(--paper);color:var(--on-paper);font-weight:600}
+.note{padding:9px 11px;border-left:2px solid var(--need);background:var(--need-wash);color:var(--need);font-size:12.5px;border-radius:0 6px 6px 0}
+.btn{display:flex;align-items:center;justify-content:center;min-height:40px;border:1px solid var(--line);border-radius:12px;font-weight:500;font-size:13.5px;background:transparent;color:var(--text);width:100%;cursor:pointer}
+.btn.primary{background:var(--paper);color:var(--on-paper);border-color:var(--paper);font-weight:600}
+.dev{display:flex;gap:12px;align-items:center;margin:4px 0 14px}
+.devimg{width:72px;height:72px;border-radius:16px;background:var(--bg-3);border:1px solid var(--line);display:grid;place-items:center}
+.back{font-size:13px;color:var(--text-3);margin:4px 0 2px}
+.dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:5px;vertical-align:1px}
+.ok{background:var(--ok)}.need{background:var(--need)}
+.foot{margin-top:24px;max-width:1450px;color:var(--text-3);font-size:12.5px}
+.foot b{color:var(--text-2);font-weight:500}
+</style></head><body>
+<span class="eyebrow">Haven · Entwurf 1</span>
+<h1>So könnte Haven aussehen</h1>
+<p class="intro">Vier Bildschirme mit deinen echten Geräten und Werten vom 15.11. Klickbar sind Raumkacheln, Schalter, Helligkeit, Szenen und die Auswahlfelder. Farbe zeigt nur echte Zustände: das warme Licht ist die Farbe, die deine Lampen gerade haben, Amber heißt „braucht dich“.</p>
+<div class="row">
+
+<!-- 1 Übersicht -->
+<div class="shot"><p class="cap"><b>Übersicht</b><span>Räume mit Licht und Klima, darunter frei wählbare Widgets</span></p>
+<div class="phone"><div class="sb"><span>18:42</span><span>Haven</span></div><div class="scr">
+<div class="top"><div><span class="eyebrow">Sonntag, 15. November</span><h2>Guten Abend</h2></div><span class="pill">Draußen 8,0°</span></div>
+<div class="grid" id="rooms"></div>
+<div class="sec"><span class="eyebrow">Widgets</span><a>Bearbeiten</a></div>
+<div class="grid">
+<div class="card wide"><div class="kv"><span class="l">Strom gerade<span class="h">4 Zähler · Messung 1 bis 4</span></span><span class="mono" style="font-size:16px">≈ 480 W</span></div></div>
+<div class="card"><span class="eyebrow">Lüfter Waschraum</span><div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px"><span style="font-size:13px">Aus</span><div class="sw plain" onclick="this.classList.toggle('on')"></div></div></div>
+<div class="card"><span class="eyebrow">Batterie</span><div style="margin-top:6px;font-size:13px"><span class="dot need"></span>3 Geräte ≤ 50 %</div></div>
+</div>
+</div><div class="nav" id="nav1"></div></div></div>
+
+<!-- 2 Raum -->
+<div class="shot"><p class="cap"><b>Raum: Salon</b><span>Szenen aus der Z2M-Gruppe, Helligkeit für alle, dann jede Lampe</span></p>
+<div class="phone"><div class="sb"><span>18:42</span><span>Haven</span></div><div class="scr">
+<div class="back">‹ Übersicht</div>
+<div class="top"><div><h2>Salon</h2><span style="font-size:12px;color:var(--text-3)">21,6° · 41 % · 2 Melder ohne Bewegung</span></div><div class="sw on" id="roomsw"></div></div>
+<div class="big" id="bri"><div class="f" style="width:100%"></div><span class="lab">Helligkeit</span><span class="pc">100 %</span></div>
+<div class="sec"><span class="eyebrow">Szenen</span><a>+ Neue Szene</a></div>
+<div class="scenes" id="scenes"></div>
+<div class="sec"><span class="eyebrow">Lampen · 6</span><a>Bearbeiten</a></div>
+<div class="card" id="lamps"></div>
+<div class="sec"><span class="eyebrow">Bedienung im Raum</span></div>
+<div class="card"><div class="kv"><span class="l">Drehknopf Salon 1 und 2<span class="h">steuern direkt die Gruppe, auch ohne HA</span></span><span class="pill">gebunden</span></div></div>
+</div><div class="nav" id="nav2"></div></div></div>
+
+<!-- 3 Gerät -->
+<div class="shot"><p class="cap"><b>Gerät: Bewegungsmelder</b><span>Z2M-Exposes als verständliche Einstellungen</span></p>
+<div class="phone"><div class="sb"><span>18:42</span><span>Haven</span></div><div class="scr">
+<div class="back">‹ Zigbee</div>
+<div class="dev"><div class="devimg"><svg width="40" height="40" viewBox="0 0 40 40" fill="none" stroke="#bdb8ac" stroke-width="1.5"><rect x="8" y="6" width="24" height="28" rx="7"/><circle cx="20" cy="17" r="6"/><circle cx="20" cy="17" r="2"/></svg></div>
+<div><b style="font-size:16px">Bewegungsmelder Salon</b><div style="font-size:12px;color:var(--text-3)">HOBEIAN ZG-204ZL · im Raum Salon</div><div style="font-size:12px;margin-top:3px"><span class="dot ok"></span>Keine Bewegung seit 12 min</div></div></div>
+<div class="sec" style="margin-top:4px"><span class="eyebrow">Erkennung</span></div>
+<div class="card">
+<div style="padding:2px 0 10px"><span class="l" style="font-size:13.5px;color:var(--text-2)">Empfindlichkeit</span><span class="h" style="display:block;font-size:11.5px;color:var(--text-3)">Hoch erkennt auch kleine Bewegungen, löst aber öfter aus</span><div class="seg" data-seg><div>Niedrig</div><div class="on">Mittel</div><div>Hoch</div></div></div>
+<div class="kv"><span class="l">Bewegung gilt für<span class="h">so lange bleibt „erkannt“ nach der letzten Bewegung</span></span><span class="mono">60 s ›</span></div>
+<div class="kv"><span class="l">Helligkeit messen<span class="h">öfter messen kostet Batterie</span></span><span class="mono">alle 5 min ›</span></div>
+</div>
+<div class="sec"><span class="eyebrow">Zustand</span></div>
+<div class="card">
+<div class="kv"><span class="l">Batterie</span><span><span class="dot need"></span><span class="mono">50 %</span></span></div>
+<div class="kv"><span class="l">Funk<span class="h">über Lampe Decke Salon</span></span><span class="mono">gut · LQI 142</span></div>
+<div class="kv"><span class="l">Firmware</span><span class="mono">aktuell</span></div>
+</div>
+<div class="sec"><span class="eyebrow">Wird genutzt von</span></div>
+<div class="card"><div class="kv"><span class="l">Salon Bewegungsmelder An</span><span class="mono">Automation ›</span></div><div class="kv"><span class="l">Bewegungsmelder Salon aus…</span><span class="mono">Automation ›</span></div></div>
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:14px"><button class="btn" type="button">Umbenennen</button><button class="btn" type="button">Raum ändern</button></div>
+<div style="margin-top:8px"><button class="btn" type="button" style="color:var(--text-3)">Mehr: Neu einrichten, Entfernen, Rohdaten</button></div>
+</div><div class="nav" id="nav3"></div></div></div>
+
+<!-- 4 Zigbee -->
+<div class="shot"><p class="cap"><b>Zigbee</b><span>Netz nach Räumen, Anlernen, offene Aufgaben</span></p>
+<div class="phone"><div class="sb"><span>18:42</span><span>Haven</span></div><div class="scr">
+<div class="top"><div><span class="eyebrow">42 Geräte · Kanal 25</span><h2>Zigbee</h2></div><span class="pill">Z2M 2.14.3</span></div>
+<button class="btn primary" type="button" id="join">+ Gerät hinzufügen</button>
+<div id="joinbox" style="display:none;margin-top:8px" class="card"><div style="font-size:13px"><span class="dot" style="background:var(--run)"></span>Suche läuft, noch <span class="mono" id="cd">4:00</span></div><div style="font-size:12px;color:var(--text-3);margin-top:4px">Halte am neuen Gerät die Kopplungstaste, bis es blinkt. Haven fragt danach Name und Raum ab.</div></div>
+<div class="note" style="margin-top:12px">42 Geräte haben noch keinen Raum. Zuordnen ›</div>
+<div class="sec"><span class="eyebrow">Netz</span><a>Neu messen</a></div>
+<div class="card" style="padding:6px"><svg id="mesh" viewBox="0 0 300 250" width="100%"></svg></div>
+<div style="font-size:11.5px;color:var(--text-3);margin-top:6px">Kreis = leitet weiter (Strom), Punkt = Batterie. <span style="color:var(--need)">Amber</span> = schwache Verbindung.</div>
+<div class="sec"><span class="eyebrow">Gruppen</span></div>
+<div class="card"><div class="kv"><span class="l">Lampe Ruhebett<span class="h">ist in der Gruppe Salon, Raum unklar</span></span><span class="pill" style="color:var(--need);border-color:var(--need)">prüfen</span></div>
+<div class="kv"><span class="l">Drehknopf Waschraum<span class="h">steuert Salon und Bad</span></span><span class="pill" style="color:var(--need);border-color:var(--need)">prüfen</span></div></div>
+</div><div class="nav" id="nav4"></div></div></div>
+</div>
+<p class="foot"><b>Hinweise zum Entwurf:</b> Das Netz und die LQI-Werte sind schematisch, die echte Karte kommt aus <span class="mono">bridge/request/networkmap</span>. Die Farben der Szenen sind Platzhalter, in der App kommen sie aus den gespeicherten Szenenwerten. Statt des gezeichneten Melders zeigt die App das Gerätebild von Z2M. Beispielwerte sind der Stromwert, Bewegungszeiten, Funkweg, LQI, Firmware und die Einstellwerte des Melders. Echt sind Geräte, Gruppen, Szenen, Temperaturen und Batterien. Haven bekommt bewusst rundere Formen und eine größere Schrift als das Lab, damit es nach App aussieht, nicht nach Werkzeug.</p>
+<script>
+const ic={home:'<path d="M4 11l8-7 8 7v9H4z"/>',bulb:'<path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-4 10.5c.8.8 1 1.5 1 2.5h6c0-1 .2-1.7 1-2.5A6 6 0 0 0 12 3z"/>',mesh:'<circle cx="12" cy="5" r="2"/><circle cx="5" cy="18" r="2"/><circle cx="19" cy="18" r="2"/><path d="M11 7l-5 9M13 7l5 9M7 18h10"/>',auto:'<path d="M13 3L5 14h6l-1 7 8-11h-6z"/>'};
+const navs=[['Zuhause','home'],['Lichter','bulb'],['Zigbee','mesh'],['Abläufe','auto']];
+[1,2,3,4].forEach(n=>{const on={1:0,2:1,3:2,4:2}[n];document.getElementById('nav'+n).innerHTML=navs.map((x,i)=>`<div class="${i==on?'on':''}"><svg viewBox="0 0 24 24">${ic[x[1]]}</svg>${x[0]}</div>`).join('')});
+const rooms=[['Salon','21,6°','41 %',1,6],['Ruheraum','22,1°','41 %',0,5],['Kochbereich','–','',0,2],['Bad','20,8°','45 %',0,1]];
+const R=document.getElementById('rooms');
+function drawRooms(){R.innerHTML=rooms.map((r,i)=>`<div class="tile ${r[3]?'lit':''}" data-i="${i}"><div class="bulb"><svg viewBox="0 0 24 24">${ic.bulb}</svg></div><div class="n">${r[0]}</div><div class="s">${r[3]?(i==0?'1 von 6 an':'alle an'):'aus'}</div><div class="t">${r[1]} <small>${r[2]}</small></div></div>`).join('')}
+drawRooms();R.onclick=e=>{const t=e.target.closest('.tile');if(!t)return;rooms[t.dataset.i][3]^=1;drawRooms()};
+const sc=[['Golden Hour','linear-gradient(135deg,#ffb36b,#d9734a)'],['Neon Tokyo','linear-gradient(135deg,#d65cff,#3d7bff)'],['Nordlicht','linear-gradient(135deg,#3fe0b0,#4a6cff)'],['Lagerfeuer','linear-gradient(135deg,#ff8a3d,#b8341f)'],['Kinoabend','linear-gradient(135deg,#3b3170,#1c1a2e)'],['Halloween','linear-gradient(135deg,#ff7a1a,#5b2a86)'],['Fokus','linear-gradient(135deg,#f4f6ff,#c9d6ff)'],['Dinner','linear-gradient(135deg,#ffcf8a,#a8683a)']];
+const S=document.getElementById('scenes');let act=-1;
+function drawSc(){S.innerHTML=sc.map((s,i)=>`<div class="scene ${i==act?'on':''}" data-i="${i}"><i style="background:${s[1]}"></i>${s[0]}</div>`).join('')}drawSc();
+S.onclick=e=>{const t=e.target.closest('.scene');if(t){act=+t.dataset.i;drawSc()}};
+const lamps=[['Tischlampe Salon','Philips Hue · warmweiß',1,100],['Lampe Decke Salon','Tuya RGB',0,0],['Lampe Salon','OSRAM RGB',0,0],['Salon Oben 1 (Tür)','Tuya Spot',0,0],['Salon Oben 2 (Fenster)','Tuya Spot',0,0],['Lampe Ruhebett','Philips Hue · in dieser Gruppe',0,0]];
+const L=document.getElementById('lamps');
+function drawL(){L.innerHTML=lamps.map((l,i)=>`<div class="lamp"><span class="c" style="${l[2]?'background:var(--warm);border-color:var(--warm)':''}"></span><div class="m"><b>${l[0]}</b><span>${l[1]}${l[2]?' · '+l[3]+' %':''}</span>${l[2]?`<div class="bar"><i style="width:${l[3]}%"></i></div>`:''}</div><div class="sw ${l[2]?'on':''}" data-i="${i}"></div></div>`).join('')}drawL();
+L.onclick=e=>{const t=e.target.closest('.sw');if(t){const l=lamps[t.dataset.i];l[2]^=1;if(l[2]&&!l[3])l[3]=80;drawL()}};
+document.getElementById('roomsw').onclick=function(){this.classList.toggle('on');const on=this.classList.contains('on');lamps.forEach(l=>{l[2]=on?1:0;if(on&&!l[3])l[3]=80});drawL()};
+const B=document.getElementById('bri');B.onclick=e=>{const r=B.getBoundingClientRect();const p=Math.max(1,Math.round((e.clientX-r.left)/r.width*100));B.querySelector('.f').style.width=p+'%';B.querySelector('.pc').textContent=p+' %';lamps.forEach(l=>{if(l[2])l[3]=p});drawL()};
+document.querySelectorAll('[data-seg]').forEach(s=>s.onclick=e=>{if(e.target.parentNode!==s)return;[...s.children].forEach(c=>c.classList.toggle('on',c===e.target))});
+document.getElementById('join').onclick=()=>{const b=document.getElementById('joinbox');b.style.display='block';let t=240;clearInterval(window.ti);window.ti=setInterval(()=>{t--;document.getElementById('cd').textContent=Math.floor(t/60)+':'+String(t%60).padStart(2,'0');if(t<=0)clearInterval(window.ti)},1000)};
+// mesh
+const M=document.getElementById('mesh');const groups=[['Salon',70,60,['Tisch','Decke','Lampe','Oben 1','Oben 2'],['BM','Anw','Anw 2','Dreh 1','Dreh 2']],['Ruheraum',230,60,['Lichtleiste L','Lichtleiste R','Decke','Bett'],['Sensor','Dreh 1','Dreh 2']],['Kochbereich',70,195,['Licht 1','Licht 2','Messung'],['BM','Dreh','Tür']],['Bad',230,195,['Lampe','Lüftung'],['BM','Anw','Display']]];
+let s='';const cx=150,cy=128;
+groups.forEach(([n,x,y,rt,ed],gi)=>{s+=`<line x1="${cx}" y1="${cy}" x2="${x}" y2="${y}" stroke="${gi==1?'#f5a524':'#5e5a50'}" stroke-width="1.2" ${gi==1?'stroke-dasharray="3 3"':''}/>`;
+s+=`<text x="${x}" y="${y+(y<cy?-38:48)}" fill="#938e82" font-size="9.5" text-anchor="middle" font-family="ui-monospace,monospace">${n.toUpperCase()}</text>`;
+rt.forEach((r,i)=>{const a=i/rt.length*6.283;const rx=x+Math.cos(a)*22,ry=y+Math.sin(a)*22;s+=`<line x1="${x}" y1="${y}" x2="${rx}" y2="${ry}" stroke="#34322d"/>`;
+ed.forEach((e,j)=>{if(j%rt.length==i){const b=a+0.5+j*0.15;const ex=rx+Math.cos(b)*13,ey=ry+Math.sin(b)*13;s+=`<line x1="${rx}" y1="${ry}" x2="${ex}" y2="${ey}" stroke="#34322d"/><circle cx="${ex}" cy="${ey}" r="2.4" fill="#938e82"/>`}});
+s+=`<circle cx="${rx}" cy="${ry}" r="4.5" fill="#191816" stroke="#bdb8ac" stroke-width="1.2"/>`});
+s+=`<circle cx="${x}" cy="${y}" r="3" fill="#bdb8ac"/>`});
+s+=`<rect x="${cx-26}" y="${cy-10}" width="52" height="20" rx="5" fill="#ece8df"/><text x="${cx}" y="${cy+4}" fill="#171613" font-size="10" text-anchor="middle" font-weight="600" font-family="system-ui">Zentrale</text>`;
+s+=`<text x="${(cx+230)/2+8}" y="${(cy+60)/2+14}" fill="#f5a524" font-size="9" font-family="ui-monospace,monospace">LQI 38</text>`;
+M.innerHTML=s;
+</script></body></html>

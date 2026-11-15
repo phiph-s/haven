@@ -1,0 +1,116 @@
+import '../data/models/room.dart';
+import '../data/scene_styles.dart';
+
+/// Baut die Räume der Beispielwohnung aus den Konstanten in `fake_data.dart`.
+/// Jedes Gerät und jede Gruppe nennt seinen Raum selbst (`room`), es wird
+/// nichts aus Namen geraten.
+class FakeRooms {
+  FakeRooms(this.inventory);
+
+  final Map<String, dynamic> inventory;
+
+  List<Map<String, dynamic>> get _devices => [
+    for (final d in inventory['z2m_devices'] as List) d as Map<String, dynamic>,
+  ];
+  List<Map<String, dynamic>> get _groups => [
+    for (final g in inventory['z2m_groups'] as List) g as Map<String, dynamic>,
+  ];
+
+  /// Raum-ID eines Geräts oder `null`.
+  String? roomOfDevice(String friendlyName) {
+    for (final d in _devices) {
+      if (d['friendly_name'] == friendlyName) return d['room'] as String?;
+    }
+    return null;
+  }
+
+  List<Room> derive() {
+    final rooms = <Room>[];
+    for (final r in inventory['rooms'] as List) {
+      final id = r['id'] as String;
+      final devs = _devices.where((d) => d['room'] == id).toList();
+      final lights = <String>[];
+      for (final d in devs) {
+        if (d['device_type'] != 'light') continue;
+        final ents = (d['entities'] as Map).keys.cast<String>();
+        lights.addAll(ents.where((e) => e.startsWith('light.')));
+      }
+
+      // Klimasensor: bevorzugt „Sensor …“, sonst irgendein Gerät mit Werten.
+      String? temp;
+      String? hum;
+      final withTemp =
+          devs
+              .where(
+                (d) => (d['entities'] as Map).keys.any(
+                  (e) => (e as String).endsWith('_temperature'),
+                ),
+              )
+              .toList()
+            ..sort((a, b) {
+              int rank(Map<String, dynamic> d) =>
+                  (d['friendly_name'] as String).startsWith('Sensor ') ? 0 : 1;
+              return rank(a).compareTo(rank(b));
+            });
+      if (withTemp.isNotEmpty) {
+        final ents = (withTemp.first['entities'] as Map).keys.cast<String>();
+        temp = ents.firstWhere((e) => e.endsWith('_temperature'));
+        for (final e in ents) {
+          if (e.endsWith('_humidity')) hum = e;
+        }
+      }
+
+      final controls = <RoomControl>[
+        for (final d in devs)
+          if (d['device_type'] == 'knob' || d['device_type'] == 'remote')
+            RoomControl(
+              name: d['friendly_name'] as String,
+              kind: d['device_type'] == 'knob' ? 'knob' : 'button',
+              batteryEntityId: (d['entities'] as Map).keys
+                  .cast<String?>()
+                  .firstWhere(
+                    (e) => e!.endsWith('_battery'),
+                    orElse: () => null,
+                  ),
+            ),
+      ];
+
+      // Szenen der Gruppe dieses Raums.
+      final scenes = <RoomScene>[];
+      for (final g in _groups) {
+        if (g['room'] != id) continue;
+        for (final s in (g['scenes'] as List)) {
+          final name = s['name'] as String;
+          final style = sceneStyleFor(name);
+          scenes.add(
+            RoomScene(
+              id: slugify(name),
+              name: name,
+              colors: style.colors,
+              brightness: style.brightness,
+              kelvin: style.kelvin,
+              onlyLightIds: name == 'Lichtleiste'
+                  ? lights.where((l) => l.contains('lichtleiste')).toList()
+                  : null,
+              entityId:
+                  'scene.${slugify(g['name'] as String)}_${s['id']}_${slugify(name)}',
+            ),
+          );
+        }
+      }
+
+      rooms.add(
+        Room(
+          id: id,
+          name: r['name'] as String,
+          lightIds: lights,
+          temperatureId: temp,
+          humidityId: hum,
+          scenes: scenes,
+          controls: controls,
+        ),
+      );
+    }
+    return rooms;
+  }
+}

@@ -1,0 +1,4047 @@
+[
+ {
+  "entity_id": "scene.bewegungsmelder",
+  "state": "2026-11-15T20:22:00.357842+00:00",
+  "attributes": {
+   "entity_id": [
+    "light.lampe_salon"
+   ],
+   "id": "1733513928559",
+   "friendly_name": "Bewegungsmelder"
+  },
+  "last_changed": "2026-11-15T20:22:00.357980+00:00",
+  "last_reported": "2026-11-15T20:22:00.357980+00:00",
+  "last_updated": "2026-11-15T20:22:00.357980+00:00"
+ },
+ {
+  "entity_id": "light.salon",
+  "state": "on",
+  "attributes": {
+   "min_color_temp_kelvin": 1901,
+   "max_color_temp_kelvin": 6535,
+   "effect_list": [
+    "blink",
+    "breathe",
+    "candle",
+    "channel_change",
+    "colorloop",
+    "cosmos",
+    "enchant",
+    "finish_effect",
+    "fireplace",
+    "glisten",
+    "none",
+    "okay",
+    "opal",
+    "sparkle",
+    "stop_colorloop",
+    "stop_effect",
+    "stop_hue_effect",
+    "sunbeam",
+    "sunrise",
+    "sunset",
+    "underwater"
+   ],
+   "supported_color_modes": [
+    "color_temp",
+    "xy"
+   ],
+   "effect": null,
+   "color_mode": "color_temp",
+   "brightness": 176,
+   "color_temp_kelvin": 2967,
+   "hs_color": [
+    27.881,
+    57.799
+   ],
+   "rgb_color": [
+    255,
+    176,
+    108
+   ],
+   "xy_color": [
+    0.498,
+    0.383
+   ],
+   "entity_id": [
+    "light.salon_oben_3_medien",
+    "light.salon_oben_4_flur",
+    "light.salon_oben_5_tur",
+    "light.salon_oben_6_flur",
+    "light.lampe_salon",
+    "light.tischlampe_salon"
+   ],
+   "friendly_name": "Salon",
+   "supported_features": 44
+  },
+  "last_changed": "2026-11-15T20:51:27.332069+00:00",
+  "last_reported": "2026-11-15T20:56:45.131340+00:00",
+  "last_updated": "2026-11-15T20:56:45.131340+00:00"
+ },
+ {
+  "entity_id": "light.ruheraum",
+  "state": "on",
+  "attributes": {
+   "min_color_temp_kelvin": 2000,
+   "max_color_temp_kelvin": 6535,
+   "effect_list": [
+    "blink",
+    "breathe",
+    "candle",
+    "channel_change",
+    "colorloop",
+    "cosmos",
+    "enchant",
+    "finish_effect",
+    "fireplace",
+    "glisten",
+    "none",
+    "okay",
+    "opal",
+    "sparkle",
+    "stop_effect",
+    "stop_hue_effect",
+    "sunbeam",
+    "sunrise",
+    "sunset",
+    "underwater"
+   ],
+   "supported_color_modes": [
+    "color_temp",
+    "xy"
+   ],
+   "effect": null,
+   "color_mode": "color_temp",
+   "brightness": 9,
+   "color_temp_kelvin": 2732,
+   "hs_color": [
+    28.327,
+    64.71
+   ],
+   "rgb_color": [
+    255,
+    168,
+    90
+   ],
+   "xy_color": [
+    0.522,
+    0.387
+   ],
+   "entity_id": [
+    "light.lichtleiste_links",
+    "light.lichtleiste_rechts",
+    "light.ruheraum_oben_1_tur",
+    "light.ruheraum_oben_2_bett",
+    "light.ruheraum_oben_3_schreibtisch"
+   ],
+   "friendly_name": "Ruheraum",
+   "supported_features": 44
+  },
+  "last_changed": "2026-11-15T20:57:49.236034+00:00",
+  "last_reported": "2026-11-15T20:57:52.268525+00:00",
+  "last_updated": "2026-11-15T20:57:52.268525+00:00"
+ },
+ {
+  "entity_id": "light.pflanzenlicht",
+  "state": "unavailable",
+  "attributes": {
+   "supported_color_modes": [
+    "onoff"
+   ],
+   "friendly_name": "Pflanzenlicht",
+   "supported_features": 0
+  },
+  "last_changed": "2026-11-15T20:21:02.433095+00:00",
+  "last_reported": "2026-11-15T20:21:24.652468+00:00",
+  "last_updated": "2026-11-15T20:21:02.433095+00:00"
+ },
+ {
+  "entity_id": "light.salonohnebm",
+  "state": "off",
+  "attributes": {
+   "min_color_temp_kelvin": 2000,
+   "max_color_temp_kelvin": 6535,
+   "effect_list": [
+    "blink",
+    "breathe",
+    "candle",
+    "channel_change",
+    "colorloop",
+    "cosmos",
+    "enchant",
+    "finish_effect",
+    "fireplace",
+    "glisten",
+    "none",
+    "okay",
+    "opal",
+    "sparkle",
+    "stop_effect",
+    "stop_hue_effect",
+    "sunbeam",
+    "sunrise",
+    "sunset",
+    "underwater"
+   ],
+   "supported_color_modes": [
+    "color_temp",
+    "xy"
+   ],
+   "effect": null,
+   "color_mode": null,
+   "brightness": null,
+   "color_temp_kelvin": null,
+   "hs_color": null,
+   "rgb_color": null,
+   "xy_color": null,
+   "entity_id": [
+    "light.salon_oben_5_tur",
+    "light.salon_oben_4_flur",
+    "light.salon_oben_6_flur",
+    "light.tischlampe_salon",
+    "light.salon_oben_3_medien"
+   ],
+   "friendly_name": "SalonOhneBM",
+   "supported_features": 44
+  },
+  "last_changed": "2026-11-15T20:56:45.131427+00:00",
+  "last_reported": "2026-11-15T20:56:45.131427+00:00",
+  "last_updated": "2026-11-15T20:56:45.131427+00:00"
+ },
+ {
+  "entity_id": "light.bildschirm_1",
+  "state": "off",
+  "attributes": {
+   "supported_color_modes": [
+    "brightness"
+   ],
+   "color_mode": null,
+   "brightness": null,
+   "friendly_name": "Bildschirm 1",
+   "supported_features": 0
+  },
+  "last_changed": "2026-11-15T20:21:21.961844+00:00",
+  "last_reported": "2026-11-15T20:21:21.961844+00:00",
+  "last_updated": "2026-11-15T20:21:21.961844+00:00"
+ },
+ {
+  "entity_id": "light.bildschirm_2",
+  "state": "off",
+  "attributes": {
+   "supported_color_modes": [
+    "brightness"
+   ],
+   "color_mode": null,
+   "brightness": null,
+   "friendly_name": "Bildschirm 2",
+   "supported_features": 0
+  },
+  "last_changed": "2026-11-15T20:21:21.963794+00:00",
+  "last_reported": "2026-11-15T20:21:21.963794+00:00",
+  "last_updated": "2026-11-15T20:21:21.963794+00:00"
+ },
+ {
+  "entity_id": "light.zusatzlicht_3",
+  "state": "unavailable",
+  "attributes": {
+   "supported_color_modes": [
+    "onoff"
+   ],
+   "friendly_name": "Zusatzlicht 3",
+   "supported_features": 8
+  },
+  "last_changed": "2026-11-15T20:21:19.366436+00:00",
+  "last_reported": "2026-11-15T20:21:19.366436+00:00",
+  "last_updated": "2026-11-15T20:21:19.366436+00:00"
+ },
+ {
+  "entity_id": "light.zusatzlicht_2",
+  "state": "unavailable",
+  "attributes": {
+   "supported_color_modes": [
+    "onoff"
+   ],
+   "friendly_name": "Zusatzlicht 2",
+   "supported_features": 8
+  },
+  "last_changed": "2026-11-15T20:21:19.375921+00:00",
+  "last_reported": "2026-11-15T20:21:19.375921+00:00",
+  "last_updated": "2026-11-15T20:21:19.375921+00:00"
+ },
+ {
+  "entity_id": "binary_sensor.bewegungsmelder_salon_occupancy",
+  "state": "on",
+  "attributes": {
+   "device_class": "occupancy",
+   "friendly_name": "Bewegungsmelder Salon Belegung"
+  },
+  "last_changed": "2026-11-15T20:22:00.349378+00:00",
+  "last_reported": "2026-11-15T20:22:00.349378+00:00",
+  "last_updated": "2026-11-15T20:22:00.349378+00:00"
+ },
+ {
+  "entity_id": "binary_sensor.bewegungsmelder_waschraum_occupancy",
+  "state": "off",
+  "attributes": {
+   "device_class": "occupancy",
+   "friendly_name": "Bewegungsmelder Waschraum Belegung"
+  },
+  "last_changed": "2026-11-15T20:22:00.361010+00:00",
+  "last_reported": "2026-11-15T20:22:00.361010+00:00",
+  "last_updated": "2026-11-15T20:22:00.361010+00:00"
+ },
+ {
+  "entity_id": "binary_sensor.bewegungsmelder_kochbereich_occupancy",
+  "state": "off",
+  "attributes": {
+   "device_class": "occupancy",
+   "friendly_name": "Bewegungsmelder Kochbereich Belegung"
+  },
+  "last_changed": "2026-11-15T20:22:00.365487+00:00",
+  "last_reported": "2026-11-15T20:22:00.365487+00:00",
+  "last_updated": "2026-11-15T20:22:00.365487+00:00"
+ },
+ {
+  "entity_id": "binary_sensor.kontaktsensor_schrank_contact",
+  "state": "off",
+  "attributes": {
+   "device_class": "door",
+   "friendly_name": "Kontaktsensor Schrank Tür"
+  },
+  "last_changed": "2026-11-15T20:22:00.374496+00:00",
+  "last_reported": "2026-11-15T20:22:00.374496+00:00",
+  "last_updated": "2026-11-15T20:22:00.374496+00:00"
+ },
+ {
+  "entity_id": "binary_sensor.kontaktsensor_schrank_battery_low",
+  "state": "off",
+  "attributes": {
+   "device_class": "battery",
+   "friendly_name": "Kontaktsensor Schrank Batteriestand"
+  },
+  "last_changed": "2026-11-15T20:22:00.374295+00:00",
+  "last_reported": "2026-11-15T20:22:00.374295+00:00",
+  "last_updated": "2026-11-15T20:22:00.374295+00:00"
+ },
+ {
+  "entity_id": "binary_sensor.prasenz_waschraum_presence",
+  "state": "off",
+  "attributes": {
+   "device_class": "occupancy",
+   "friendly_name": "Präsenz Waschraum Belegung"
+  },
+  "last_changed": "2026-11-15T20:22:00.443275+00:00",
+  "last_reported": "2026-11-15T20:22:00.443275+00:00",
+  "last_updated": "2026-11-15T20:22:00.443275+00:00"
+ },
+ {
+  "entity_id": "binary_sensor.prasenz_salon_presence",
+  "state": "off",
+  "attributes": {
+   "device_class": "occupancy",
+   "friendly_name": "Präsenz Salon Belegung"
+  },
+  "last_changed": "2026-11-15T20:51:53.963324+00:00",
+  "last_reported": "2026-11-15T20:51:53.963324+00:00",
+  "last_updated": "2026-11-15T20:51:53.963324+00:00"
+ },
+ {
+  "entity_id": "binary_sensor.prasenz_salon_2_presence",
+  "state": "off",
+  "attributes": {
+   "device_class": "occupancy",
+   "friendly_name": "Präsenz Salon 2 Belegung"
+  },
+  "last_changed": "2026-11-15T20:52:00.595826+00:00",
+  "last_reported": "2026-11-15T20:52:00.595826+00:00",
+  "last_updated": "2026-11-15T20:52:00.595826+00:00"
+ },
+ {
+  "entity_id": "light.tischlampe_salon",
+  "state": "off",
+  "attributes": {
+   "min_color_temp_kelvin": 2000,
+   "max_color_temp_kelvin": 6535,
+   "effect_list": [
+    "blink",
+    "breathe",
+    "okay",
+    "channel_change",
+    "candle",
+    "fireplace",
+    "colorloop",
+    "sunset",
+    "sunrise",
+    "sparkle",
+    "opal",
+    "glisten",
+    "underwater",
+    "cosmos",
+    "sunbeam",
+    "enchant",
+    "none",
+    "finish_effect",
+    "stop_effect",
+    "stop_hue_effect"
+   ],
+   "supported_color_modes": [
+    "color_temp",
+    "xy"
+   ],
+   "effect": null,
+   "color_mode": null,
+   "brightness": null,
+   "color_temp_kelvin": null,
+   "hs_color": null,
+   "rgb_color": null,
+   "xy_color": null,
+   "friendly_name": "Tischlampe Salon",
+   "supported_features": 44
+  },
+  "last_changed": "2026-11-15T20:56:45.131082+00:00",
+  "last_reported": "2026-11-15T20:56:45.131082+00:00",
+  "last_updated": "2026-11-15T20:56:45.131082+00:00"
+ },
+ {
+  "entity_id": "light.salon_oben_1_tur",
+  "state": "off",
+  "attributes": {
+   "min_color_temp_kelvin": 2000,
+   "max_color_temp_kelvin": 7042,
+   "effect_list": [
+    "blink",
+    "breathe",
+    "okay",
+    "channel_change",
+    "finish_effect",
+    "stop_effect",
+    "colorloop",
+    "stop_colorloop"
+   ],
+   "supported_color_modes": [
+    "color_temp",
+    "xy"
+   ],
+   "effect": null,
+   "color_mode": null,
+   "brightness": null,
+   "color_temp_kelvin": null,
+   "hs_color": null,
+   "rgb_color": null,
+   "xy_color": null,
+   "friendly_name": "Salon Oben 1 (Tür)",
+   "supported_features": 44
+  },
+  "last_changed": "2026-11-15T20:56:45.136068+00:00",
+  "last_reported": "2026-11-15T20:56:45.136068+00:00",
+  "last_updated": "2026-11-15T20:56:45.136068+00:00"
+ },
+ {
+  "entity_id": "light.salon_oben_2_fenster",
+  "state": "off",
+  "attributes": {
+   "min_color_temp_kelvin": 2000,
+   "max_color_temp_kelvin": 7042,
+   "effect_list": [
+    "blink",
+    "breathe",
+    "okay",
+    "channel_change",
+    "finish_effect",
+    "stop_effect",
+    "colorloop",
+    "stop_colorloop"
+   ],
+   "supported_color_modes": [
+    "color_temp",
+    "xy"
+   ],
+   "effect": null,
+   "color_mode": null,
+   "brightness": null,
+   "color_temp_kelvin": null,
+   "hs_color": null,
+   "rgb_color": null,
+   "xy_color": null,
+   "friendly_name": "Salon Oben 2 (Fenster)",
+   "supported_features": 44
+  },
+  "last_changed": "2026-11-15T20:56:45.094895+00:00",
+  "last_reported": "2026-11-15T20:56:45.094895+00:00",
+  "last_updated": "2026-11-15T20:56:45.094895+00:00"
+ },
+ {
+  "entity_id": "light.lichtleiste_links",
+  "state": "on",
+  "attributes": {
+   "min_color_temp_kelvin": 2000,
+   "max_color_temp_kelvin": 6535,
+   "effect_list": [
+    "blink",
+    "breathe",
+    "okay",
+    "channel_change",
+    "candle",
+    "fireplace",
+    "colorloop",
+    "sunset",
+    "sunrise",
+    "sparkle",
+    "opal",
+    "glisten",
+    "underwater",
+    "cosmos",
+    "sunbeam",
+    "enchant",
+    "none",
+    "finish_effect",
+    "stop_effect",
+    "stop_hue_effect"
+   ],
+   "supported_color_modes": [
+    "color_temp",
+    "xy"
+   ],
+   "effect": null,
+   "color_mode": "color_temp",
+   "brightness": 9,
+   "color_temp_kelvin": 2732,
+   "hs_color": [
+    28.327,
+    64.71
+   ],
+   "rgb_color": [
+    255,
+    168,
+    90
+   ],
+   "xy_color": [
+    0.522,
+    0.387
+   ],
+   "friendly_name": "Lichtleiste Links",
+   "supported_features": 44
+  },
+  "last_changed": "2026-11-15T20:57:49.241805+00:00",
+  "last_reported": "2026-11-15T20:57:51.549704+00:00",
+  "last_updated": "2026-11-15T20:57:51.549704+00:00"
+ },
+ {
+  "entity_id": "light.lichtleiste_rechts",
+  "state": "on",
+  "attributes": {
+   "min_color_temp_kelvin": 2000,
+   "max_color_temp_kelvin": 6535,
+   "effect_list": [
+    "blink",
+    "breathe",
+    "okay",
+    "channel_change",
+    "candle",
+    "fireplace",
+    "colorloop",
+    "sunset",
+    "sunrise",
+    "sparkle",
+    "opal",
+    "glisten",
+    "underwater",
+    "cosmos",
+    "sunbeam",
+    "enchant",
+    "none",
+    "finish_effect",
+    "stop_effect",
+    "stop_hue_effect"
+   ],
+   "supported_color_modes": [
+    "color_temp",
+    "xy"
+   ],
+   "effect": null,
+   "color_mode": "color_temp",
+   "brightness": 9,
+   "color_temp_kelvin": 2732,
+   "hs_color": [
+    28.327,
+    64.71
+   ],
+   "rgb_color": [
+    255,
+    168,
+    90
+   ],
+   "xy_color": [
+    0.522,
+    0.387
+   ],
+   "friendly_name": "Lichtleiste Rechts",
+   "supported_features": 44
+  },
+  "last_changed": "2026-11-15T20:57:49.235815+00:00",
+  "last_reported": "2026-11-15T20:57:52.268162+00:00",
+  "last_updated": "2026-11-15T20:57:52.268162+00:00"
+ },
+ {
+  "entity_id": "light.lampe_ruhebett",
+  "state": "on",
+  "attributes": {
+   "min_color_temp_kelvin": 2000,
+   "max_color_temp_kelvin": 6535,
+   "effect_list": [
+    "blink",
+    "breathe",
+    "okay",
+    "channel_change",
+    "candle",
+    "fireplace",
+    "colorloop",
+    "sunset",
+    "sunrise",
+    "sparkle",
+    "opal",
+    "glisten",
+    "underwater",
+    "cosmos",
+    "sunbeam",
+    "enchant",
+    "none",
+    "finish_effect",
+    "stop_effect",
+    "stop_hue_effect"
+   ],
+   "supported_color_modes": [
+    "color_temp",
+    "xy"
+   ],
+   "effect": null,
+   "color_mode": "color_temp",
+   "brightness": 176,
+   "color_temp_kelvin": 2202,
+   "hs_color": [
+    29.79,
+    84.553
+   ],
+   "rgb_color": [
+    255,
+    146,
+    39
+   ],
+   "xy_color": [
+    0.579,
+    0.388
+   ],
+   "friendly_name": "Lampe Ruhebett",
+   "supported_features": 44
+  },
+  "last_changed": "2026-11-15T20:57:49.229162+00:00",
+  "last_reported": "2026-11-15T20:57:49.229162+00:00",
+  "last_updated": "2026-11-15T20:57:49.229162+00:00"
+ },
+ {
+  "entity_id": "light.lampe_salon",
+  "state": "on",
+  "attributes": {
+   "min_color_temp_kelvin": 1901,
+   "max_color_temp_kelvin": 6535,
+   "effect_list": [
+    "blink",
+    "breathe",
+    "okay",
+    "channel_change",
+    "finish_effect",
+    "stop_effect",
+    "colorloop",
+    "stop_colorloop"
+   ],
+   "supported_color_modes": [
+    "color_temp",
+    "xy"
+   ],
+   "effect": null,
+   "color_mode": "color_temp",
+   "brightness": 176,
+   "color_temp_kelvin": 2967,
+   "hs_color": [
+    27.881,
+    57.799
+   ],
+   "rgb_color": [
+    255,
+    176,
+    108
+   ],
+   "xy_color": [
+    0.498,
+    0.383
+   ],
+   "friendly_name": "Lampe Salon",
+   "supported_features": 44
+  },
+  "last_changed": "2026-11-15T20:51:27.333154+00:00",
+  "last_reported": "2026-11-15T20:51:28.179821+00:00",
+  "last_updated": "2026-11-15T20:51:28.179821+00:00"
+ },
+ {
+  "entity_id": "light.kochbereich_arbeitslicht_2",
+  "state": "off",
+  "attributes": {
+   "effect_list": [
+    "blink",
+    "breathe",
+    "okay",
+    "channel_change",
+    "finish_effect",
+    "stop_effect"
+   ],
+   "supported_color_modes": [
+    "brightness"
+   ],
+   "effect": null,
+   "color_mode": null,
+   "brightness": null,
+   "friendly_name": "Kochbereich Arbeitslicht 2",
+   "supported_features": 44
+  },
+  "last_changed": "2026-11-15T20:24:00.488713+00:00",
+  "last_reported": "2026-11-15T20:24:00.488713+00:00",
+  "last_updated": "2026-11-15T20:24:00.488713+00:00"
+ },
+ {
+  "entity_id": "light.kochbereich_arbeitslicht_1",
+  "state": "off",
+  "attributes": {
+   "effect_list": [
+    "blink",
+    "breathe",
+    "okay",
+    "channel_change",
+    "finish_effect",
+    "stop_effect"
+   ],
+   "supported_color_modes": [
+    "brightness"
+   ],
+   "effect": null,
+   "color_mode": null,
+   "brightness": null,
+   "friendly_name": "Kochbereich Arbeitslicht 1",
+   "supported_features": 44
+  },
+  "last_changed": "2026-11-15T20:24:00.476938+00:00",
+  "last_reported": "2026-11-15T20:24:00.476938+00:00",
+  "last_updated": "2026-11-15T20:24:00.476938+00:00"
+ },
+ {
+  "entity_id": "light.lampe_decke_ruheraum",
+  "state": "on",
+  "attributes": {
+   "min_color_temp_kelvin": 2000,
+   "max_color_temp_kelvin": 6535,
+   "effect_list": [
+    "blink",
+    "breathe",
+    "okay",
+    "channel_change",
+    "finish_effect",
+    "stop_effect",
+    "colorloop",
+    "stop_colorloop"
+   ],
+   "supported_color_modes": [
+    "color_temp",
+    "hs"
+   ],
+   "effect": null,
+   "color_mode": "color_temp",
+   "brightness": 9,
+   "color_temp_kelvin": 2000,
+   "hs_color": [
+    30.601,
+    94.547
+   ],
+   "rgb_color": [
+    255,
+    137,
+    14
+   ],
+   "xy_color": [
+    0.598,
+    0.383
+   ],
+   "friendly_name": "Lampe Decke Ruheraum",
+   "supported_features": 44
+  },
+  "last_changed": "2026-11-15T20:22:00.422932+00:00",
+  "last_reported": "2026-11-15T20:22:00.422932+00:00",
+  "last_updated": "2026-11-15T20:22:00.422932+00:00"
+ },
+ {
+  "entity_id": "light.lampe_waschraum",
+  "state": "off",
+  "attributes": {
+   "min_color_temp_kelvin": 2000,
+   "max_color_temp_kelvin": 6535,
+   "effect_list": [
+    "blink",
+    "breathe",
+    "okay",
+    "channel_change",
+    "finish_effect",
+    "stop_effect",
+    "colorloop",
+    "stop_colorloop"
+   ],
+   "supported_color_modes": [
+    "color_temp",
+    "hs"
+   ],
+   "effect": null,
+   "color_mode": null,
+   "brightness": null,
+   "color_temp_kelvin": null,
+   "hs_color": null,
+   "rgb_color": null,
+   "xy_color": null,
+   "friendly_name": "Lampe Waschraum",
+   "supported_features": 44
+  },
+  "last_changed": "2026-11-15T20:39:26.824263+00:00",
+  "last_reported": "2026-11-15T20:39:26.824263+00:00",
+  "last_updated": "2026-11-15T20:39:26.824263+00:00"
+ },
+ {
+  "entity_id": "light.lampe_decke_salon",
+  "state": "off",
+  "attributes": {
+   "min_color_temp_kelvin": 2000,
+   "max_color_temp_kelvin": 6535,
+   "effect_list": [
+    "blink",
+    "breathe",
+    "okay",
+    "channel_change",
+    "finish_effect",
+    "stop_effect",
+    "colorloop",
+    "stop_colorloop"
+   ],
+   "supported_color_modes": [
+    "color_temp",
+    "hs"
+   ],
+   "effect": null,
+   "color_mode": null,
+   "brightness": null,
+   "color_temp_kelvin": null,
+   "hs_color": null,
+   "rgb_color": null,
+   "xy_color": null,
+   "friendly_name": "Lampe Decke Salon",
+   "supported_features": 44
+  },
+  "last_changed": "2026-11-15T20:56:45.159691+00:00",
+  "last_reported": "2026-11-15T20:56:45.159691+00:00",
+  "last_updated": "2026-11-15T20:56:45.159691+00:00"
+ },
+ {
+  "entity_id": "light.zgsalon",
+  "state": "on",
+  "attributes": {
+   "min_color_temp_kelvin": 2000,
+   "max_color_temp_kelvin": 6535,
+   "effect_list": [
+    "blink",
+    "breathe",
+    "okay",
+    "channel_change",
+    "finish_effect",
+    "stop_effect",
+    "colorloop",
+    "stop_colorloop",
+    "candle",
+    "fireplace",
+    "sunset",
+    "sunrise",
+    "sparkle",
+    "opal",
+    "glisten",
+    "underwater",
+    "cosmos",
+    "sunbeam",
+    "enchant",
+    "none",
+    "stop_hue_effect"
+   ],
+   "supported_color_modes": [
+    "color_temp",
+    "xy"
+   ],
+   "group_entities": [
+    "light.salon_oben_1_tur",
+    "light.salon_oben_2_fenster",
+    "light.tischlampe_salon",
+    "light.lampe_salon",
+    "light.lampe_decke_salon",
+    "light.lampe_ruhebett"
+   ],
+   "effect": null,
+   "color_mode": "color_temp",
+   "brightness": 255,
+   "color_temp_kelvin": 2732,
+   "hs_color": [
+    28.327,
+    64.71
+   ],
+   "rgb_color": [
+    255,
+    168,
+    90
+   ],
+   "xy_color": [
+    0.522,
+    0.387
+   ],
+   "friendly_name": "ZGSalon",
+   "supported_features": 44
+  },
+  "last_changed": "2026-11-15T20:51:27.329896+00:00",
+  "last_reported": "2026-11-15T20:51:28.612419+00:00",
+  "last_updated": "2026-11-15T20:51:28.612419+00:00"
+ },
+ {
+  "entity_id": "light.zgkochbereich",
+  "state": "off",
+  "attributes": {
+   "effect_list": [
+    "blink",
+    "breathe",
+    "okay",
+    "channel_change",
+    "finish_effect",
+    "stop_effect"
+   ],
+   "supported_color_modes": [
+    "brightness"
+   ],
+   "group_entities": [
+    "light.kochbereich_arbeitslicht_2",
+    "light.kochbereich_arbeitslicht_1"
+   ],
+   "effect": null,
+   "color_mode": null,
+   "brightness": null,
+   "friendly_name": "ZGKochbereich",
+   "supported_features": 44
+  },
+  "last_changed": "2026-11-15T20:24:00.480674+00:00",
+  "last_reported": "2026-11-15T20:24:00.480674+00:00",
+  "last_updated": "2026-11-15T20:24:00.480674+00:00"
+ },
+ {
+  "entity_id": "light.zgruheraum",
+  "state": "on",
+  "attributes": {
+   "min_color_temp_kelvin": 2000,
+   "max_color_temp_kelvin": 6535,
+   "effect_list": [
+    "blink",
+    "breathe",
+    "okay",
+    "channel_change",
+    "candle",
+    "fireplace",
+    "colorloop",
+    "sunset",
+    "sunrise",
+    "sparkle",
+    "opal",
+    "glisten",
+    "underwater",
+    "cosmos",
+    "sunbeam",
+    "enchant",
+    "none",
+    "finish_effect",
+    "stop_effect",
+    "stop_hue_effect",
+    "stop_colorloop"
+   ],
+   "supported_color_modes": [
+    "color_temp",
+    "xy"
+   ],
+   "group_entities": [
+    "light.lichtleiste_links",
+    "light.lichtleiste_rechts",
+    "light.lampe_decke_ruheraum"
+   ],
+   "effect": null,
+   "color_mode": "color_temp",
+   "brightness": 9,
+   "color_temp_kelvin": 2732,
+   "hs_color": [
+    28.327,
+    64.71
+   ],
+   "rgb_color": [
+    255,
+    168,
+    90
+   ],
+   "xy_color": [
+    0.522,
+    0.387
+   ],
+   "friendly_name": "ZGRuheraum",
+   "supported_features": 44
+  },
+  "last_changed": "2026-11-15T20:22:00.490274+00:00",
+  "last_reported": "2026-11-15T20:57:51.548237+00:00",
+  "last_updated": "2026-11-15T20:57:51.548237+00:00"
+ },
+ {
+  "entity_id": "light.zgwaschraum",
+  "state": "off",
+  "attributes": {
+   "min_color_temp_kelvin": 2000,
+   "max_color_temp_kelvin": 6535,
+   "effect_list": [
+    "blink",
+    "breathe",
+    "okay",
+    "channel_change",
+    "finish_effect",
+    "stop_effect",
+    "colorloop",
+    "stop_colorloop"
+   ],
+   "supported_color_modes": [
+    "color_temp",
+    "hs"
+   ],
+   "group_entities": [
+    "light.lampe_waschraum"
+   ],
+   "effect": null,
+   "color_mode": null,
+   "brightness": null,
+   "color_temp_kelvin": null,
+   "hs_color": null,
+   "rgb_color": null,
+   "xy_color": null,
+   "friendly_name": "ZGWaschraum",
+   "supported_features": 44
+  },
+  "last_changed": "2026-11-15T20:39:26.822187+00:00",
+  "last_reported": "2026-11-15T20:39:26.822187+00:00",
+  "last_updated": "2026-11-15T20:39:26.822187+00:00"
+ },
+ {
+  "entity_id": "number.bewegungsmelder_salon_illuminance_interval",
+  "state": "60",
+  "attributes": {
+   "min": 1,
+   "max": 720,
+   "step": 1,
+   "mode": "auto",
+   "unit_of_measurement": "minutes",
+   "friendly_name": "Bewegungsmelder Salon Illuminance interval"
+  },
+  "last_changed": "2026-11-15T20:22:00.358527+00:00",
+  "last_reported": "2026-11-15T20:22:00.358527+00:00",
+  "last_updated": "2026-11-15T20:22:00.358527+00:00"
+ },
+ {
+  "entity_id": "number.bewegungsmelder_waschraum_illuminance_interval",
+  "state": "60",
+  "attributes": {
+   "min": 1,
+   "max": 720,
+   "step": 1,
+   "mode": "auto",
+   "unit_of_measurement": "minutes",
+   "friendly_name": "Bewegungsmelder Waschraum Illuminance interval"
+  },
+  "last_changed": "2026-11-15T20:22:00.361121+00:00",
+  "last_reported": "2026-11-15T20:22:00.361121+00:00",
+  "last_updated": "2026-11-15T20:22:00.361121+00:00"
+ },
+ {
+  "entity_id": "number.bewegungsmelder_kochbereich_illuminance_interval",
+  "state": "60",
+  "attributes": {
+   "min": 1,
+   "max": 720,
+   "step": 1,
+   "mode": "auto",
+   "unit_of_measurement": "minutes",
+   "friendly_name": "Bewegungsmelder Kochbereich Illuminance interval"
+  },
+  "last_changed": "2026-11-15T20:22:00.365441+00:00",
+  "last_reported": "2026-11-15T20:22:00.365441+00:00",
+  "last_updated": "2026-11-15T20:22:00.365441+00:00"
+ },
+ {
+  "entity_id": "number.lufter_waschraum_delayed_power_on_time",
+  "state": "53",
+  "attributes": {
+   "min": 0.5,
+   "max": 3599.5,
+   "step": 0.5,
+   "mode": "auto",
+   "unit_of_measurement": "seconds",
+   "friendly_name": "Lüfter Waschraum Delayed power on time"
+  },
+  "last_changed": "2026-11-15T20:22:00.428124+00:00",
+  "last_reported": "2026-11-15T20:22:00.428124+00:00",
+  "last_updated": "2026-11-15T20:22:00.428124+00:00"
+ },
+ {
+  "entity_id": "number.prasenz_waschraum_temperature_calibration",
+  "state": "0",
+  "attributes": {
+   "min": -2,
+   "max": 2,
+   "step": 0.1,
+   "mode": "auto",
+   "unit_of_measurement": "°C",
+   "icon": "mdi:wrench-clock",
+   "friendly_name": "Präsenz Waschraum Temperature calibration"
+  },
+  "last_changed": "2026-11-15T20:22:00.444313+00:00",
+  "last_reported": "2026-11-15T20:22:00.444313+00:00",
+  "last_updated": "2026-11-15T20:22:00.444313+00:00"
+ },
+ {
+  "entity_id": "number.prasenz_waschraum_humidity_calibration",
+  "state": "0",
+  "attributes": {
+   "min": -30,
+   "max": 30,
+   "step": 1,
+   "mode": "auto",
+   "unit_of_measurement": "%",
+   "icon": "mdi:wrench-clock",
+   "friendly_name": "Präsenz Waschraum Humidity calibration"
+  },
+  "last_changed": "2026-11-15T20:22:00.444515+00:00",
+  "last_reported": "2026-11-15T20:22:00.444515+00:00",
+  "last_updated": "2026-11-15T20:22:00.444515+00:00"
+ },
+ {
+  "entity_id": "number.prasenz_waschraum_fading_time",
+  "state": "30",
+  "attributes": {
+   "min": 0,
+   "max": 28800,
+   "step": 1,
+   "mode": "auto",
+   "unit_of_measurement": "s",
+   "icon": "mdi:timer",
+   "friendly_name": "Präsenz Waschraum Fading time"
+  },
+  "last_changed": "2026-11-15T20:22:00.444731+00:00",
+  "last_reported": "2026-11-15T20:22:00.444731+00:00",
+  "last_updated": "2026-11-15T20:22:00.444731+00:00"
+ },
+ {
+  "entity_id": "number.prasenz_waschraum_illuminance_interval",
+  "state": "1",
+  "attributes": {
+   "min": 1,
+   "max": 720,
+   "step": 1,
+   "mode": "auto",
+   "unit_of_measurement": "minutes",
+   "friendly_name": "Präsenz Waschraum Illuminance interval"
+  },
+  "last_changed": "2026-11-15T20:22:00.444791+00:00",
+  "last_reported": "2026-11-15T20:22:00.444791+00:00",
+  "last_updated": "2026-11-15T20:22:00.444791+00:00"
+ },
+ {
+  "entity_id": "number.prasenz_waschraum_motion_detection_sensitivity",
+  "state": "12",
+  "attributes": {
+   "min": 0,
+   "max": 19,
+   "step": 1,
+   "mode": "auto",
+   "friendly_name": "Präsenz Waschraum Motion detection sensitivity"
+  },
+  "last_changed": "2026-11-15T20:22:00.443229+00:00",
+  "last_reported": "2026-11-15T20:22:00.443229+00:00",
+  "last_updated": "2026-11-15T20:22:00.443229+00:00"
+ },
+ {
+  "entity_id": "number.prasenz_salon_temperature_calibration",
+  "state": "0",
+  "attributes": {
+   "min": -2,
+   "max": 2,
+   "step": 0.1,
+   "mode": "auto",
+   "unit_of_measurement": "°C",
+   "icon": "mdi:wrench-clock",
+   "friendly_name": "Präsenz Salon Temperature calibration"
+  },
+  "last_changed": "2026-11-15T20:22:00.457933+00:00",
+  "last_reported": "2026-11-15T20:22:00.457933+00:00",
+  "last_updated": "2026-11-15T20:22:00.457933+00:00"
+ },
+ {
+  "entity_id": "number.prasenz_salon_humidity_calibration",
+  "state": "0",
+  "attributes": {
+   "min": -30,
+   "max": 30,
+   "step": 1,
+   "mode": "auto",
+   "unit_of_measurement": "%",
+   "icon": "mdi:wrench-clock",
+   "friendly_name": "Präsenz Salon Humidity calibration"
+  },
+  "last_changed": "2026-11-15T20:22:00.457656+00:00",
+  "last_reported": "2026-11-15T20:22:00.457656+00:00",
+  "last_updated": "2026-11-15T20:22:00.457656+00:00"
+ },
+ {
+  "entity_id": "number.prasenz_salon_fading_time",
+  "state": "30",
+  "attributes": {
+   "min": 0,
+   "max": 28800,
+   "step": 1,
+   "mode": "auto",
+   "unit_of_measurement": "s",
+   "icon": "mdi:timer",
+   "friendly_name": "Präsenz Salon Fading time"
+  },
+  "last_changed": "2026-11-15T20:22:00.457857+00:00",
+  "last_reported": "2026-11-15T20:22:00.457857+00:00",
+  "last_updated": "2026-11-15T20:22:00.457857+00:00"
+ },
+ {
+  "entity_id": "number.prasenz_salon_illuminance_interval",
+  "state": "1",
+  "attributes": {
+   "min": 1,
+   "max": 720,
+   "step": 1,
+   "mode": "auto",
+   "unit_of_measurement": "minutes",
+   "friendly_name": "Präsenz Salon Illuminance interval"
+  },
+  "last_changed": "2026-11-15T20:22:00.457762+00:00",
+  "last_reported": "2026-11-15T20:22:00.457762+00:00",
+  "last_updated": "2026-11-15T20:22:00.457762+00:00"
+ },
+ {
+  "entity_id": "number.prasenz_salon_motion_detection_sensitivity",
+  "state": "19",
+  "attributes": {
+   "min": 0,
+   "max": 19,
+   "step": 1,
+   "mode": "auto",
+   "friendly_name": "Präsenz Salon Motion detection sensitivity"
+  },
+  "last_changed": "2026-11-15T20:22:00.458595+00:00",
+  "last_reported": "2026-11-15T20:22:00.458595+00:00",
+  "last_updated": "2026-11-15T20:22:00.458595+00:00"
+ },
+ {
+  "entity_id": "number.prasenz_salon_2_temperature_calibration",
+  "state": "0",
+  "attributes": {
+   "min": -2,
+   "max": 2,
+   "step": 0.1,
+   "mode": "auto",
+   "unit_of_measurement": "°C",
+   "icon": "mdi:wrench-clock",
+   "friendly_name": "Präsenz Salon 2 Temperature calibration"
+  },
+  "last_changed": "2026-11-15T20:22:00.461741+00:00",
+  "last_reported": "2026-11-15T20:22:00.461741+00:00",
+  "last_updated": "2026-11-15T20:22:00.461741+00:00"
+ },
+ {
+  "entity_id": "number.prasenz_salon_2_humidity_calibration",
+  "state": "0",
+  "attributes": {
+   "min": -30,
+   "max": 30,
+   "step": 1,
+   "mode": "auto",
+   "unit_of_measurement": "%",
+   "icon": "mdi:wrench-clock",
+   "friendly_name": "Präsenz Salon 2 Humidity calibration"
+  },
+  "last_changed": "2026-11-15T20:22:00.461401+00:00",
+  "last_reported": "2026-11-15T20:22:00.461401+00:00",
+  "last_updated": "2026-11-15T20:22:00.461401+00:00"
+ },
+ {
+  "entity_id": "number.prasenz_salon_2_fading_time",
+  "state": "30",
+  "attributes": {
+   "min": 0,
+   "max": 28800,
+   "step": 1,
+   "mode": "auto",
+   "unit_of_measurement": "s",
+   "icon": "mdi:timer",
+   "friendly_name": "Präsenz Salon 2 Fading time"
+  },
+  "last_changed": "2026-11-15T20:22:00.461674+00:00",
+  "last_reported": "2026-11-15T20:22:00.461674+00:00",
+  "last_updated": "2026-11-15T20:22:00.461674+00:00"
+ },
+ {
+  "entity_id": "number.prasenz_salon_2_illuminance_interval",
+  "state": "1",
+  "attributes": {
+   "min": 1,
+   "max": 720,
+   "step": 1,
+   "mode": "auto",
+   "unit_of_measurement": "minutes",
+   "friendly_name": "Präsenz Salon 2 Illuminance interval"
+  },
+  "last_changed": "2026-11-15T20:22:00.461710+00:00",
+  "last_reported": "2026-11-15T20:22:00.461710+00:00",
+  "last_updated": "2026-11-15T20:22:00.461710+00:00"
+ },
+ {
+  "entity_id": "number.prasenz_salon_2_motion_detection_sensitivity",
+  "state": "19",
+  "attributes": {
+   "min": 0,
+   "max": 19,
+   "step": 1,
+   "mode": "auto",
+   "friendly_name": "Präsenz Salon 2 Motion detection sensitivity"
+  },
+  "last_changed": "2026-11-15T20:22:00.461538+00:00",
+  "last_reported": "2026-11-15T20:22:00.461538+00:00",
+  "last_updated": "2026-11-15T20:22:00.461538+00:00"
+ },
+ {
+  "entity_id": "number.steckdose_messung_1_countdown",
+  "state": "0",
+  "attributes": {
+   "min": 0,
+   "max": 43200,
+   "step": 1,
+   "mode": "auto",
+   "unit_of_measurement": "s",
+   "friendly_name": "Steckdose Messung 1 Countdown"
+  },
+  "last_changed": "2026-11-15T20:22:00.468778+00:00",
+  "last_reported": "2026-11-15T20:22:00.468778+00:00",
+  "last_updated": "2026-11-15T20:22:00.468778+00:00"
+ },
+ {
+  "entity_id": "number.steckdose_messung_3_countdown",
+  "state": "0",
+  "attributes": {
+   "min": 0,
+   "max": 43200,
+   "step": 1,
+   "mode": "auto",
+   "unit_of_measurement": "s",
+   "friendly_name": "Steckdose Messung 3 Countdown"
+  },
+  "last_changed": "2026-11-15T20:21:22.645472+00:00",
+  "last_reported": "2026-11-15T20:21:22.645472+00:00",
+  "last_updated": "2026-11-15T20:21:22.645472+00:00"
+ },
+ {
+  "entity_id": "number.steckdose_messung_4_countdown",
+  "state": "unknown",
+  "attributes": {
+   "min": 0,
+   "max": 43200,
+   "step": 1,
+   "mode": "auto",
+   "unit_of_measurement": "s",
+   "friendly_name": "Steckdose Messung 4 Countdown"
+  },
+  "last_changed": "2026-11-15T20:21:22.518776+00:00",
+  "last_reported": "2026-11-15T20:21:22.518776+00:00",
+  "last_updated": "2026-11-15T20:21:22.518776+00:00"
+ },
+ {
+  "entity_id": "number.steckdose_messung_5_countdown",
+  "state": "0",
+  "attributes": {
+   "min": 0,
+   "max": 43200,
+   "step": 1,
+   "mode": "auto",
+   "unit_of_measurement": "s",
+   "friendly_name": "Steckdose Messung 5 Countdown"
+  },
+  "last_changed": "2026-11-15T20:21:58.167220+00:00",
+  "last_reported": "2026-11-15T20:21:58.167220+00:00",
+  "last_updated": "2026-11-15T20:21:58.167220+00:00"
+ },
+ {
+  "entity_id": "number.steckdose_messung_6_countdown",
+  "state": "0",
+  "attributes": {
+   "min": 0,
+   "max": 43200,
+   "step": 1,
+   "mode": "auto",
+   "unit_of_measurement": "s",
+   "friendly_name": "Steckdose Messung 6 Countdown"
+  },
+  "last_changed": "2026-11-15T20:22:00.488016+00:00",
+  "last_reported": "2026-11-15T20:22:00.488016+00:00",
+  "last_updated": "2026-11-15T20:22:00.488016+00:00"
+ },
+ {
+  "entity_id": "scene.zgruheraum_0_full",
+  "state": "unknown",
+  "attributes": {
+   "friendly_name": "ZGRuheraum Full"
+  },
+  "last_changed": "2026-11-15T20:21:22.532442+00:00",
+  "last_reported": "2026-11-15T20:21:22.532442+00:00",
+  "last_updated": "2026-11-15T20:21:22.532442+00:00"
+ },
+ {
+  "entity_id": "scene.zgruheraum_1_calm",
+  "state": "unknown",
+  "attributes": {
+   "friendly_name": "ZGRuheraum Calm"
+  },
+  "last_changed": "2026-11-15T20:21:22.523030+00:00",
+  "last_reported": "2026-11-15T20:21:22.523030+00:00",
+  "last_updated": "2026-11-15T20:21:22.523030+00:00"
+ },
+ {
+  "entity_id": "scene.zgruheraum_2_chill",
+  "state": "unknown",
+  "attributes": {
+   "friendly_name": "ZGRuheraum Chill"
+  },
+  "last_changed": "2026-11-15T20:21:22.532840+00:00",
+  "last_reported": "2026-11-15T20:21:22.532840+00:00",
+  "last_updated": "2026-11-15T20:21:22.532840+00:00"
+ },
+ {
+  "entity_id": "scene.zgruheraum_3_lichtleiste",
+  "state": "unknown",
+  "attributes": {
+   "friendly_name": "ZGRuheraum Lichtleiste"
+  },
+  "last_changed": "2026-11-15T20:21:22.522871+00:00",
+  "last_reported": "2026-11-15T20:21:22.522871+00:00",
+  "last_updated": "2026-11-15T20:21:22.522871+00:00"
+ },
+ {
+  "entity_id": "scene.zgwaschraum_0_normal",
+  "state": "unknown",
+  "attributes": {
+   "friendly_name": "ZGWaschraum Normal"
+  },
+  "last_changed": "2026-11-15T20:21:22.533067+00:00",
+  "last_reported": "2026-11-15T20:21:22.533067+00:00",
+  "last_updated": "2026-11-15T20:21:22.533067+00:00"
+ },
+ {
+  "entity_id": "scene.zgwaschraum_1_hell",
+  "state": "unknown",
+  "attributes": {
+   "friendly_name": "ZGWaschraum Hell"
+  },
+  "last_changed": "2026-11-15T20:21:22.522577+00:00",
+  "last_reported": "2026-11-15T20:21:22.522577+00:00",
+  "last_updated": "2026-11-15T20:21:22.522577+00:00"
+ },
+ {
+  "entity_id": "scene.zgwaschraum_2_nachts_bewegung",
+  "state": "2026-11-15T18:58:54.044529+00:00",
+  "attributes": {
+   "friendly_name": "ZGWaschraum Nachts/Bewegung"
+  },
+  "last_changed": "2026-11-15T20:21:22.521571+00:00",
+  "last_reported": "2026-11-15T20:21:22.521571+00:00",
+  "last_updated": "2026-11-15T20:21:22.521571+00:00"
+ },
+ {
+  "entity_id": "scene.zgsalon_0_golden_hour",
+  "state": "unknown",
+  "attributes": {
+   "friendly_name": "ZGSalon Golden Hour"
+  },
+  "last_changed": "2026-11-15T20:21:22.532506+00:00",
+  "last_reported": "2026-11-15T20:21:22.532506+00:00",
+  "last_updated": "2026-11-15T20:21:22.532506+00:00"
+ },
+ {
+  "entity_id": "scene.zgsalon_1_neon_tokyo",
+  "state": "unknown",
+  "attributes": {
+   "friendly_name": "ZGSalon Neon Tokyo"
+  },
+  "last_changed": "2026-11-15T20:21:22.533589+00:00",
+  "last_reported": "2026-11-15T20:21:22.533589+00:00",
+  "last_updated": "2026-11-15T20:21:22.533589+00:00"
+ },
+ {
+  "entity_id": "scene.zgsalon_2_nordlicht",
+  "state": "unknown",
+  "attributes": {
+   "friendly_name": "ZGSalon Nordlicht"
+  },
+  "last_changed": "2026-11-15T20:21:22.529823+00:00",
+  "last_reported": "2026-11-15T20:21:22.529823+00:00",
+  "last_updated": "2026-11-15T20:21:22.529823+00:00"
+ },
+ {
+  "entity_id": "scene.zgsalon_3_lagerfeuer",
+  "state": "unknown",
+  "attributes": {
+   "friendly_name": "ZGSalon Lagerfeuer"
+  },
+  "last_changed": "2026-11-15T20:21:22.531787+00:00",
+  "last_reported": "2026-11-15T20:21:22.531787+00:00",
+  "last_updated": "2026-11-15T20:21:22.531787+00:00"
+ },
+ {
+  "entity_id": "scene.zgsalon_4_kinoabend",
+  "state": "unknown",
+  "attributes": {
+   "friendly_name": "ZGSalon Kinoabend"
+  },
+  "last_changed": "2026-11-15T20:21:22.523759+00:00",
+  "last_reported": "2026-11-15T20:21:22.523759+00:00",
+  "last_updated": "2026-11-15T20:21:22.523759+00:00"
+ },
+ {
+  "entity_id": "scene.zgsalon_5_halloween",
+  "state": "unknown",
+  "attributes": {
+   "friendly_name": "ZGSalon Halloween"
+  },
+  "last_changed": "2026-11-15T20:21:22.530129+00:00",
+  "last_reported": "2026-11-15T20:21:22.530129+00:00",
+  "last_updated": "2026-11-15T20:21:22.530129+00:00"
+ },
+ {
+  "entity_id": "scene.zgsalon_6_fokus",
+  "state": "unknown",
+  "attributes": {
+   "friendly_name": "ZGSalon Fokus"
+  },
+  "last_changed": "2026-11-15T20:21:22.523294+00:00",
+  "last_reported": "2026-11-15T20:21:22.523294+00:00",
+  "last_updated": "2026-11-15T20:21:22.523294+00:00"
+ },
+ {
+  "entity_id": "scene.zgsalon_7_dinner",
+  "state": "unknown",
+  "attributes": {
+   "friendly_name": "ZGSalon Dinner"
+  },
+  "last_changed": "2026-11-15T20:21:22.529852+00:00",
+  "last_reported": "2026-11-15T20:21:22.529852+00:00",
+  "last_updated": "2026-11-15T20:21:22.529852+00:00"
+ },
+ {
+  "entity_id": "select.tischlampe_salon_power_on_behavior",
+  "state": "unknown",
+  "attributes": {
+   "options": [
+    "off",
+    "on",
+    "toggle",
+    "previous"
+   ],
+   "icon": "mdi:power-settings",
+   "friendly_name": "Tischlampe Salon Power-on behavior"
+  },
+  "last_changed": "2026-11-15T20:21:22.523857+00:00",
+  "last_reported": "2026-11-15T20:21:22.523857+00:00",
+  "last_updated": "2026-11-15T20:21:22.523857+00:00"
+ },
+ {
+  "entity_id": "select.salon_oben_1_tur_power_on_behavior",
+  "state": "unknown",
+  "attributes": {
+   "options": [
+    "off",
+    "on",
+    "toggle",
+    "previous"
+   ],
+   "icon": "mdi:power-settings",
+   "friendly_name": "Salon Oben 1 (Tür) Power-on behavior"
+  },
+  "last_changed": "2026-11-15T20:21:22.523324+00:00",
+  "last_reported": "2026-11-15T20:21:22.523324+00:00",
+  "last_updated": "2026-11-15T20:21:22.523324+00:00"
+ },
+ {
+  "entity_id": "select.salon_oben_1_tur_color_power_on_behavior",
+  "state": "unknown",
+  "attributes": {
+   "options": [
+    "initial",
+    "previous",
+    "customized"
+   ],
+   "icon": "mdi:palette",
+   "friendly_name": "Salon Oben 1 (Tür) Color power on behavior"
+  },
+  "last_changed": "2026-11-15T20:21:22.531263+00:00",
+  "last_reported": "2026-11-15T20:21:22.531263+00:00",
+  "last_updated": "2026-11-15T20:21:22.531263+00:00"
+ },
+ {
+  "entity_id": "select.salon_oben_2_fenster_power_on_behavior",
+  "state": "unknown",
+  "attributes": {
+   "options": [
+    "off",
+    "on",
+    "toggle",
+    "previous"
+   ],
+   "icon": "mdi:power-settings",
+   "friendly_name": "Salon Oben 2 (Fenster) Power-on behavior"
+  },
+  "last_changed": "2026-11-15T20:21:22.523540+00:00",
+  "last_reported": "2026-11-15T20:21:22.523540+00:00",
+  "last_updated": "2026-11-15T20:21:22.523540+00:00"
+ },
+ {
+  "entity_id": "select.salon_oben_2_fenster_color_power_on_behavior",
+  "state": "unknown",
+  "attributes": {
+   "options": [
+    "initial",
+    "previous",
+    "customized"
+   ],
+   "icon": "mdi:palette",
+   "friendly_name": "Salon Oben 2 (Fenster) Color power on behavior"
+  },
+  "last_changed": "2026-11-15T20:21:22.517980+00:00",
+  "last_reported": "2026-11-15T20:21:22.517980+00:00",
+  "last_updated": "2026-11-15T20:21:22.517980+00:00"
+ },
+ {
+  "entity_id": "select.lichtleiste_links_power_on_behavior",
+  "state": "unknown",
+  "attributes": {
+   "options": [
+    "off",
+    "on",
+    "toggle",
+    "previous"
+   ],
+   "icon": "mdi:power-settings",
+   "friendly_name": "Lichtleiste Links Power-on behavior"
+  },
+  "last_changed": "2026-11-15T20:21:22.520745+00:00",
+  "last_reported": "2026-11-15T20:21:22.520745+00:00",
+  "last_updated": "2026-11-15T20:21:22.520745+00:00"
+ },
+ {
+  "entity_id": "select.lichtleiste_rechts_power_on_behavior",
+  "state": "unknown",
+  "attributes": {
+   "options": [
+    "off",
+    "on",
+    "toggle",
+    "previous"
+   ],
+   "icon": "mdi:power-settings",
+   "friendly_name": "Lichtleiste Rechts Power-on behavior"
+  },
+  "last_changed": "2026-11-15T20:21:22.529716+00:00",
+  "last_reported": "2026-11-15T20:21:22.529716+00:00",
+  "last_updated": "2026-11-15T20:21:22.529716+00:00"
+ },
+ {
+  "entity_id": "select.knopf_ruheraum_operation_mode",
+  "state": "unknown",
+  "attributes": {
+   "options": [
+    "command",
+    "event"
+   ],
+   "icon": "mdi:tune",
+   "friendly_name": "Knopf Ruheraum Operation mode"
+  },
+  "last_changed": "2026-11-15T20:21:22.524094+00:00",
+  "last_reported": "2026-11-15T20:21:22.524094+00:00",
+  "last_updated": "2026-11-15T20:21:22.524094+00:00"
+ },
+ {
+  "entity_id": "select.bewegungsmelder_salon_sensitivity",
+  "state": "high",
+  "attributes": {
+   "options": [
+    "low",
+    "medium",
+    "high"
+   ],
+   "icon": "mdi:tune",
+   "friendly_name": "Bewegungsmelder Salon Sensitivity"
+  },
+  "last_changed": "2026-11-15T20:22:00.358371+00:00",
+  "last_reported": "2026-11-15T20:22:00.358371+00:00",
+  "last_updated": "2026-11-15T20:22:00.358371+00:00"
+ },
+ {
+  "entity_id": "select.bewegungsmelder_salon_keep_time",
+  "state": "10",
+  "attributes": {
+   "options": [
+    "10",
+    "30",
+    "60",
+    "120"
+   ],
+   "icon": "mdi:av-timer",
+   "friendly_name": "Bewegungsmelder Salon Keep time"
+  },
+  "last_changed": "2026-11-15T20:22:00.358599+00:00",
+  "last_reported": "2026-11-15T20:22:00.358599+00:00",
+  "last_updated": "2026-11-15T20:22:00.358599+00:00"
+ },
+ {
+  "entity_id": "select.bewegungsmelder_waschraum_sensitivity",
+  "state": "high",
+  "attributes": {
+   "options": [
+    "low",
+    "medium",
+    "high"
+   ],
+   "icon": "mdi:tune",
+   "friendly_name": "Bewegungsmelder Waschraum Sensitivity"
+  },
+  "last_changed": "2026-11-15T20:22:00.361333+00:00",
+  "last_reported": "2026-11-15T20:22:00.361333+00:00",
+  "last_updated": "2026-11-15T20:22:00.361333+00:00"
+ },
+ {
+  "entity_id": "select.bewegungsmelder_waschraum_keep_time",
+  "state": "10",
+  "attributes": {
+   "options": [
+    "10",
+    "30",
+    "60",
+    "120"
+   ],
+   "icon": "mdi:av-timer",
+   "friendly_name": "Bewegungsmelder Waschraum Keep time"
+  },
+  "last_changed": "2026-11-15T20:22:00.361300+00:00",
+  "last_reported": "2026-11-15T20:22:00.361300+00:00",
+  "last_updated": "2026-11-15T20:22:00.361300+00:00"
+ },
+ {
+  "entity_id": "select.bewegungsmelder_kochbereich_sensitivity",
+  "state": "high",
+  "attributes": {
+   "options": [
+    "low",
+    "medium",
+    "high"
+   ],
+   "icon": "mdi:tune",
+   "friendly_name": "Bewegungsmelder Kochbereich Sensitivity"
+  },
+  "last_changed": "2026-11-15T20:22:00.365321+00:00",
+  "last_reported": "2026-11-15T20:22:00.365321+00:00",
+  "last_updated": "2026-11-15T20:22:00.365321+00:00"
+ },
+ {
+  "entity_id": "select.bewegungsmelder_kochbereich_keep_time",
+  "state": "10",
+  "attributes": {
+   "options": [
+    "10",
+    "30",
+    "60",
+    "120"
+   ],
+   "icon": "mdi:av-timer",
+   "friendly_name": "Bewegungsmelder Kochbereich Keep time"
+  },
+  "last_changed": "2026-11-15T20:22:00.365371+00:00",
+  "last_reported": "2026-11-15T20:22:00.365371+00:00",
+  "last_updated": "2026-11-15T20:22:00.365371+00:00"
+ },
+ {
+  "entity_id": "select.lampe_ruhebett_power_on_behavior",
+  "state": "unknown",
+  "attributes": {
+   "options": [
+    "off",
+    "on",
+    "toggle",
+    "previous"
+   ],
+   "icon": "mdi:power-settings",
+   "friendly_name": "Lampe Ruhebett Power-on behavior"
+  },
+  "last_changed": "2026-11-15T20:21:22.521371+00:00",
+  "last_reported": "2026-11-15T20:21:22.521371+00:00",
+  "last_updated": "2026-11-15T20:21:22.521371+00:00"
+ },
+ {
+  "entity_id": "select.drehknopf_ruheraum_1_operation_mode",
+  "state": "event",
+  "attributes": {
+   "options": [
+    "command",
+    "event"
+   ],
+   "icon": "mdi:tune",
+   "friendly_name": "Drehknopf Ruheraum 1 Operation mode"
+  },
+  "last_changed": "2026-11-15T20:22:00.392109+00:00",
+  "last_reported": "2026-11-15T20:22:00.392109+00:00",
+  "last_updated": "2026-11-15T20:22:00.392109+00:00"
+ },
+ {
+  "entity_id": "select.drehknopf_ruheraum_2_bett_operation_mode",
+  "state": "event",
+  "attributes": {
+   "options": [
+    "command",
+    "event"
+   ],
+   "icon": "mdi:tune",
+   "friendly_name": "Drehknopf Ruheraum 2 (Bett) Operation mode"
+  },
+  "last_changed": "2026-11-15T20:22:00.396056+00:00",
+  "last_reported": "2026-11-15T20:22:00.396056+00:00",
+  "last_updated": "2026-11-15T20:22:00.396056+00:00"
+ },
+ {
+  "entity_id": "select.drehknopf_salon_1_operation_mode",
+  "state": "event",
+  "attributes": {
+   "options": [
+    "command",
+    "event"
+   ],
+   "icon": "mdi:tune",
+   "friendly_name": "Drehknopf Salon 1 Operation mode"
+  },
+  "last_changed": "2026-11-15T20:22:00.401296+00:00",
+  "last_reported": "2026-11-15T20:22:00.401296+00:00",
+  "last_updated": "2026-11-15T20:22:00.401296+00:00"
+ },
+ {
+  "entity_id": "select.drehknopf_salon_2_operation_mode",
+  "state": "unknown",
+  "attributes": {
+   "options": [
+    "command",
+    "event"
+   ],
+   "icon": "mdi:tune",
+   "friendly_name": "Drehknopf Salon 2 Operation mode"
+  },
+  "last_changed": "2026-11-15T20:21:22.529984+00:00",
+  "last_reported": "2026-11-15T20:21:22.529984+00:00",
+  "last_updated": "2026-11-15T20:21:22.529984+00:00"
+ },
+ {
+  "entity_id": "select.drehknopf_kochbereich_operation_mode",
+  "state": "command",
+  "attributes": {
+   "options": [
+    "command",
+    "event"
+   ],
+   "icon": "mdi:tune",
+   "friendly_name": "Drehknopf Kochbereich Operation mode"
+  },
+  "last_changed": "2026-11-15T20:22:00.406022+00:00",
+  "last_reported": "2026-11-15T20:22:00.406022+00:00",
+  "last_updated": "2026-11-15T20:22:00.406022+00:00"
+ },
+ {
+  "entity_id": "select.drehknopf_waschraum_operation_mode",
+  "state": "unknown",
+  "attributes": {
+   "options": [
+    "command",
+    "event"
+   ],
+   "icon": "mdi:tune",
+   "friendly_name": "Drehknopf Waschraum Operation mode"
+  },
+  "last_changed": "2026-11-15T20:21:22.518515+00:00",
+  "last_reported": "2026-11-15T20:21:22.518515+00:00",
+  "last_updated": "2026-11-15T20:21:22.518515+00:00"
+ },
+ {
+  "entity_id": "select.lampe_decke_ruheraum_color_power_on_behavior",
+  "state": "unknown",
+  "attributes": {
+   "options": [
+    "initial",
+    "previous",
+    "customized"
+   ],
+   "icon": "mdi:palette",
+   "friendly_name": "Lampe Decke Ruheraum Color power on behavior"
+  },
+  "last_changed": "2026-11-15T20:21:22.524124+00:00",
+  "last_reported": "2026-11-15T20:21:22.524124+00:00",
+  "last_updated": "2026-11-15T20:21:22.524124+00:00"
+ },
+ {
+  "entity_id": "select.lampe_waschraum_color_power_on_behavior",
+  "state": "unknown",
+  "attributes": {
+   "options": [
+    "initial",
+    "previous",
+    "customized"
+   ],
+   "icon": "mdi:palette",
+   "friendly_name": "Lampe Waschraum Color power on behavior"
+  },
+  "last_changed": "2026-11-15T20:21:22.535126+00:00",
+  "last_reported": "2026-11-15T20:21:22.535126+00:00",
+  "last_updated": "2026-11-15T20:21:22.535126+00:00"
+ },
+ {
+  "entity_id": "select.lampe_decke_salon_color_power_on_behavior",
+  "state": "unknown",
+  "attributes": {
+   "options": [
+    "initial",
+    "previous",
+    "customized"
+   ],
+   "icon": "mdi:palette",
+   "friendly_name": "Lampe Decke Salon Color power on behavior"
+  },
+  "last_changed": "2026-11-15T20:21:22.520027+00:00",
+  "last_reported": "2026-11-15T20:21:22.520027+00:00",
+  "last_updated": "2026-11-15T20:21:22.520027+00:00"
+ },
+ {
+  "entity_id": "select.lufter_waschraum_power_on_behavior",
+  "state": "unknown",
+  "attributes": {
+   "options": [
+    "off",
+    "on",
+    "toggle",
+    "previous"
+   ],
+   "icon": "mdi:power-settings",
+   "friendly_name": "Lüfter Waschraum Power-on behavior"
+  },
+  "last_changed": "2026-11-15T20:21:22.535403+00:00",
+  "last_reported": "2026-11-15T20:21:22.535403+00:00",
+  "last_updated": "2026-11-15T20:21:22.535403+00:00"
+ },
+ {
+  "entity_id": "select.lufter_waschraum_external_trigger_mode",
+  "state": "edge",
+  "attributes": {
+   "options": [
+    "edge",
+    "pulse",
+    "following(off)",
+    "following(on)"
+   ],
+   "friendly_name": "Lüfter Waschraum External trigger mode"
+  },
+  "last_changed": "2026-11-15T20:22:00.427953+00:00",
+  "last_reported": "2026-11-15T20:22:00.427953+00:00",
+  "last_updated": "2026-11-15T20:22:00.427953+00:00"
+ },
+ {
+  "entity_id": "select.0x00124b000000001e_operation_mode",
+  "state": "event",
+  "attributes": {
+   "options": [
+    "command",
+    "event"
+   ],
+   "icon": "mdi:tune",
+   "friendly_name": "Taster Medienwand Operation mode"
+  },
+  "last_changed": "2026-11-15T20:22:00.431805+00:00",
+  "last_reported": "2026-11-15T20:22:00.431805+00:00",
+  "last_updated": "2026-11-15T20:22:00.431805+00:00"
+ },
+ {
+  "entity_id": "select.prasenz_waschraum_temperature_unit",
+  "state": "celsius",
+  "attributes": {
+   "options": [
+    "celsius",
+    "fahrenheit"
+   ],
+   "icon": "mdi:temperature-celsius",
+   "friendly_name": "Präsenz Waschraum Temperature unit"
+  },
+  "last_changed": "2026-11-15T20:22:00.443009+00:00",
+  "last_reported": "2026-11-15T20:22:00.443009+00:00",
+  "last_updated": "2026-11-15T20:22:00.443009+00:00"
+ },
+ {
+  "entity_id": "select.prasenz_salon_temperature_unit",
+  "state": "celsius",
+  "attributes": {
+   "options": [
+    "celsius",
+    "fahrenheit"
+   ],
+   "icon": "mdi:temperature-celsius",
+   "friendly_name": "Präsenz Salon Temperature unit"
+  },
+  "last_changed": "2026-11-15T20:22:00.457966+00:00",
+  "last_reported": "2026-11-15T20:22:00.457966+00:00",
+  "last_updated": "2026-11-15T20:22:00.457966+00:00"
+ },
+ {
+  "entity_id": "select.prasenz_salon_2_temperature_unit",
+  "state": "celsius",
+  "attributes": {
+   "options": [
+    "celsius",
+    "fahrenheit"
+   ],
+   "icon": "mdi:temperature-celsius",
+   "friendly_name": "Präsenz Salon 2 Temperature unit"
+  },
+  "last_changed": "2026-11-15T20:22:00.461775+00:00",
+  "last_reported": "2026-11-15T20:22:00.461775+00:00",
+  "last_updated": "2026-11-15T20:22:00.461775+00:00"
+ },
+ {
+  "entity_id": "select.steckdose_messung_1_power_outage_memory",
+  "state": "restore",
+  "attributes": {
+   "options": [
+    "on",
+    "off",
+    "restore"
+   ],
+   "icon": "mdi:power-settings",
+   "friendly_name": "Steckdose Messung 1 Power outage memory"
+  },
+  "last_changed": "2026-11-15T20:22:00.468277+00:00",
+  "last_reported": "2026-11-15T20:22:00.468277+00:00",
+  "last_updated": "2026-11-15T20:22:00.468277+00:00"
+ },
+ {
+  "entity_id": "select.steckdose_messung_1_switch_type_button",
+  "state": "unknown",
+  "attributes": {
+   "options": [
+    "release",
+    "press"
+   ],
+   "friendly_name": "Steckdose Messung 1 Switch type button"
+  },
+  "last_changed": "2026-11-15T20:21:22.532565+00:00",
+  "last_reported": "2026-11-15T20:21:22.532565+00:00",
+  "last_updated": "2026-11-15T20:21:22.532565+00:00"
+ },
+ {
+  "entity_id": "select.steckdose_messung_1_indicator_mode",
+  "state": "off",
+  "attributes": {
+   "options": [
+    "off",
+    "off/on",
+    "on/off",
+    "on"
+   ],
+   "friendly_name": "Steckdose Messung 1 Indicator mode"
+  },
+  "last_changed": "2026-11-15T20:22:00.468319+00:00",
+  "last_reported": "2026-11-15T20:22:00.468319+00:00",
+  "last_updated": "2026-11-15T20:22:00.468319+00:00"
+ },
+ {
+  "entity_id": "select.steckdose_messung_2_power_on_behavior",
+  "state": "previous",
+  "attributes": {
+   "options": [
+    "off",
+    "on",
+    "toggle",
+    "previous"
+   ],
+   "icon": "mdi:power-settings",
+   "friendly_name": "Steckdose Messung 2 Power-on behavior"
+  },
+  "last_changed": "2026-11-15T20:22:00.475385+00:00",
+  "last_reported": "2026-11-15T20:22:00.475385+00:00",
+  "last_updated": "2026-11-15T20:22:00.475385+00:00"
+ },
+ {
+  "entity_id": "select.steckdose_messung_3_power_outage_memory",
+  "state": "restore",
+  "attributes": {
+   "options": [
+    "on",
+    "off",
+    "restore"
+   ],
+   "icon": "mdi:power-settings",
+   "friendly_name": "Steckdose Messung 3 Power outage memory"
+  },
+  "last_changed": "2026-11-15T20:21:22.645111+00:00",
+  "last_reported": "2026-11-15T20:21:22.645111+00:00",
+  "last_updated": "2026-11-15T20:21:22.645111+00:00"
+ },
+ {
+  "entity_id": "select.steckdose_messung_3_switch_type_button",
+  "state": "release",
+  "attributes": {
+   "options": [
+    "release",
+    "press"
+   ],
+   "friendly_name": "Steckdose Messung 3 Switch type button"
+  },
+  "last_changed": "2026-11-15T20:21:22.645409+00:00",
+  "last_reported": "2026-11-15T20:21:22.645409+00:00",
+  "last_updated": "2026-11-15T20:21:22.645409+00:00"
+ },
+ {
+  "entity_id": "select.steckdose_messung_3_indicator_mode",
+  "state": "off/on",
+  "attributes": {
+   "options": [
+    "off",
+    "off/on",
+    "on/off",
+    "on"
+   ],
+   "friendly_name": "Steckdose Messung 3 Indicator mode"
+  },
+  "last_changed": "2026-11-15T20:21:22.645027+00:00",
+  "last_reported": "2026-11-15T20:21:22.645027+00:00",
+  "last_updated": "2026-11-15T20:21:22.645027+00:00"
+ },
+ {
+  "entity_id": "select.steckdose_messung_4_power_outage_memory",
+  "state": "restore",
+  "attributes": {
+   "options": [
+    "on",
+    "off",
+    "restore"
+   ],
+   "icon": "mdi:power-settings",
+   "friendly_name": "Steckdose Messung 4 Power outage memory"
+  },
+  "last_changed": "2026-11-15T20:22:00.480050+00:00",
+  "last_reported": "2026-11-15T20:22:00.480050+00:00",
+  "last_updated": "2026-11-15T20:22:00.480050+00:00"
+ },
+ {
+  "entity_id": "select.steckdose_messung_4_switch_type_button",
+  "state": "unknown",
+  "attributes": {
+   "options": [
+    "release",
+    "press"
+   ],
+   "friendly_name": "Steckdose Messung 4 Switch type button"
+  },
+  "last_changed": "2026-11-15T20:21:22.534187+00:00",
+  "last_reported": "2026-11-15T20:21:22.534187+00:00",
+  "last_updated": "2026-11-15T20:21:22.534187+00:00"
+ },
+ {
+  "entity_id": "select.steckdose_messung_4_indicator_mode",
+  "state": "unknown",
+  "attributes": {
+   "options": [
+    "off",
+    "off/on",
+    "on/off",
+    "on"
+   ],
+   "friendly_name": "Steckdose Messung 4 Indicator mode"
+  },
+  "last_changed": "2026-11-15T20:21:22.529286+00:00",
+  "last_reported": "2026-11-15T20:21:22.529286+00:00",
+  "last_updated": "2026-11-15T20:21:22.529286+00:00"
+ },
+ {
+  "entity_id": "select.steckdose_messung_5_power_outage_memory",
+  "state": "restore",
+  "attributes": {
+   "options": [
+    "on",
+    "off",
+    "restore"
+   ],
+   "icon": "mdi:power-settings",
+   "friendly_name": "Steckdose Messung 5 Power outage memory"
+  },
+  "last_changed": "2026-11-15T20:21:58.166893+00:00",
+  "last_reported": "2026-11-15T20:21:58.166893+00:00",
+  "last_updated": "2026-11-15T20:21:58.166893+00:00"
+ },
+ {
+  "entity_id": "select.steckdose_messung_5_switch_type_button",
+  "state": "release",
+  "attributes": {
+   "options": [
+    "release",
+    "press"
+   ],
+   "friendly_name": "Steckdose Messung 5 Switch type button"
+  },
+  "last_changed": "2026-11-15T20:21:58.167128+00:00",
+  "last_reported": "2026-11-15T20:21:58.167128+00:00",
+  "last_updated": "2026-11-15T20:21:58.167128+00:00"
+ },
+ {
+  "entity_id": "select.steckdose_messung_5_indicator_mode",
+  "state": "off/on",
+  "attributes": {
+   "options": [
+    "off",
+    "off/on",
+    "on/off",
+    "on"
+   ],
+   "friendly_name": "Steckdose Messung 5 Indicator mode"
+  },
+  "last_changed": "2026-11-15T20:21:58.166435+00:00",
+  "last_reported": "2026-11-15T20:21:58.166435+00:00",
+  "last_updated": "2026-11-15T20:21:58.166435+00:00"
+ },
+ {
+  "entity_id": "select.steckdose_messung_6_power_outage_memory",
+  "state": "restore",
+  "attributes": {
+   "options": [
+    "on",
+    "off",
+    "restore"
+   ],
+   "icon": "mdi:power-settings",
+   "friendly_name": "Steckdose Messung 6 Power outage memory"
+  },
+  "last_changed": "2026-11-15T20:22:00.488277+00:00",
+  "last_reported": "2026-11-15T20:22:00.488277+00:00",
+  "last_updated": "2026-11-15T20:22:00.488277+00:00"
+ },
+ {
+  "entity_id": "select.steckdose_messung_6_switch_type_button",
+  "state": "release",
+  "attributes": {
+   "options": [
+    "release",
+    "press"
+   ],
+   "friendly_name": "Steckdose Messung 6 Switch type button"
+  },
+  "last_changed": "2026-11-15T20:22:00.488169+00:00",
+  "last_reported": "2026-11-15T20:22:00.488169+00:00",
+  "last_updated": "2026-11-15T20:22:00.488169+00:00"
+ },
+ {
+  "entity_id": "select.steckdose_messung_6_indicator_mode",
+  "state": "off/on",
+  "attributes": {
+   "options": [
+    "off",
+    "off/on",
+    "on/off",
+    "on"
+   ],
+   "friendly_name": "Steckdose Messung 6 Indicator mode"
+  },
+  "last_changed": "2026-11-15T20:22:00.488141+00:00",
+  "last_reported": "2026-11-15T20:22:00.488141+00:00",
+  "last_updated": "2026-11-15T20:22:00.488141+00:00"
+ },
+ {
+  "entity_id": "sensor.sensor_salon_battery",
+  "state": "100",
+  "attributes": {
+   "state_class": "measurement",
+   "unit_of_measurement": "%",
+   "device_class": "battery",
+   "friendly_name": "Sensor Salon Batterie"
+  },
+  "last_changed": "2026-11-15T20:22:00.375607+00:00",
+  "last_reported": "2026-11-15T20:22:00.375607+00:00",
+  "last_updated": "2026-11-15T20:22:00.375607+00:00"
+ },
+ {
+  "entity_id": "sensor.sensor_salon_temperature",
+  "state": "22.05",
+  "attributes": {
+   "state_class": "measurement",
+   "unit_of_measurement": "°C",
+   "device_class": "temperature",
+   "friendly_name": "Sensor Salon Temperatur"
+  },
+  "last_changed": "2026-11-15T20:53:11.788147+00:00",
+  "last_reported": "2026-11-15T20:53:11.788147+00:00",
+  "last_updated": "2026-11-15T20:53:11.788147+00:00"
+ },
+ {
+  "entity_id": "sensor.sensor_salon_humidity",
+  "state": "38.37",
+  "attributes": {
+   "state_class": "measurement",
+   "unit_of_measurement": "%",
+   "device_class": "humidity",
+   "friendly_name": "Sensor Salon Luftfeuchtigkeit"
+  },
+  "last_changed": "2026-11-15T20:57:09.742078+00:00",
+  "last_reported": "2026-11-15T20:57:09.742078+00:00",
+  "last_updated": "2026-11-15T20:57:09.742078+00:00"
+ },
+ {
+  "entity_id": "sensor.sensor_salon_voltage",
+  "state": "2900",
+  "attributes": {
+   "state_class": "measurement",
+   "unit_of_measurement": "mV",
+   "device_class": "voltage",
+   "friendly_name": "Sensor Salon Spannung"
+  },
+  "last_changed": "2026-11-15T20:22:00.375727+00:00",
+  "last_reported": "2026-11-15T20:22:00.375727+00:00",
+  "last_updated": "2026-11-15T20:22:00.375727+00:00"
+ },
+ {
+  "entity_id": "sensor.sensor_ruheraum_battery",
+  "state": "100",
+  "attributes": {
+   "state_class": "measurement",
+   "unit_of_measurement": "%",
+   "device_class": "battery",
+   "friendly_name": "Sensor Ruheraum Batterie"
+  },
+  "last_changed": "2026-11-15T20:22:00.347451+00:00",
+  "last_reported": "2026-11-15T20:22:00.347451+00:00",
+  "last_updated": "2026-11-15T20:22:00.347451+00:00"
+ },
+ {
+  "entity_id": "sensor.sensor_ruheraum_temperature",
+  "state": "22.38",
+  "attributes": {
+   "state_class": "measurement",
+   "unit_of_measurement": "°C",
+   "device_class": "temperature",
+   "friendly_name": "Sensor Ruheraum Temperatur"
+  },
+  "last_changed": "2026-11-15T20:54:13.261563+00:00",
+  "last_reported": "2026-11-15T20:54:13.261563+00:00",
+  "last_updated": "2026-11-15T20:54:13.261563+00:00"
+ },
+ {
+  "entity_id": "sensor.sensor_ruheraum_humidity",
+  "state": "40.25",
+  "attributes": {
+   "state_class": "measurement",
+   "unit_of_measurement": "%",
+   "device_class": "humidity",
+   "friendly_name": "Sensor Ruheraum Luftfeuchtigkeit"
+  },
+  "last_changed": "2026-11-15T20:54:13.374747+00:00",
+  "last_reported": "2026-11-15T20:54:13.374747+00:00",
+  "last_updated": "2026-11-15T20:54:13.374747+00:00"
+ },
+ {
+  "entity_id": "sensor.sensor_ruheraum_voltage",
+  "state": "3000",
+  "attributes": {
+   "state_class": "measurement",
+   "unit_of_measurement": "mV",
+   "device_class": "voltage",
+   "friendly_name": "Sensor Ruheraum Spannung"
+  },
+  "last_changed": "2026-11-15T20:22:00.346673+00:00",
+  "last_reported": "2026-11-15T20:22:00.346673+00:00",
+  "last_updated": "2026-11-15T20:22:00.346673+00:00"
+ },
+ {
+  "entity_id": "sensor.knopf_ruheraum_battery",
+  "state": "unknown",
+  "attributes": {
+   "state_class": "measurement",
+   "unit_of_measurement": "%",
+   "device_class": "battery",
+   "friendly_name": "Knopf Ruheraum Batterie"
+  },
+  "last_changed": "2026-11-15T20:21:22.529787+00:00",
+  "last_reported": "2026-11-15T20:21:22.529787+00:00",
+  "last_updated": "2026-11-15T20:21:22.529787+00:00"
+ },
+ {
+  "entity_id": "sensor.bewegungsmelder_salon_illuminance",
+  "state": "760",
+  "attributes": {
+   "state_class": "measurement",
+   "unit_of_measurement": "lx",
+   "device_class": "illuminance",
+   "friendly_name": "Bewegungsmelder Salon Beleuchtungsstärke"
+  },
+  "last_changed": "2026-11-15T20:22:00.358785+00:00",
+  "last_reported": "2026-11-15T20:22:00.358785+00:00",
+  "last_updated": "2026-11-15T20:22:00.358785+00:00"
+ },
+ {
+  "entity_id": "sensor.bewegungsmelder_salon_battery",
+  "state": "50",
+  "attributes": {
+   "state_class": "measurement",
+   "unit_of_measurement": "%",
+   "device_class": "battery",
+   "friendly_name": "Bewegungsmelder Salon Batterie"
+  },
+  "last_changed": "2026-11-15T20:22:00.358707+00:00",
+  "last_reported": "2026-11-15T20:22:00.358707+00:00",
+  "last_updated": "2026-11-15T20:22:00.358707+00:00"
+ },
+ {
+  "entity_id": "sensor.bewegungsmelder_waschraum_illuminance",
+  "state": "0",
+  "attributes": {
+   "state_class": "measurement",
+   "unit_of_measurement": "lx",
+   "device_class": "illuminance",
+   "friendly_name": "Bewegungsmelder Waschraum Beleuchtungsstärke"
+  },
+  "last_changed": "2026-11-15T20:22:00.361262+00:00",
+  "last_reported": "2026-11-15T20:22:00.361262+00:00",
+  "last_updated": "2026-11-15T20:22:00.361262+00:00"
+ },
+ {
+  "entity_id": "sensor.bewegungsmelder_waschraum_battery",
+  "state": "100",
+  "attributes": {
+   "state_class": "measurement",
+   "unit_of_measurement": "%",
+   "device_class": "battery",
+   "friendly_name": "Bewegungsmelder Waschraum Batterie"
+  },
+  "last_changed": "2026-11-15T20:22:00.361206+00:00",
+  "last_reported": "2026-11-15T20:22:00.361206+00:00",
+  "last_updated": "2026-11-15T20:22:00.361206+00:00"
+ },
+ {
+  "entity_id": "sensor.bewegungsmelder_kochbereich_illuminance",
+  "state": "0",
+  "attributes": {
+   "state_class": "measurement",
+   "unit_of_measurement": "lx",
+   "device_class": "illuminance",
+   "friendly_name": "Bewegungsmelder Kochbereich Beleuchtungsstärke"
+  },
+  "last_changed": "2026-11-15T20:22:00.366590+00:00",
+  "last_reported": "2026-11-15T20:22:00.366590+00:00",
+  "last_updated": "2026-11-15T20:22:00.366590+00:00"
+ },
+ {
+  "entity_id": "sensor.bewegungsmelder_kochbereich_battery",
+  "state": "50",
+  "attributes": {
+   "state_class": "measurement",
+   "unit_of_measurement": "%",
+   "device_class": "battery",
+   "friendly_name": "Bewegungsmelder Kochbereich Batterie"
+  },
+  "last_changed": "2026-11-15T20:22:00.365184+00:00",
+  "last_reported": "2026-11-15T20:22:00.365184+00:00",
+  "last_updated": "2026-11-15T20:22:00.365184+00:00"
+ },
+ {
+  "entity_id": "sensor.sensor_terrasse_battery",
+  "state": "79",
+  "attributes": {
+   "state_class": "measurement",
+   "unit_of_measurement": "%",
+   "device_class": "battery",
+   "friendly_name": "Sensor Terrasse Batterie"
+  },
+  "last_changed": "2026-11-15T20:22:00.373110+00:00",
+  "last_reported": "2026-11-15T20:22:00.373110+00:00",
+  "last_updated": "2026-11-15T20:22:00.373110+00:00"
+ },
+ {
+  "entity_id": "sensor.sensor_terrasse_temperature",
+  "state": "8.32",
+  "attributes": {
+   "state_class": "measurement",
+   "unit_of_measurement": "°C",
+   "device_class": "temperature",
+   "friendly_name": "Sensor Terrasse Temperatur"
+  },
+  "last_changed": "2026-11-15T20:44:09.834384+00:00",
+  "last_reported": "2026-11-15T20:44:09.834384+00:00",
+  "last_updated": "2026-11-15T20:44:09.834384+00:00"
+ },
+ {
+  "entity_id": "sensor.sensor_terrasse_humidity",
+  "state": "99.99",
+  "attributes": {
+   "state_class": "measurement",
+   "unit_of_measurement": "%",
+   "device_class": "humidity",
+   "friendly_name": "Sensor Terrasse Luftfeuchtigkeit"
+  },
+  "last_changed": "2026-11-15T20:22:00.373163+00:00",
+  "last_reported": "2026-11-15T20:22:00.373163+00:00",
+  "last_updated": "2026-11-15T20:22:00.373163+00:00"
+ },
+ {
+  "entity_id": "sensor.sensor_terrasse_voltage",
+  "state": "2700",
+  "attributes": {
+   "state_class": "measurement",
+   "unit_of_measurement": "mV",
+   "device_class": "voltage",
+   "friendly_name": "Sensor Terrasse Spannung"
+  },
+  "last_changed": "2026-11-15T20:22:00.373208+00:00",
+  "last_reported": "2026-11-15T20:22:00.373208+00:00",
+  "last_updated": "2026-11-15T20:22:00.373208+00:00"
+ },
+ {
+  "entity_id": "sensor.kontaktsensor_schrank_battery",
+  "state": "100",
+  "attributes": {
+   "state_class": "measurement",
+   "unit_of_measurement": "%",
+   "device_class": "battery",
+   "friendly_name": "Kontaktsensor Schrank Batterie"
+  },
+  "last_changed": "2026-11-15T20:22:00.374549+00:00",
+  "last_reported": "2026-11-15T20:22:00.374549+00:00",
+  "last_updated": "2026-11-15T20:22:00.374549+00:00"
+ },
+ {
+  "entity_id": "sensor.kontaktsensor_schrank_voltage",
+  "state": "3000",
+  "attributes": {
+   "state_class": "measurement",
+   "unit_of_measurement": "mV",
+   "device_class": "voltage",
+   "friendly_name": "Kontaktsensor Schrank Spannung"
+  },
+  "last_changed": "2026-11-15T20:22:00.374443+00:00",
+  "last_reported": "2026-11-15T20:22:00.374443+00:00",
+  "last_updated": "2026-11-15T20:22:00.374443+00:00"
+ },
+ {
+  "entity_id": "sensor.sensor_waschraum_battery",
+  "state": "100",
+  "attributes": {
+   "state_class": "measurement",
+   "unit_of_measurement": "%",
+   "device_class": "battery",
+   "friendly_name": "Sensor Waschraum Batterie"
+  },
+  "last_changed": "2026-11-15T20:22:00.382707+00:00",
+  "last_reported": "2026-11-15T20:22:00.382707+00:00",
+  "last_updated": "2026-11-15T20:22:00.382707+00:00"
+ },
+ {
+  "entity_id": "sensor.sensor_waschraum_temperature",
+  "state": "21.01",
+  "attributes": {
+   "state_class": "measurement",
+   "unit_of_measurement": "°C",
+   "device_class": "temperature",
+   "friendly_name": "Sensor Waschraum Temperatur"
+  },
+  "last_changed": "2026-11-15T20:58:02.247401+00:00",
+  "last_reported": "2026-11-15T20:58:02.247401+00:00",
+  "last_updated": "2026-11-15T20:58:02.247401+00:00"
+ },
+ {
+  "entity_id": "sensor.sensor_waschraum_humidity",
+  "state": "40.16",
+  "attributes": {
+   "state_class": "measurement",
+   "unit_of_measurement": "%",
+   "device_class": "humidity",
+   "friendly_name": "Sensor Waschraum Luftfeuchtigkeit"
+  },
+  "last_changed": "2026-11-15T20:57:31.078614+00:00",
+  "last_reported": "2026-11-15T20:57:31.078614+00:00",
+  "last_updated": "2026-11-15T20:57:31.078614+00:00"
+ },
+ {
+  "entity_id": "sensor.sensor_waschraum_voltage",
+  "state": "2900",
+  "attributes": {
+   "state_class": "measurement",
+   "unit_of_measurement": "mV",
+   "device_class": "voltage",
+   "friendly_name": "Sensor Waschraum Spannung"
+  },
+  "last_changed": "2026-11-15T20:22:00.382503+00:00",
+  "last_reported": "2026-11-15T20:22:00.382503+00:00",
+  "last_updated": "2026-11-15T20:22:00.382503+00:00"
+ },
+ {
+  "entity_id": "sensor.drehknopf_ruheraum_1_action_step_size",
+  "state": "",
+  "attributes": {
+   "friendly_name": "Drehknopf Ruheraum 1 Action step size"
+  },
+  "last_changed": "2026-11-15T20:22:00.391895+00:00",
+  "last_reported": "2026-11-15T20:22:00.391895+00:00",
+  "last_updated": "2026-11-15T20:22:00.391895+00:00"
+ },
+ {
+  "entity_id": "sensor.drehknopf_ruheraum_1_action_transition_time",
+  "state": "unknown",
+  "attributes": {
+   "unit_of_measurement": "s",
+   "friendly_name": "Drehknopf Ruheraum 1 Action transition time"
+  },
+  "last_changed": "2026-11-15T20:21:22.534250+00:00",
+  "last_reported": "2026-11-15T20:21:22.534250+00:00",
+  "last_updated": "2026-11-15T20:21:22.534250+00:00"
+ },
+ {
+  "entity_id": "sensor.drehknopf_ruheraum_1_action_rate",
+  "state": "",
+  "attributes": {
+   "friendly_name": "Drehknopf Ruheraum 1 Action rate"
+  },
+  "last_changed": "2026-11-15T20:22:00.392049+00:00",
+  "last_reported": "2026-11-15T20:22:00.392049+00:00",
+  "last_updated": "2026-11-15T20:22:00.392049+00:00"
+ },
+ {
+  "entity_id": "sensor.drehknopf_ruheraum_1_battery",
+  "state": "100",
+  "attributes": {
+   "state_class": "measurement",
+   "unit_of_measurement": "%",
+   "device_class": "battery",
+   "friendly_name": "Drehknopf Ruheraum 1 Batterie"
+  },
+  "last_changed": "2026-11-15T20:22:00.392000+00:00",
+  "last_reported": "2026-11-15T20:22:00.392000+00:00",
+  "last_updated": "2026-11-15T20:22:00.392000+00:00"
+ },
+ {
+  "entity_id": "sensor.drehknopf_ruheraum_1_action_brightness_delta",
+  "state": "",
+  "attributes": {
+   "friendly_name": "Drehknopf Ruheraum 1 Action brightness delta"
+  },
+  "last_changed": "2026-11-15T20:22:00.392153+00:00",
+  "last_reported": "2026-11-15T20:22:00.392153+00:00",
+  "last_updated": "2026-11-15T20:22:00.392153+00:00"
+ },
+ {
+  "entity_id": "sensor.drehknopf_ruheraum_1_action_color_temperature_delta",
+  "state": "",
+  "attributes": {
+   "friendly_name": "Drehknopf Ruheraum 1 Action color temperature delta"
+  },
+  "last_changed": "2026-11-15T20:22:00.392185+00:00",
+  "last_reported": "2026-11-15T20:22:00.392185+00:00",
+  "last_updated": "2026-11-15T20:22:00.392185+00:00"
+ },
+ {
+  "entity_id": "sensor.drehknopf_ruheraum_2_bett_action_step_size",
+  "state": "",
+  "attributes": {
+   "friendly_name": "Drehknopf Ruheraum 2 (Bett) Action step size"
+  },
+  "last_changed": "2026-11-15T20:22:00.396101+00:00",
+  "last_reported": "2026-11-15T20:22:00.396101+00:00",
+  "last_updated": "2026-11-15T20:22:00.396101+00:00"
+ },
+ {
+  "entity_id": "sensor.drehknopf_ruheraum_2_bett_action_transition_time",
+  "state": "unknown",
+  "attributes": {
+   "unit_of_measurement": "s",
+   "friendly_name": "Drehknopf Ruheraum 2 (Bett) Action transition time"
+  },
+  "last_changed": "2026-11-15T20:21:22.532750+00:00",
+  "last_reported": "2026-11-15T20:21:22.532750+00:00",
+  "last_updated": "2026-11-15T20:21:22.532750+00:00"
+ },
+ {
+  "entity_id": "sensor.drehknopf_ruheraum_2_bett_action_rate",
+  "state": "",
+  "attributes": {
+   "friendly_name": "Drehknopf Ruheraum 2 (Bett) Action rate"
+  },
+  "last_changed": "2026-11-15T20:22:00.396166+00:00",
+  "last_reported": "2026-11-15T20:22:00.396166+00:00",
+  "last_updated": "2026-11-15T20:22:00.396166+00:00"
+ },
+ {
+  "entity_id": "sensor.drehknopf_ruheraum_2_bett_battery",
+  "state": "100",
+  "attributes": {
+   "state_class": "measurement",
+   "unit_of_measurement": "%",
+   "device_class": "battery",
+   "friendly_name": "Drehknopf Ruheraum 2 (Bett) Batterie"
+  },
+  "last_changed": "2026-11-15T20:22:00.395964+00:00",
+  "last_reported": "2026-11-15T20:22:00.395964+00:00",
+  "last_updated": "2026-11-15T20:22:00.395964+00:00"
+ },
+ {
+  "entity_id": "sensor.drehknopf_ruheraum_2_bett_action_brightness_delta",
+  "state": "",
+  "attributes": {
+   "friendly_name": "Drehknopf Ruheraum 2 (Bett) Action brightness delta"
+  },
+  "last_changed": "2026-11-15T20:22:00.396135+00:00",
+  "last_reported": "2026-11-15T20:22:00.396135+00:00",
+  "last_updated": "2026-11-15T20:22:00.396135+00:00"
+ },
+ {
+  "entity_id": "sensor.drehknopf_ruheraum_2_bett_action_color_temperature_delta",
+  "state": "",
+  "attributes": {
+   "friendly_name": "Drehknopf Ruheraum 2 (Bett) Action color temperature delta"
+  },
+  "last_changed": "2026-11-15T20:22:00.396197+00:00",
+  "last_reported": "2026-11-15T20:22:00.396197+00:00",
+  "last_updated": "2026-11-15T20:22:00.396197+00:00"
+ },
+ {
+  "entity_id": "sensor.drehknopf_salon_1_action_step_size",
+  "state": "",
+  "attributes": {
+   "friendly_name": "Drehknopf Salon 1 Action step size"
+  },
+  "last_changed": "2026-11-15T20:22:00.401725+00:00",
+  "last_reported": "2026-11-15T20:22:00.401725+00:00",
+  "last_updated": "2026-11-15T20:22:00.401725+00:00"
+ },
+ {
+  "entity_id": "sensor.drehknopf_salon_1_action_transition_time",
+  "state": "unknown",
+  "attributes": {
+   "unit_of_measurement": "s",
+   "friendly_name": "Drehknopf Salon 1 Action transition time"
+  },
+  "last_changed": "2026-11-15T20:21:22.523418+00:00",
+  "last_reported": "2026-11-15T20:21:22.523418+00:00",
+  "last_updated": "2026-11-15T20:21:22.523418+00:00"
+ },
+ {
+  "entity_id": "sensor.drehknopf_salon_1_action_rate",
+  "state": "",
+  "attributes": {
+   "friendly_name": "Drehknopf Salon 1 Action rate"
+  },
+  "last_changed": "2026-11-15T20:22:00.401695+00:00",
+  "last_reported": "2026-11-15T20:22:00.401695+00:00",
+  "last_updated": "2026-11-15T20:22:00.401695+00:00"
+ },
+ {
+  "entity_id": "sensor.drehknopf_salon_1_battery",
+  "state": "100",
+  "attributes": {
+   "state_class": "measurement",
+   "unit_of_measurement": "%",
+   "device_class": "battery",
+   "friendly_name": "Drehknopf Salon 1 Batterie"
+  },
+  "last_changed": "2026-11-15T20:22:00.401627+00:00",
+  "last_reported": "2026-11-15T20:22:00.401627+00:00",
+  "last_updated": "2026-11-15T20:22:00.401627+00:00"
+ },
+ {
+  "entity_id": "sensor.drehknopf_salon_1_action_brightness_delta",
+  "state": "",
+  "attributes": {
+   "friendly_name": "Drehknopf Salon 1 Action brightness delta"
+  },
+  "last_changed": "2026-11-15T20:22:00.401183+00:00",
+  "last_reported": "2026-11-15T20:22:00.401183+00:00",
+  "last_updated": "2026-11-15T20:22:00.401183+00:00"
+ },
+ {
+  "entity_id": "sensor.drehknopf_salon_1_action_color_temperature_delta",
+  "state": "",
+  "attributes": {
+   "friendly_name": "Drehknopf Salon 1 Action color temperature delta"
+  },
+  "last_changed": "2026-11-15T20:22:00.401523+00:00",
+  "last_reported": "2026-11-15T20:22:00.401523+00:00",
+  "last_updated": "2026-11-15T20:22:00.401523+00:00"
+ },
+ {
+  "entity_id": "sensor.drehknopf_salon_2_action_step_size",
+  "state": "",
+  "attributes": {
+   "friendly_name": "Drehknopf Salon 2 Action step size"
+  },
+  "last_changed": "2026-11-15T20:22:00.403306+00:00",
+  "last_reported": "2026-11-15T20:22:00.403306+00:00",
+  "last_updated": "2026-11-15T20:22:00.403306+00:00"
+ },
+ {
+  "entity_id": "sensor.drehknopf_salon_2_action_transition_time",
+  "state": "unknown",
+  "attributes": {
+   "unit_of_measurement": "s",
+   "friendly_name": "Drehknopf Salon 2 Action transition time"
+  },
+  "last_changed": "2026-11-15T20:21:22.522935+00:00",
+  "last_reported": "2026-11-15T20:21:22.522935+00:00",
+  "last_updated": "2026-11-15T20:21:22.522935+00:00"
+ },
+ {
+  "entity_id": "sensor.drehknopf_salon_2_action_rate",
+  "state": "",
+  "attributes": {
+   "friendly_name": "Drehknopf Salon 2 Action rate"
+  },
+  "last_changed": "2026-11-15T20:22:00.403499+00:00",
+  "last_reported": "2026-11-15T20:22:00.403499+00:00",
+  "last_updated": "2026-11-15T20:22:00.403499+00:00"
+ },
+ {
+  "entity_id": "sensor.drehknopf_salon_2_battery",
+  "state": "100",
+  "attributes": {
+   "state_class": "measurement",
+   "unit_of_measurement": "%",
+   "device_class": "battery",
+   "friendly_name": "Drehknopf Salon 2 Batterie"
+  },
+  "last_changed": "2026-11-15T20:22:00.403454+00:00",
+  "last_reported": "2026-11-15T20:22:00.403454+00:00",
+  "last_updated": "2026-11-15T20:22:00.403454+00:00"
+ },
+ {
+  "entity_id": "sensor.drehknopf_salon_2_action_brightness_delta",
+  "state": "",
+  "attributes": {
+   "friendly_name": "Drehknopf Salon 2 Action brightness delta"
+  },
+  "last_changed": "2026-11-15T20:22:00.403385+00:00",
+  "last_reported": "2026-11-15T20:22:00.403385+00:00",
+  "last_updated": "2026-11-15T20:22:00.403385+00:00"
+ },
+ {
+  "entity_id": "sensor.drehknopf_salon_2_action_color_temperature_delta",
+  "state": "",
+  "attributes": {
+   "friendly_name": "Drehknopf Salon 2 Action color temperature delta"
+  },
+  "last_changed": "2026-11-15T20:22:00.403526+00:00",
+  "last_reported": "2026-11-15T20:22:00.403526+00:00",
+  "last_updated": "2026-11-15T20:22:00.403526+00:00"
+ },
+ {
+  "entity_id": "sensor.drehknopf_kochbereich_action_step_size",
+  "state": "",
+  "attributes": {
+   "friendly_name": "Drehknopf Kochbereich Action step size"
+  },
+  "last_changed": "2026-11-15T20:22:00.406120+00:00",
+  "last_reported": "2026-11-15T20:22:00.406120+00:00",
+  "last_updated": "2026-11-15T20:22:00.406120+00:00"
+ },
+ {
+  "entity_id": "sensor.drehknopf_kochbereich_action_transition_time",
+  "state": "unknown",
+  "attributes": {
+   "unit_of_measurement": "s",
+   "friendly_name": "Drehknopf Kochbereich Action transition time"
+  },
+  "last_changed": "2026-11-15T20:21:22.519315+00:00",
+  "last_reported": "2026-11-15T20:21:22.519315+00:00",
+  "last_updated": "2026-11-15T20:21:22.519315+00:00"
+ },
+ {
+  "entity_id": "sensor.drehknopf_kochbereich_action_rate",
+  "state": "",
+  "attributes": {
+   "friendly_name": "Drehknopf Kochbereich Action rate"
+  },
+  "last_changed": "2026-11-15T20:22:00.406146+00:00",
+  "last_reported": "2026-11-15T20:22:00.406146+00:00",
+  "last_updated": "2026-11-15T20:22:00.406146+00:00"
+ },
+ {
+  "entity_id": "sensor.drehknopf_kochbereich_battery",
+  "state": "100",
+  "attributes": {
+   "state_class": "measurement",
+   "unit_of_measurement": "%",
+   "device_class": "battery",
+   "friendly_name": "Drehknopf Kochbereich Batterie"
+  },
+  "last_changed": "2026-11-15T20:22:00.405905+00:00",
+  "last_reported": "2026-11-15T20:22:00.405905+00:00",
+  "last_updated": "2026-11-15T20:22:00.405905+00:00"
+ },
+ {
+  "entity_id": "sensor.drehknopf_kochbereich_action_brightness_delta",
+  "state": "",
+  "attributes": {
+   "friendly_name": "Drehknopf Kochbereich Action brightness delta"
+  },
+  "last_changed": "2026-11-15T20:22:00.406063+00:00",
+  "last_reported": "2026-11-15T20:22:00.406063+00:00",
+  "last_updated": "2026-11-15T20:22:00.406063+00:00"
+ },
+ {
+  "entity_id": "sensor.drehknopf_kochbereich_action_color_temperature_delta",
+  "state": "",
+  "attributes": {
+   "friendly_name": "Drehknopf Kochbereich Action color temperature delta"
+  },
+  "last_changed": "2026-11-15T20:22:00.406092+00:00",
+  "last_reported": "2026-11-15T20:22:00.406092+00:00",
+  "last_updated": "2026-11-15T20:22:00.406092+00:00"
+ },
+ {
+  "entity_id": "sensor.drehknopf_waschraum_action_step_size",
+  "state": "",
+  "attributes": {
+   "friendly_name": "Drehknopf Waschraum Action step size"
+  },
+  "last_changed": "2026-11-15T20:22:00.407508+00:00",
+  "last_reported": "2026-11-15T20:22:00.407508+00:00",
+  "last_updated": "2026-11-15T20:22:00.407508+00:00"
+ },
+ {
+  "entity_id": "sensor.drehknopf_waschraum_action_transition_time",
+  "state": "unknown",
+  "attributes": {
+   "unit_of_measurement": "s",
+   "friendly_name": "Drehknopf Waschraum Action transition time"
+  },
+  "last_changed": "2026-11-15T20:21:22.531536+00:00",
+  "last_reported": "2026-11-15T20:21:22.531536+00:00",
+  "last_updated": "2026-11-15T20:21:22.531536+00:00"
+ },
+ {
+  "entity_id": "sensor.drehknopf_waschraum_action_rate",
+  "state": "",
+  "attributes": {
+   "friendly_name": "Drehknopf Waschraum Action rate"
+  },
+  "last_changed": "2026-11-15T20:22:00.407445+00:00",
+  "last_reported": "2026-11-15T20:22:00.407445+00:00",
+  "last_updated": "2026-11-15T20:22:00.407445+00:00"
+ },
+ {
+  "entity_id": "sensor.drehknopf_waschraum_battery",
+  "state": "100",
+  "attributes": {
+   "state_class": "measurement",
+   "unit_of_measurement": "%",
+   "device_class": "battery",
+   "friendly_name": "Drehknopf Waschraum Batterie"
+  },
+  "last_changed": "2026-11-15T20:22:00.407558+00:00",
+  "last_reported": "2026-11-15T20:22:00.407558+00:00",
+  "last_updated": "2026-11-15T20:22:00.407558+00:00"
+ },
+ {
+  "entity_id": "sensor.drehknopf_waschraum_action_brightness_delta",
+  "state": "",
+  "attributes": {
+   "friendly_name": "Drehknopf Waschraum Action brightness delta"
+  },
+  "last_changed": "2026-11-15T20:22:00.407324+00:00",
+  "last_reported": "2026-11-15T20:22:00.407324+00:00",
+  "last_updated": "2026-11-15T20:22:00.407324+00:00"
+ },
+ {
+  "entity_id": "sensor.drehknopf_waschraum_action_color_temperature_delta",
+  "state": "",
+  "attributes": {
+   "friendly_name": "Drehknopf Waschraum Action color temperature delta"
+  },
+  "last_changed": "2026-11-15T20:22:00.407398+00:00",
+  "last_reported": "2026-11-15T20:22:00.407398+00:00",
+  "last_updated": "2026-11-15T20:22:00.407398+00:00"
+ },
+ {
+  "entity_id": "sensor.0x00124b000000001e_battery",
+  "state": "100",
+  "attributes": {
+   "state_class": "measurement",
+   "unit_of_measurement": "%",
+   "device_class": "battery",
+   "friendly_name": "Taster Medienwand Batterie"
+  },
+  "last_changed": "2026-11-15T20:22:00.431318+00:00",
+  "last_reported": "2026-11-15T20:22:00.431318+00:00",
+  "last_updated": "2026-11-15T20:22:00.431318+00:00"
+ },
+ {
+  "entity_id": "sensor.prasenz_waschraum_illuminance",
+  "state": "0",
+  "attributes": {
+   "state_class": "measurement",
+   "unit_of_measurement": "lx",
+   "device_class": "illuminance",
+   "friendly_name": "Präsenz Waschraum Beleuchtungsstärke"
+  },
+  "last_changed": "2026-11-15T20:22:00.444675+00:00",
+  "last_reported": "2026-11-15T20:22:00.444675+00:00",
+  "last_updated": "2026-11-15T20:22:00.444675+00:00"
+ },
+ {
+  "entity_id": "sensor.prasenz_waschraum_temperature",
+  "state": "20.9",
+  "attributes": {
+   "state_class": "measurement",
+   "unit_of_measurement": "°C",
+   "device_class": "temperature",
+   "friendly_name": "Präsenz Waschraum Temperatur"
+  },
+  "last_changed": "2026-11-15T20:22:00.444462+00:00",
+  "last_reported": "2026-11-15T20:22:00.444462+00:00",
+  "last_updated": "2026-11-15T20:22:00.444462+00:00"
+ },
+ {
+  "entity_id": "sensor.prasenz_waschraum_humidity",
+  "state": "47",
+  "attributes": {
+   "state_class": "measurement",
+   "unit_of_measurement": "%",
+   "device_class": "humidity",
+   "friendly_name": "Präsenz Waschraum Luftfeuchtigkeit"
+  },
+  "last_changed": "2026-11-15T20:58:52.614193+00:00",
+  "last_reported": "2026-11-15T20:58:52.614193+00:00",
+  "last_updated": "2026-11-15T20:58:52.614193+00:00"
+ },
+ {
+  "entity_id": "sensor.prasenz_waschraum_battery",
+  "state": "90",
+  "attributes": {
+   "state_class": "measurement",
+   "unit_of_measurement": "%",
+   "device_class": "battery",
+   "friendly_name": "Präsenz Waschraum Batterie"
+  },
+  "last_changed": "2026-11-15T20:22:00.443156+00:00",
+  "last_reported": "2026-11-15T20:22:00.443156+00:00",
+  "last_updated": "2026-11-15T20:22:00.443156+00:00"
+ },
+ {
+  "entity_id": "sensor.klimadisplay_waschraum_battery",
+  "state": "59",
+  "attributes": {
+   "state_class": "measurement",
+   "unit_of_measurement": "%",
+   "device_class": "battery",
+   "friendly_name": "Klimadisplay Waschraum Batterie"
+  },
+  "last_changed": "2026-11-15T20:22:00.445963+00:00",
+  "last_reported": "2026-11-15T20:22:00.445963+00:00",
+  "last_updated": "2026-11-15T20:22:00.445963+00:00"
+ },
+ {
+  "entity_id": "sensor.klimadisplay_waschraum_temperature",
+  "state": "21.12",
+  "attributes": {
+   "state_class": "measurement",
+   "unit_of_measurement": "°C",
+   "device_class": "temperature",
+   "friendly_name": "Klimadisplay Waschraum Temperatur"
+  },
+  "last_changed": "2026-11-15T20:22:00.445841+00:00",
+  "last_reported": "2026-11-15T20:22:00.445841+00:00",
+  "last_updated": "2026-11-15T20:22:00.445841+00:00"
+ },
+ {
+  "entity_id": "sensor.klimadisplay_waschraum_humidity",
+  "state": "42.06",
+  "attributes": {
+   "state_class": "measurement",
+   "unit_of_measurement": "%",
+   "device_class": "humidity",
+   "friendly_name": "Klimadisplay Waschraum Luftfeuchtigkeit"
+  },
+  "last_changed": "2026-11-15T20:29:48.273858+00:00",
+  "last_reported": "2026-11-15T20:29:48.273858+00:00",
+  "last_updated": "2026-11-15T20:29:48.273858+00:00"
+ },
+ {
+  "entity_id": "sensor.klimadisplay_waschraum_voltage",
+  "state": "2600",
+  "attributes": {
+   "state_class": "measurement",
+   "unit_of_measurement": "mV",
+   "device_class": "voltage",
+   "friendly_name": "Klimadisplay Waschraum Spannung"
+  },
+  "last_changed": "2026-11-15T20:22:00.446044+00:00",
+  "last_reported": "2026-11-15T20:22:00.446044+00:00",
+  "last_updated": "2026-11-15T20:22:00.446044+00:00"
+ },
+ {
+  "entity_id": "sensor.klimadisplay_ruheraum_battery",
+  "state": "50",
+  "attributes": {
+   "state_class": "measurement",
+   "unit_of_measurement": "%",
+   "device_class": "battery",
+   "friendly_name": "Klimadisplay Ruheraum Batterie"
+  },
+  "last_changed": "2026-11-15T20:22:00.448691+00:00",
+  "last_reported": "2026-11-15T20:22:00.448691+00:00",
+  "last_updated": "2026-11-15T20:22:00.448691+00:00"
+ },
+ {
+  "entity_id": "sensor.klimadisplay_ruheraum_temperature",
+  "state": "22.17",
+  "attributes": {
+   "state_class": "measurement",
+   "unit_of_measurement": "°C",
+   "device_class": "temperature",
+   "friendly_name": "Klimadisplay Ruheraum Temperatur"
+  },
+  "last_changed": "2026-11-15T20:51:47.497239+00:00",
+  "last_reported": "2026-11-15T20:51:47.497239+00:00",
+  "last_updated": "2026-11-15T20:51:47.497239+00:00"
+ },
+ {
+  "entity_id": "sensor.klimadisplay_ruheraum_humidity",
+  "state": "40.7",
+  "attributes": {
+   "state_class": "measurement",
+   "unit_of_measurement": "%",
+   "device_class": "humidity",
+   "friendly_name": "Klimadisplay Ruheraum Luftfeuchtigkeit"
+  },
+  "last_changed": "2026-11-15T20:53:20.727766+00:00",
+  "last_reported": "2026-11-15T20:53:20.727766+00:00",
+  "last_updated": "2026-11-15T20:53:20.727766+00:00"
+ },
+ {
+  "entity_id": "sensor.klimadisplay_ruheraum_voltage",
+  "state": "2500",
+  "attributes": {
+   "state_class": "measurement",
+   "unit_of_measurement": "mV",
+   "device_class": "voltage",
+   "friendly_name": "Klimadisplay Ruheraum Spannung"
+  },
+  "last_changed": "2026-11-15T20:22:00.448502+00:00",
+  "last_reported": "2026-11-15T20:22:00.448502+00:00",
+  "last_updated": "2026-11-15T20:22:00.448502+00:00"
+ },
+ {
+  "entity_id": "sensor.klimadisplay_salon_battery",
+  "state": "86",
+  "attributes": {
+   "state_class": "measurement",
+   "unit_of_measurement": "%",
+   "device_class": "battery",
+   "friendly_name": "Klimadisplay Salon Batterie"
+  },
+  "last_changed": "2026-11-15T20:22:00.454914+00:00",
+  "last_reported": "2026-11-15T20:22:00.454914+00:00",
+  "last_updated": "2026-11-15T20:22:00.454914+00:00"
+ },
+ {
+  "entity_id": "sensor.klimadisplay_salon_temperature",
+  "state": "21.01",
+  "attributes": {
+   "state_class": "measurement",
+   "unit_of_measurement": "°C",
+   "device_class": "temperature",
+   "friendly_name": "Klimadisplay Salon Temperatur"
+  },
+  "last_changed": "2026-11-15T20:49:39.436016+00:00",
+  "last_reported": "2026-11-15T20:49:39.436016+00:00",
+  "last_updated": "2026-11-15T20:49:39.436016+00:00"
+ },
+ {
+  "entity_id": "sensor.klimadisplay_salon_humidity",
+  "state": "41.56",
+  "attributes": {
+   "state_class": "measurement",
+   "unit_of_measurement": "%",
+   "device_class": "humidity",
+   "friendly_name": "Klimadisplay Salon Luftfeuchtigkeit"
+  },
+  "last_changed": "2026-11-15T20:50:41.743634+00:00",
+  "last_reported": "2026-11-15T20:50:41.743634+00:00",
+  "last_updated": "2026-11-15T20:50:41.743634+00:00"
+ },
+ {
+  "entity_id": "sensor.klimadisplay_salon_voltage",
+  "state": "2700",
+  "attributes": {
+   "state_class": "measurement",
+   "unit_of_measurement": "mV",
+   "device_class": "voltage",
+   "friendly_name": "Klimadisplay Salon Spannung"
+  },
+  "last_changed": "2026-11-15T20:22:00.454509+00:00",
+  "last_reported": "2026-11-15T20:22:00.454509+00:00",
+  "last_updated": "2026-11-15T20:22:00.454509+00:00"
+ },
+ {
+  "entity_id": "sensor.prasenz_salon_illuminance",
+  "state": "0",
+  "attributes": {
+   "state_class": "measurement",
+   "unit_of_measurement": "lx",
+   "device_class": "illuminance",
+   "friendly_name": "Präsenz Salon Beleuchtungsstärke"
+  },
+  "last_changed": "2026-11-15T20:56:54.329308+00:00",
+  "last_reported": "2026-11-15T20:56:54.329308+00:00",
+  "last_updated": "2026-11-15T20:56:54.329308+00:00"
+ },
+ {
+  "entity_id": "sensor.prasenz_salon_temperature",
+  "state": "21.2",
+  "attributes": {
+   "state_class": "measurement",
+   "unit_of_measurement": "°C",
+   "device_class": "temperature",
+   "friendly_name": "Präsenz Salon Temperatur"
+  },
+  "last_changed": "2026-11-15T20:22:00.457900+00:00",
+  "last_reported": "2026-11-15T20:22:00.457900+00:00",
+  "last_updated": "2026-11-15T20:22:00.457900+00:00"
+ },
+ {
+  "entity_id": "sensor.prasenz_salon_humidity",
+  "state": "44",
+  "attributes": {
+   "state_class": "measurement",
+   "unit_of_measurement": "%",
+   "device_class": "humidity",
+   "friendly_name": "Präsenz Salon Luftfeuchtigkeit"
+  },
+  "last_changed": "2026-11-15T20:22:00.457822+00:00",
+  "last_reported": "2026-11-15T20:22:00.457822+00:00",
+  "last_updated": "2026-11-15T20:22:00.457822+00:00"
+ },
+ {
+  "entity_id": "sensor.prasenz_salon_battery",
+  "state": "90",
+  "attributes": {
+   "state_class": "measurement",
+   "unit_of_measurement": "%",
+   "device_class": "battery",
+   "friendly_name": "Präsenz Salon Batterie"
+  },
+  "last_changed": "2026-11-15T20:22:00.458005+00:00",
+  "last_reported": "2026-11-15T20:22:00.458005+00:00",
+  "last_updated": "2026-11-15T20:22:00.458005+00:00"
+ },
+ {
+  "entity_id": "sensor.prasenz_salon_2_illuminance",
+  "state": "0",
+  "attributes": {
+   "state_class": "measurement",
+   "unit_of_measurement": "lx",
+   "device_class": "illuminance",
+   "friendly_name": "Präsenz Salon 2 Beleuchtungsstärke"
+  },
+  "last_changed": "2026-11-15T20:55:00.845193+00:00",
+  "last_reported": "2026-11-15T20:55:00.845193+00:00",
+  "last_updated": "2026-11-15T20:55:00.845193+00:00"
+ },
+ {
+  "entity_id": "sensor.prasenz_salon_2_temperature",
+  "state": "22",
+  "attributes": {
+   "state_class": "measurement",
+   "unit_of_measurement": "°C",
+   "device_class": "temperature",
+   "friendly_name": "Präsenz Salon 2 Temperatur"
+  },
+  "last_changed": "2026-11-15T20:49:06.583020+00:00",
+  "last_reported": "2026-11-15T20:49:06.583020+00:00",
+  "last_updated": "2026-11-15T20:49:06.583020+00:00"
+ },
+ {
+  "entity_id": "sensor.prasenz_salon_2_humidity",
+  "state": "44",
+  "attributes": {
+   "state_class": "measurement",
+   "unit_of_measurement": "%",
+   "device_class": "humidity",
+   "friendly_name": "Präsenz Salon 2 Luftfeuchtigkeit"
+  },
+  "last_changed": "2026-11-15T20:49:06.782371+00:00",
+  "last_reported": "2026-11-15T20:49:06.782371+00:00",
+  "last_updated": "2026-11-15T20:49:06.782371+00:00"
+ },
+ {
+  "entity_id": "sensor.prasenz_salon_2_battery",
+  "state": "90",
+  "attributes": {
+   "state_class": "measurement",
+   "unit_of_measurement": "%",
+   "device_class": "battery",
+   "friendly_name": "Präsenz Salon 2 Batterie"
+  },
+  "last_changed": "2026-11-15T20:22:00.461308+00:00",
+  "last_reported": "2026-11-15T20:22:00.461308+00:00",
+  "last_updated": "2026-11-15T20:22:00.461308+00:00"
+ },
+ {
+  "entity_id": "sensor.steckdose_messung_1_power",
+  "state": "0",
+  "attributes": {
+   "state_class": "measurement",
+   "unit_of_measurement": "W",
+   "device_class": "power",
+   "friendly_name": "Steckdose Messung 1 Leistung"
+  },
+  "last_changed": "2026-11-15T20:22:00.468964+00:00",
+  "last_reported": "2026-11-15T20:22:00.468964+00:00",
+  "last_updated": "2026-11-15T20:22:00.468964+00:00"
+ },
+ {
+  "entity_id": "sensor.steckdose_messung_1_current",
+  "state": "0",
+  "attributes": {
+   "state_class": "measurement",
+   "unit_of_measurement": "A",
+   "device_class": "current",
+   "friendly_name": "Steckdose Messung 1 Stromstärke"
+  },
+  "last_changed": "2026-11-15T20:22:00.468152+00:00",
+  "last_reported": "2026-11-15T20:22:00.468152+00:00",
+  "last_updated": "2026-11-15T20:22:00.468152+00:00"
+ },
+ {
+  "entity_id": "sensor.steckdose_messung_1_voltage",
+  "state": "243",
+  "attributes": {
+   "state_class": "measurement",
+   "unit_of_measurement": "V",
+   "device_class": "voltage",
+   "friendly_name": "Steckdose Messung 1 Spannung"
+  },
+  "last_changed": "2026-11-15T20:43:05.366044+00:00",
+  "last_reported": "2026-11-15T20:43:05.366044+00:00",
+  "last_updated": "2026-11-15T20:43:05.366044+00:00"
+ },
+ {
+  "entity_id": "sensor.steckdose_messung_1_energy",
+  "state": "0",
+  "attributes": {
+   "state_class": "total_increasing",
+   "unit_of_measurement": "kWh",
+   "device_class": "energy",
+   "friendly_name": "Steckdose Messung 1 Energie"
+  },
+  "last_changed": "2026-11-15T20:22:00.469449+00:00",
+  "last_reported": "2026-11-15T20:22:00.469449+00:00",
+  "last_updated": "2026-11-15T20:22:00.469449+00:00"
+ },
+ {
+  "entity_id": "sensor.steckdose_messung_2_energy",
+  "state": "2.18",
+  "attributes": {
+   "state_class": "total_increasing",
+   "unit_of_measurement": "kWh",
+   "device_class": "energy",
+   "friendly_name": "Steckdose Messung 2 Energie"
+  },
+  "last_changed": "2026-11-15T20:22:00.476884+00:00",
+  "last_reported": "2026-11-15T20:22:00.476884+00:00",
+  "last_updated": "2026-11-15T20:22:00.476884+00:00"
+ },
+ {
+  "entity_id": "sensor.steckdose_messung_2_current",
+  "state": "0",
+  "attributes": {
+   "state_class": "measurement",
+   "unit_of_measurement": "A",
+   "device_class": "current",
+   "friendly_name": "Steckdose Messung 2 Stromstärke"
+  },
+  "last_changed": "2026-11-15T20:22:00.476927+00:00",
+  "last_reported": "2026-11-15T20:22:00.476927+00:00",
+  "last_updated": "2026-11-15T20:22:00.476927+00:00"
+ },
+ {
+  "entity_id": "sensor.steckdose_messung_2_voltage",
+  "state": "231.27",
+  "attributes": {
+   "state_class": "measurement",
+   "unit_of_measurement": "V",
+   "device_class": "voltage",
+   "friendly_name": "Steckdose Messung 2 Spannung"
+  },
+  "last_changed": "2026-11-15T20:30:44.951602+00:00",
+  "last_reported": "2026-11-15T20:30:44.951602+00:00",
+  "last_updated": "2026-11-15T20:30:44.951602+00:00"
+ },
+ {
+  "entity_id": "sensor.steckdose_messung_2_power",
+  "state": "0",
+  "attributes": {
+   "state_class": "measurement",
+   "unit_of_measurement": "W",
+   "device_class": "power",
+   "friendly_name": "Steckdose Messung 2 Leistung"
+  },
+  "last_changed": "2026-11-15T20:22:00.475159+00:00",
+  "last_reported": "2026-11-15T20:22:00.475159+00:00",
+  "last_updated": "2026-11-15T20:22:00.475159+00:00"
+ },
+ {
+  "entity_id": "sensor.steckdose_messung_2_energy_yesterday",
+  "state": "0",
+  "attributes": {
+   "state_class": "total_increasing",
+   "unit_of_measurement": "kWh",
+   "device_class": "energy",
+   "friendly_name": "Steckdose Messung 2 Energie"
+  },
+  "last_changed": "2026-11-15T20:22:00.475262+00:00",
+  "last_reported": "2026-11-15T20:22:00.475262+00:00",
+  "last_updated": "2026-11-15T20:22:00.475262+00:00"
+ },
+ {
+  "entity_id": "sensor.steckdose_messung_2_energy_today",
+  "state": "0",
+  "attributes": {
+   "state_class": "total_increasing",
+   "unit_of_measurement": "kWh",
+   "device_class": "energy",
+   "friendly_name": "Steckdose Messung 2 Energie"
+  },
+  "last_changed": "2026-11-15T20:22:00.476548+00:00",
+  "last_reported": "2026-11-15T20:22:00.476548+00:00",
+  "last_updated": "2026-11-15T20:22:00.476548+00:00"
+ },
+ {
+  "entity_id": "sensor.steckdose_messung_2_energy_month",
+  "state": "2.181",
+  "attributes": {
+   "state_class": "total_increasing",
+   "unit_of_measurement": "kWh",
+   "device_class": "energy",
+   "friendly_name": "Steckdose Messung 2 Energie"
+  },
+  "last_changed": "2026-11-15T20:22:00.476724+00:00",
+  "last_reported": "2026-11-15T20:22:00.476724+00:00",
+  "last_updated": "2026-11-15T20:22:00.476724+00:00"
+ },
+ {
+  "entity_id": "sensor.steckdose_messung_2_overload_protection",
+  "state": "{'enable_max_voltage': 'DISABLE', 'enable_min_current': 'DISABLE', 'enable_min_power': 'DISABLE', 'enable_min_voltage': 'DISABLE', 'max_current': 0, 'max_power': 0, 'max_voltage': 0, 'min_current': 0, 'min_power': 0, 'min_voltage': 0}",
+  "attributes": {
+   "friendly_name": "Steckdose Messung 2 Overload protection"
+  },
+  "last_changed": "2026-11-15T20:22:00.476595+00:00",
+  "last_reported": "2026-11-15T20:22:00.476595+00:00",
+  "last_updated": "2026-11-15T20:22:00.476595+00:00"
+ },
+ {
+  "entity_id": "sensor.steckdose_messung_3_power",
+  "state": "294",
+  "attributes": {
+   "state_class": "measurement",
+   "unit_of_measurement": "W",
+   "device_class": "power",
+   "friendly_name": "Steckdose Messung 3 Leistung"
+  },
+  "last_changed": "2026-11-15T20:58:56.859337+00:00",
+  "last_reported": "2026-11-15T20:58:56.859337+00:00",
+  "last_updated": "2026-11-15T20:58:56.859337+00:00"
+ },
+ {
+  "entity_id": "sensor.steckdose_messung_3_current",
+  "state": "1.29",
+  "attributes": {
+   "state_class": "measurement",
+   "unit_of_measurement": "A",
+   "device_class": "current",
+   "friendly_name": "Steckdose Messung 3 Stromstärke"
+  },
+  "last_changed": "2026-11-15T20:58:44.859622+00:00",
+  "last_reported": "2026-11-15T20:58:44.859622+00:00",
+  "last_updated": "2026-11-15T20:58:44.859622+00:00"
+ },
+ {
+  "entity_id": "sensor.steckdose_messung_3_voltage",
+  "state": "231",
+  "attributes": {
+   "state_class": "measurement",
+   "unit_of_measurement": "V",
+   "device_class": "voltage",
+   "friendly_name": "Steckdose Messung 3 Spannung"
+  },
+  "last_changed": "2026-11-15T20:21:22.645356+00:00",
+  "last_reported": "2026-11-15T20:21:22.645356+00:00",
+  "last_updated": "2026-11-15T20:21:22.645356+00:00"
+ },
+ {
+  "entity_id": "sensor.steckdose_messung_3_energy",
+  "state": "17.24",
+  "attributes": {
+   "state_class": "total_increasing",
+   "unit_of_measurement": "kWh",
+   "device_class": "energy",
+   "friendly_name": "Steckdose Messung 3 Energie"
+  },
+  "last_changed": "2026-11-15T20:57:22.908919+00:00",
+  "last_reported": "2026-11-15T20:57:22.908919+00:00",
+  "last_updated": "2026-11-15T20:57:22.908919+00:00"
+ },
+ {
+  "entity_id": "sensor.steckdose_messung_4_power",
+  "state": "41",
+  "attributes": {
+   "state_class": "measurement",
+   "unit_of_measurement": "W",
+   "device_class": "power",
+   "friendly_name": "Steckdose Messung 4 Leistung"
+  },
+  "last_changed": "2026-11-15T20:54:51.576399+00:00",
+  "last_reported": "2026-11-15T20:54:51.576399+00:00",
+  "last_updated": "2026-11-15T20:54:51.576399+00:00"
+ },
+ {
+  "entity_id": "sensor.steckdose_messung_4_current",
+  "state": "0.33",
+  "attributes": {
+   "state_class": "measurement",
+   "unit_of_measurement": "A",
+   "device_class": "current",
+   "friendly_name": "Steckdose Messung 4 Stromstärke"
+  },
+  "last_changed": "2026-11-15T20:54:51.576500+00:00",
+  "last_reported": "2026-11-15T20:54:51.576500+00:00",
+  "last_updated": "2026-11-15T20:54:51.576500+00:00"
+ },
+ {
+  "entity_id": "sensor.steckdose_messung_4_voltage",
+  "state": "234",
+  "attributes": {
+   "state_class": "measurement",
+   "unit_of_measurement": "V",
+   "device_class": "voltage",
+   "friendly_name": "Steckdose Messung 4 Spannung"
+  },
+  "last_changed": "2026-11-15T20:54:51.576222+00:00",
+  "last_reported": "2026-11-15T20:54:51.576222+00:00",
+  "last_updated": "2026-11-15T20:54:51.576222+00:00"
+ },
+ {
+  "entity_id": "sensor.steckdose_messung_4_energy",
+  "state": "6.57",
+  "attributes": {
+   "state_class": "total_increasing",
+   "unit_of_measurement": "kWh",
+   "device_class": "energy",
+   "friendly_name": "Steckdose Messung 4 Energie"
+  },
+  "last_changed": "2026-11-15T20:49:31.634451+00:00",
+  "last_reported": "2026-11-15T20:49:31.634451+00:00",
+  "last_updated": "2026-11-15T20:49:31.634451+00:00"
+ },
+ {
+  "entity_id": "sensor.steckdose_messung_5_power",
+  "state": "0",
+  "attributes": {
+   "state_class": "measurement",
+   "unit_of_measurement": "W",
+   "device_class": "power",
+   "friendly_name": "Steckdose Messung 5 Leistung"
+  },
+  "last_changed": "2026-11-15T20:58:56.111161+00:00",
+  "last_reported": "2026-11-15T20:58:56.111161+00:00",
+  "last_updated": "2026-11-15T20:58:56.111161+00:00"
+ },
+ {
+  "entity_id": "sensor.steckdose_messung_5_current",
+  "state": "0",
+  "attributes": {
+   "state_class": "measurement",
+   "unit_of_measurement": "A",
+   "device_class": "current",
+   "friendly_name": "Steckdose Messung 5 Stromstärke"
+  },
+  "last_changed": "2026-11-15T20:48:35.867728+00:00",
+  "last_reported": "2026-11-15T20:48:35.867728+00:00",
+  "last_updated": "2026-11-15T20:48:35.867728+00:00"
+ },
+ {
+  "entity_id": "sensor.steckdose_messung_5_voltage",
+  "state": "232",
+  "attributes": {
+   "state_class": "measurement",
+   "unit_of_measurement": "V",
+   "device_class": "voltage",
+   "friendly_name": "Steckdose Messung 5 Spannung"
+  },
+  "last_changed": "2026-11-15T20:58:45.109581+00:00",
+  "last_reported": "2026-11-15T20:58:45.109581+00:00",
+  "last_updated": "2026-11-15T20:58:45.109581+00:00"
+ },
+ {
+  "entity_id": "sensor.steckdose_messung_5_energy",
+  "state": "4.58",
+  "attributes": {
+   "state_class": "total_increasing",
+   "unit_of_measurement": "kWh",
+   "device_class": "energy",
+   "friendly_name": "Steckdose Messung 5 Energie"
+  },
+  "last_changed": "2026-11-15T20:58:53.232945+00:00",
+  "last_reported": "2026-11-15T20:58:53.232945+00:00",
+  "last_updated": "2026-11-15T20:58:53.232945+00:00"
+ },
+ {
+  "entity_id": "sensor.steckdose_messung_6_power",
+  "state": "0",
+  "attributes": {
+   "state_class": "measurement",
+   "unit_of_measurement": "W",
+   "device_class": "power",
+   "friendly_name": "Steckdose Messung 6 Leistung"
+  },
+  "last_changed": "2026-11-15T20:25:15.293060+00:00",
+  "last_reported": "2026-11-15T20:25:15.293060+00:00",
+  "last_updated": "2026-11-15T20:25:15.293060+00:00"
+ },
+ {
+  "entity_id": "sensor.steckdose_messung_6_current",
+  "state": "0",
+  "attributes": {
+   "state_class": "measurement",
+   "unit_of_measurement": "A",
+   "device_class": "current",
+   "friendly_name": "Steckdose Messung 6 Stromstärke"
+  },
+  "last_changed": "2026-11-15T20:25:15.292976+00:00",
+  "last_reported": "2026-11-15T20:25:15.292976+00:00",
+  "last_updated": "2026-11-15T20:25:15.292976+00:00"
+ },
+ {
+  "entity_id": "sensor.steckdose_messung_6_voltage",
+  "state": "232",
+  "attributes": {
+   "state_class": "measurement",
+   "unit_of_measurement": "V",
+   "device_class": "voltage",
+   "friendly_name": "Steckdose Messung 6 Spannung"
+  },
+  "last_changed": "2026-11-15T20:57:31.219127+00:00",
+  "last_reported": "2026-11-15T20:57:31.219127+00:00",
+  "last_updated": "2026-11-15T20:57:31.219127+00:00"
+ },
+ {
+  "entity_id": "sensor.steckdose_messung_6_energy",
+  "state": "2.5",
+  "attributes": {
+   "state_class": "total_increasing",
+   "unit_of_measurement": "kWh",
+   "device_class": "energy",
+   "friendly_name": "Steckdose Messung 6 Energie"
+  },
+  "last_changed": "2026-11-15T20:22:00.487780+00:00",
+  "last_reported": "2026-11-15T20:22:00.487780+00:00",
+  "last_updated": "2026-11-15T20:22:00.487780+00:00"
+ },
+ {
+  "entity_id": "switch.salon_oben_1_tur_do_not_disturb",
+  "state": "unknown",
+  "attributes": {
+   "friendly_name": "Salon Oben 1 (Tür) Do not disturb"
+  },
+  "last_changed": "2026-11-15T20:21:22.532406+00:00",
+  "last_reported": "2026-11-15T20:21:22.532406+00:00",
+  "last_updated": "2026-11-15T20:21:22.532406+00:00"
+ },
+ {
+  "entity_id": "switch.salon_oben_2_fenster_do_not_disturb",
+  "state": "unknown",
+  "attributes": {
+   "friendly_name": "Salon Oben 2 (Fenster) Do not disturb"
+  },
+  "last_changed": "2026-11-15T20:21:22.521489+00:00",
+  "last_reported": "2026-11-15T20:21:22.521489+00:00",
+  "last_updated": "2026-11-15T20:21:22.521489+00:00"
+ },
+ {
+  "entity_id": "switch.dekolampe",
+  "state": "on",
+  "attributes": {
+   "friendly_name": "Dekolampe"
+  },
+  "last_changed": "2026-11-15T20:22:00.340851+00:00",
+  "last_reported": "2026-11-15T20:22:00.340851+00:00",
+  "last_updated": "2026-11-15T20:22:00.340851+00:00"
+ },
+ {
+  "entity_id": "switch.kochbereich_arbeitslicht_2_do_not_disturb",
+  "state": "unknown",
+  "attributes": {
+   "friendly_name": "Kochbereich Arbeitslicht 2 Do not disturb"
+  },
+  "last_changed": "2026-11-15T20:21:22.521846+00:00",
+  "last_reported": "2026-11-15T20:21:22.521846+00:00",
+  "last_updated": "2026-11-15T20:21:22.521846+00:00"
+ },
+ {
+  "entity_id": "switch.kochbereich_arbeitslicht_1_do_not_disturb",
+  "state": "unknown",
+  "attributes": {
+   "friendly_name": "Kochbereich Arbeitslicht 1 Do not disturb"
+  },
+  "last_changed": "2026-11-15T20:21:22.531182+00:00",
+  "last_reported": "2026-11-15T20:21:22.531182+00:00",
+  "last_updated": "2026-11-15T20:21:22.531182+00:00"
+ },
+ {
+  "entity_id": "switch.lampe_decke_ruheraum_do_not_disturb",
+  "state": "unknown",
+  "attributes": {
+   "friendly_name": "Lampe Decke Ruheraum Do not disturb"
+  },
+  "last_changed": "2026-11-15T20:21:22.533562+00:00",
+  "last_reported": "2026-11-15T20:21:22.533562+00:00",
+  "last_updated": "2026-11-15T20:21:22.533562+00:00"
+ },
+ {
+  "entity_id": "switch.lampe_waschraum_do_not_disturb",
+  "state": "unknown",
+  "attributes": {
+   "friendly_name": "Lampe Waschraum Do not disturb"
+  },
+  "last_changed": "2026-11-15T20:21:22.524028+00:00",
+  "last_reported": "2026-11-15T20:21:22.524028+00:00",
+  "last_updated": "2026-11-15T20:21:22.524028+00:00"
+ },
+ {
+  "entity_id": "switch.lampe_decke_salon_do_not_disturb",
+  "state": "unknown",
+  "attributes": {
+   "friendly_name": "Lampe Decke Salon Do not disturb"
+  },
+  "last_changed": "2026-11-15T20:21:22.533731+00:00",
+  "last_reported": "2026-11-15T20:21:22.533731+00:00",
+  "last_updated": "2026-11-15T20:21:22.533731+00:00"
+ },
+ {
+  "entity_id": "switch.lufter_waschraum",
+  "state": "off",
+  "attributes": {
+   "friendly_name": "Lüfter Waschraum"
+  },
+  "last_changed": "2026-11-15T20:39:26.906733+00:00",
+  "last_reported": "2026-11-15T20:39:26.906733+00:00",
+  "last_updated": "2026-11-15T20:39:26.906733+00:00"
+ },
+ {
+  "entity_id": "switch.lufter_waschraum_network_indicator",
+  "state": "off",
+  "attributes": {
+   "friendly_name": "Lüfter Waschraum Network indicator"
+  },
+  "last_changed": "2026-11-15T20:22:00.428027+00:00",
+  "last_reported": "2026-11-15T20:22:00.428027+00:00",
+  "last_updated": "2026-11-15T20:22:00.428027+00:00"
+ },
+ {
+  "entity_id": "switch.lufter_waschraum_turbo_mode",
+  "state": "off",
+  "attributes": {
+   "friendly_name": "Lüfter Waschraum Turbo mode"
+  },
+  "last_changed": "2026-11-15T20:22:00.427881+00:00",
+  "last_reported": "2026-11-15T20:22:00.427881+00:00",
+  "last_updated": "2026-11-15T20:22:00.427881+00:00"
+ },
+ {
+  "entity_id": "switch.lufter_waschraum_delayed_power_on_state",
+  "state": "off",
+  "attributes": {
+   "friendly_name": "Lüfter Waschraum Delayed power on state"
+  },
+  "last_changed": "2026-11-15T20:22:00.427849+00:00",
+  "last_reported": "2026-11-15T20:22:00.427849+00:00",
+  "last_updated": "2026-11-15T20:22:00.427849+00:00"
+ },
+ {
+  "entity_id": "switch.lufter_waschraum_detach_relay_mode",
+  "state": "off",
+  "attributes": {
+   "friendly_name": "Lüfter Waschraum Detach relay mode"
+  },
+  "last_changed": "2026-11-15T20:22:00.427591+00:00",
+  "last_reported": "2026-11-15T20:22:00.427591+00:00",
+  "last_updated": "2026-11-15T20:22:00.427591+00:00"
+ },
+ {
+  "entity_id": "switch.prasenz_waschraum_indicator",
+  "state": "off",
+  "attributes": {
+   "icon": "mdi:led-on",
+   "friendly_name": "Präsenz Waschraum Indicator"
+  },
+  "last_changed": "2026-11-15T20:22:00.444602+00:00",
+  "last_reported": "2026-11-15T20:22:00.444602+00:00",
+  "last_updated": "2026-11-15T20:22:00.444602+00:00"
+ },
+ {
+  "entity_id": "switch.prasenz_salon_indicator",
+  "state": "off",
+  "attributes": {
+   "icon": "mdi:led-on",
+   "friendly_name": "Präsenz Salon Indicator"
+  },
+  "last_changed": "2026-11-15T20:22:00.458531+00:00",
+  "last_reported": "2026-11-15T20:22:00.458531+00:00",
+  "last_updated": "2026-11-15T20:22:00.458531+00:00"
+ },
+ {
+  "entity_id": "switch.prasenz_salon_2_indicator",
+  "state": "off",
+  "attributes": {
+   "icon": "mdi:led-on",
+   "friendly_name": "Präsenz Salon 2 Indicator"
+  },
+  "last_changed": "2026-11-15T20:22:00.461571+00:00",
+  "last_reported": "2026-11-15T20:22:00.461571+00:00",
+  "last_updated": "2026-11-15T20:22:00.461571+00:00"
+ },
+ {
+  "entity_id": "switch.steckdose_messung_1",
+  "state": "off",
+  "attributes": {
+   "friendly_name": "Steckdose Messung 1"
+  },
+  "last_changed": "2026-11-15T20:22:00.468922+00:00",
+  "last_reported": "2026-11-15T20:22:00.468922+00:00",
+  "last_updated": "2026-11-15T20:22:00.468922+00:00"
+ },
+ {
+  "entity_id": "switch.steckdose_messung_1_child_lock",
+  "state": "off",
+  "attributes": {
+   "icon": "mdi:account-lock",
+   "friendly_name": "Steckdose Messung 1 Child lock"
+  },
+  "last_changed": "2026-11-15T20:22:00.468356+00:00",
+  "last_reported": "2026-11-15T20:22:00.468356+00:00",
+  "last_updated": "2026-11-15T20:22:00.468356+00:00"
+ },
+ {
+  "entity_id": "switch.steckdose_messung_2",
+  "state": "on",
+  "attributes": {
+   "friendly_name": "Steckdose Messung 2"
+  },
+  "last_changed": "2026-11-15T20:22:00.476002+00:00",
+  "last_reported": "2026-11-15T20:22:00.476002+00:00",
+  "last_updated": "2026-11-15T20:22:00.476002+00:00"
+ },
+ {
+  "entity_id": "switch.steckdose_messung_2_network_indicator",
+  "state": "on",
+  "attributes": {
+   "friendly_name": "Steckdose Messung 2 Network indicator"
+  },
+  "last_changed": "2026-11-15T20:22:00.476462+00:00",
+  "last_reported": "2026-11-15T20:22:00.476462+00:00",
+  "last_updated": "2026-11-15T20:22:00.476462+00:00"
+ },
+ {
+  "entity_id": "switch.steckdose_messung_2_outlet_control_protect",
+  "state": "off",
+  "attributes": {
+   "friendly_name": "Steckdose Messung 2 Outlet control protect"
+  },
+  "last_changed": "2026-11-15T20:22:00.475343+00:00",
+  "last_reported": "2026-11-15T20:22:00.475343+00:00",
+  "last_updated": "2026-11-15T20:22:00.475343+00:00"
+ },
+ {
+  "entity_id": "switch.steckdose_messung_3",
+  "state": "on",
+  "attributes": {
+   "friendly_name": "Steckdose Messung 3"
+  },
+  "last_changed": "2026-11-15T20:21:22.645074+00:00",
+  "last_reported": "2026-11-15T20:21:22.645074+00:00",
+  "last_updated": "2026-11-15T20:21:22.645074+00:00"
+ },
+ {
+  "entity_id": "switch.steckdose_messung_3_child_lock",
+  "state": "off",
+  "attributes": {
+   "icon": "mdi:account-lock",
+   "friendly_name": "Steckdose Messung 3 Child lock"
+  },
+  "last_changed": "2026-11-15T20:21:22.645144+00:00",
+  "last_reported": "2026-11-15T20:21:22.645144+00:00",
+  "last_updated": "2026-11-15T20:21:22.645144+00:00"
+ },
+ {
+  "entity_id": "switch.steckdose_messung_4",
+  "state": "on",
+  "attributes": {
+   "friendly_name": "Steckdose Messung 4"
+  },
+  "last_changed": "2026-11-15T20:22:00.480447+00:00",
+  "last_reported": "2026-11-15T20:22:00.480447+00:00",
+  "last_updated": "2026-11-15T20:22:00.480447+00:00"
+ },
+ {
+  "entity_id": "switch.steckdose_messung_4_child_lock",
+  "state": "unknown",
+  "attributes": {
+   "icon": "mdi:account-lock",
+   "friendly_name": "Steckdose Messung 4 Child lock"
+  },
+  "last_changed": "2026-11-15T20:21:22.524236+00:00",
+  "last_reported": "2026-11-15T20:21:22.524236+00:00",
+  "last_updated": "2026-11-15T20:21:22.524236+00:00"
+ },
+ {
+  "entity_id": "switch.steckdose_messung_5",
+  "state": "on",
+  "attributes": {
+   "friendly_name": "Steckdose Messung 5"
+  },
+  "last_changed": "2026-11-15T20:21:58.166849+00:00",
+  "last_reported": "2026-11-15T20:21:58.166849+00:00",
+  "last_updated": "2026-11-15T20:21:58.166849+00:00"
+ },
+ {
+  "entity_id": "switch.steckdose_messung_5_child_lock",
+  "state": "off",
+  "attributes": {
+   "icon": "mdi:account-lock",
+   "friendly_name": "Steckdose Messung 5 Child lock"
+  },
+  "last_changed": "2026-11-15T20:21:58.167046+00:00",
+  "last_reported": "2026-11-15T20:21:58.167046+00:00",
+  "last_updated": "2026-11-15T20:21:58.167046+00:00"
+ },
+ {
+  "entity_id": "switch.steckdose_messung_6",
+  "state": "on",
+  "attributes": {
+   "friendly_name": "Steckdose Messung 6"
+  },
+  "last_changed": "2026-11-15T20:22:00.488302+00:00",
+  "last_reported": "2026-11-15T20:22:00.488302+00:00",
+  "last_updated": "2026-11-15T20:22:00.488302+00:00"
+ },
+ {
+  "entity_id": "switch.steckdose_messung_6_child_lock",
+  "state": "off",
+  "attributes": {
+   "icon": "mdi:account-lock",
+   "friendly_name": "Steckdose Messung 6 Child lock"
+  },
+  "last_changed": "2026-11-15T20:22:00.488106+00:00",
+  "last_reported": "2026-11-15T20:22:00.488106+00:00",
+  "last_updated": "2026-11-15T20:22:00.488106+00:00"
+ },
+ {
+  "entity_id": "binary_sensor.zusatzgeraet_e0_filament",
+  "state": "unavailable",
+  "attributes": {
+   "restored": true,
+   "device_class": "occupancy",
+   "icon": "mdi:printer-3d-nozzle-alert",
+   "friendly_name": "Zusatzgerät E0 Filament",
+   "supported_features": 0
+  },
+  "last_changed": "2026-11-15T20:21:24.628959+00:00",
+  "last_reported": "2026-11-15T20:21:24.628959+00:00",
+  "last_updated": "2026-11-15T20:21:24.628959+00:00"
+ },
+ {
+  "entity_id": "binary_sensor.zusatzgeraet_e1_filament",
+  "state": "unavailable",
+  "attributes": {
+   "restored": true,
+   "device_class": "occupancy",
+   "icon": "mdi:printer-3d-nozzle-alert",
+   "friendly_name": "Zusatzgerät E1 Filament",
+   "supported_features": 0
+  },
+  "last_changed": "2026-11-15T20:21:24.629023+00:00",
+  "last_reported": "2026-11-15T20:21:24.629023+00:00",
+  "last_updated": "2026-11-15T20:21:24.629023+00:00"
+ },
+ {
+  "entity_id": "binary_sensor.zusatzgeraet_e2_filament",
+  "state": "unavailable",
+  "attributes": {
+   "restored": true,
+   "device_class": "occupancy",
+   "icon": "mdi:printer-3d-nozzle-alert",
+   "friendly_name": "Zusatzgerät E2 Filament",
+   "supported_features": 0
+  },
+  "last_changed": "2026-11-15T20:21:24.629052+00:00",
+  "last_reported": "2026-11-15T20:21:24.629052+00:00",
+  "last_updated": "2026-11-15T20:21:24.629052+00:00"
+ },
+ {
+  "entity_id": "binary_sensor.zusatzgeraet_e3_filament",
+  "state": "unavailable",
+  "attributes": {
+   "restored": true,
+   "device_class": "occupancy",
+   "icon": "mdi:printer-3d-nozzle-alert",
+   "friendly_name": "Zusatzgerät E3 Filament",
+   "supported_features": 0
+  },
+  "last_changed": "2026-11-15T20:21:24.629074+00:00",
+  "last_reported": "2026-11-15T20:21:24.629074+00:00",
+  "last_updated": "2026-11-15T20:21:24.629074+00:00"
+ },
+ {
+  "entity_id": "light.zusatzlicht_1",
+  "state": "unavailable",
+  "attributes": {
+   "restored": true,
+   "supported_color_modes": [
+    "brightness"
+   ],
+   "icon": "mdi:led-variant-on",
+   "friendly_name": "Zusatzlicht 1",
+   "supported_features": 0
+  },
+  "last_changed": "2026-11-15T20:21:24.629098+00:00",
+  "last_reported": "2026-11-15T20:21:24.629098+00:00",
+  "last_updated": "2026-11-15T20:21:24.629098+00:00"
+ }
+]

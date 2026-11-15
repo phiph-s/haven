@@ -1,0 +1,187 @@
+{
+ "rooms": [
+  {
+   "area_id": "zone",
+   "name": "Zone",
+   "floor_id": null,
+   "icon": null,
+   "lights": [],
+   "zigbee_lights": [],
+   "climate": {
+    "temperature": [],
+    "humidity": []
+   },
+   "motion": [],
+   "group": null
+  },
+  {
+   "area_id": "kochbereich",
+   "name": "Kochbereich",
+   "floor_id": null,
+   "icon": null,
+   "lights": [
+    "light.kochbereich_arbeitslicht_1",
+    "light.kochbereich_arbeitslicht_2"
+   ],
+   "zigbee_lights": [
+    "0x00124b0000000013",
+    "0x00124b0000000012"
+   ],
+   "climate": {
+    "temperature": [],
+    "humidity": []
+   },
+   "motion": [
+    "binary_sensor.bewegungsmelder_kochbereich_occupancy"
+   ],
+   "group": {
+    "id": 3,
+    "friendly_name": "ZGKochbereich",
+    "match": "exact",
+    "missing": [],
+    "extra": []
+   }
+  },
+  {
+   "area_id": "ruheraum",
+   "name": "Ruheraum",
+   "floor_id": null,
+   "icon": "mdi:bed",
+   "lights": [
+    "light.lampe_ruhebett",
+    "light.lampe_decke_ruheraum",
+    "light.lichtleiste_links",
+    "light.lichtleiste_rechts"
+   ],
+   "zigbee_lights": [
+    "0x00124b000000000c",
+    "0x00124b0000000004",
+    "0x00124b0000000005",
+    "0x00124b000000001a"
+   ],
+   "climate": {
+    "temperature": [
+     "sensor.klimadisplay_waschraum_temperature",
+     "sensor.klimadisplay_ruheraum_temperature",
+     "sensor.sensor_ruheraum_temperature"
+    ],
+    "humidity": [
+     "sensor.klimadisplay_waschraum_humidity",
+     "sensor.klimadisplay_ruheraum_humidity",
+     "sensor.sensor_ruheraum_humidity"
+    ]
+   },
+   "motion": [],
+   "group": {
+    "id": 2,
+    "friendly_name": "ZGRuheraum",
+    "match": "partial",
+    "missing": [
+     "0x00124b000000000c"
+    ],
+    "extra": []
+   }
+  },
+  {
+   "area_id": "gasteraum",
+   "name": "Gästeraum",
+   "floor_id": null,
+   "icon": null,
+   "lights": [
+    "light.lampe_waschraum",
+    "light.zusatzlicht_2"
+   ],
+   "zigbee_lights": [
+    "0x00124b000000001b"
+   ],
+   "climate": {
+    "temperature": [
+     "sensor.prasenz_waschraum_temperature",
+     "sensor.sensor_waschraum_temperature"
+    ],
+    "humidity": [
+     "sensor.prasenz_waschraum_humidity",
+     "sensor.sensor_waschraum_humidity"
+    ]
+   },
+   "motion": [
+    "binary_sensor.prasenz_waschraum_presence",
+    "binary_sensor.bewegungsmelder_waschraum_occupancy"
+   ],
+   "group": {
+    "id": 4,
+    "friendly_name": "ZGWaschraum",
+    "match": "exact",
+    "missing": [],
+    "extra": []
+   }
+  },
+  {
+   "area_id": "salon",
+   "name": "Salon",
+   "floor_id": null,
+   "icon": "mdi:television",
+   "lights": [
+    "light.lampe_decke_salon",
+    "light.lampe_salon",
+    "light.zusatzlicht_1",
+    "light.tischlampe_salon",
+    "light.salon",
+    "light.salon_oben_1_tur",
+    "light.salon_oben_2_fenster"
+   ],
+   "zigbee_lights": [
+    "0x00124b0000000001",
+    "0x00124b0000000010",
+    "0x00124b000000001c",
+    "0x00124b0000000003",
+    "0x00124b0000000002"
+   ],
+   "climate": {
+    "temperature": [
+     "sensor.prasenz_salon_2_temperature",
+     "sensor.prasenz_salon_temperature",
+     "sensor.klimadisplay_salon_temperature",
+     "sensor.sensor_salon_temperature"
+    ],
+    "humidity": [
+     "sensor.prasenz_salon_2_humidity",
+     "sensor.prasenz_salon_humidity",
+     "sensor.klimadisplay_salon_humidity",
+     "sensor.sensor_salon_humidity"
+    ]
+   },
+   "motion": [
+    "binary_sensor.prasenz_salon_2_presence",
+    "binary_sensor.prasenz_salon_presence",
+    "binary_sensor.bewegungsmelder_salon_occupancy",
+    "binary_sensor.zusatzgeraet_e0_filament",
+    "binary_sensor.zusatzgeraet_e1_filament",
+    "binary_sensor.zusatzgeraet_e2_filament",
+    "binary_sensor.zusatzgeraet_e3_filament"
+   ],
+   "group": {
+    "id": 1,
+    "friendly_name": "ZGSalon",
+    "match": "partial",
+    "missing": [],
+    "extra": [
+     "0x00124b000000000c"
+    ]
+   }
+  }
+ ],
+ "unassigned": [
+  {
+   "device_id": "c5f88f6b6e9a904b499696485d9aa1be",
+   "name": "Sensor Terrasse",
+   "manufacturer": "SONOFF",
+   "model": "Temperature and humidity sensor",
+   "ieee": "0x00124b000000000d",
+   "entities": [
+    "sensor.sensor_terrasse_temperature",
+    "sensor.sensor_terrasse_humidity"
+   ]
+  }
+ ]
+}

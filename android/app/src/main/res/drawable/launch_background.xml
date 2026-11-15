@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Startbild: nur der Haven-Hintergrund (hell bzw. dunkel über values-night) -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:drawable="@color/haven_bg" />
+</layer-list>

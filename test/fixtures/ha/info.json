@@ -1,0 +1,21 @@
+{
+ "domain": "haven",
+ "version": "0.1.0",
+ "api_version": 1,
+ "loaded": true,
+ "z2m": {
+  "base_topic": "zigbee2mqtt",
+  "bridge_state": "online",
+  "info_received": true,
+  "version": "2.14.3",
+  "coordinator_type": "ZStack3x0",
+  "coordinator_revision": 20250321,
+  "permit_join": false,
+  "channel": 25,
+  "pan_id": 16477,
+  "device_count": 42,
+  "group_count": 4,
+  "devices_received": true,
+  "groups_received": true
+ }
+}

@@ -1,0 +1,203 @@
+{
+ "groups": [
+  {
+   "id": 4,
+   "friendly_name": "ZGWaschraum",
+   "members": [
+    {
+     "ieee": "0x00124b000000001b",
+     "endpoint": 1,
+     "friendly_name": "Lampe Waschraum",
+     "device_type": "light"
+    },
+    {
+     "ieee": "0x00124b0000000019",
+     "endpoint": 1,
+     "friendly_name": "Drehknopf Waschraum",
+     "device_type": "knob"
+    }
+   ],
+   "scenes": [
+    {
+     "id": 0,
+     "name": "Normal"
+    },
+    {
+     "id": 1,
+     "name": "Hell"
+    },
+    {
+     "id": 2,
+     "name": "Nachts/Bewegung"
+    }
+   ]
+  },
+  {
+   "id": 3,
+   "friendly_name": "ZGKochbereich",
+   "members": [
+    {
+     "ieee": "0x00124b0000000012",
+     "endpoint": 1,
+     "friendly_name": "Kochbereich Arbeitslicht 2",
+     "device_type": "light"
+    },
+    {
+     "ieee": "0x00124b0000000013",
+     "endpoint": 1,
+     "friendly_name": "Kochbereich Arbeitslicht 1",
+     "device_type": "light"
+    },
+    {
+     "ieee": "0x00124b0000000018",
+     "endpoint": 1,
+     "friendly_name": "Drehknopf Kochbereich",
+     "device_type": "knob"
+    }
+   ],
+   "scenes": []
+  },
+  {
+   "id": 2,
+   "friendly_name": "ZGRuheraum",
+   "members": [
+    {
+     "ieee": "0x00124b0000000004",
+     "endpoint": 11,
+     "friendly_name": "Lichtleiste Links",
+     "device_type": "light"
+    },
+    {
+     "ieee": "0x00124b0000000005",
+     "endpoint": 11,
+     "friendly_name": "Lichtleiste Rechts",
+     "device_type": "light"
+    },
+    {
+     "ieee": "0x00124b0000000015",
+     "endpoint": 1,
+     "friendly_name": "Drehknopf Ruheraum 2 (Bett)",
+     "device_type": "knob"
+    },
+    {
+     "ieee": "0x00124b0000000014",
+     "endpoint": 1,
+     "friendly_name": "Drehknopf Ruheraum 1",
+     "device_type": "knob"
+    },
+    {
+     "ieee": "0x00124b000000001a",
+     "endpoint": 1,
+     "friendly_name": "Lampe Decke Ruheraum",
+     "device_type": "light"
+    }
+   ],
+   "scenes": [
+    {
+     "id": 0,
+     "name": "Full"
+    },
+    {
+     "id": 1,
+     "name": "Calm"
+    },
+    {
+     "id": 2,
+     "name": "Chill"
+    },
+    {
+     "id": 3,
+     "name": "Lichtleiste"
+    }
+   ]
+  },
+  {
+   "id": 1,
+   "friendly_name": "ZGSalon",
+   "members": [
+    {
+     "ieee": "0x00124b0000000002",
+     "endpoint": 1,
+     "friendly_name": "Salon Oben 1 (Tür)",
+     "device_type": "light"
+    },
+    {
+     "ieee": "0x00124b0000000003",
+     "endpoint": 1,
+     "friendly_name": "Salon Oben 2 (Fenster)",
+     "device_type": "light"
+    },
+    {
+     "ieee": "0x00124b0000000001",
+     "endpoint": 11,
+     "friendly_name": "Tischlampe Salon",
+     "device_type": "light"
+    },
+    {
+     "ieee": "0x00124b0000000010",
+     "endpoint": 3,
+     "friendly_name": "Lampe Salon",
+     "device_type": "light"
+    },
+    {
+     "ieee": "0x00124b0000000017",
+     "endpoint": 1,
+     "friendly_name": "Drehknopf Salon 2",
+     "device_type": "knob"
+    },
+    {
+     "ieee": "0x00124b0000000016",
+     "endpoint": 1,
+     "friendly_name": "Drehknopf Salon 1",
+     "device_type": "knob"
+    },
+    {
+     "ieee": "0x00124b000000001c",
+     "endpoint": 1,
+     "friendly_name": "Lampe Decke Salon",
+     "device_type": "light"
+    },
+    {
+     "ieee": "0x00124b000000000c",
+     "endpoint": 11,
+     "friendly_name": "Lampe Ruhebett",
+     "device_type": "light"
+    }
+   ],
+   "scenes": [
+    {
+     "id": 0,
+     "name": "Golden Hour"
+    },
+    {
+     "id": 1,
+     "name": "Neon Tokyo"
+    },
+    {
+     "id": 2,
+     "name": "Nordlicht"
+    },
+    {
+     "id": 3,
+     "name": "Lagerfeuer"
+    },
+    {
+     "id": 4,
+     "name": "Kinoabend"
+    },
+    {
+     "id": 5,
+     "name": "Halloween"
+    },
+    {
+     "id": 6,
+     "name": "Fokus"
+    },
+    {
+     "id": 7,
+     "name": "Dinner"
+    }
+   ]
+  }
+ ]
+}

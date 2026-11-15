@@ -1,0 +1,147 @@
+import '../data/models/floor_plan.dart';
+
+/// Beispielgrundriss der erfundenen Wohnung: Salon, Ruheraum, Kochbereich,
+/// Waschraum und Diele. Einige Lampen, Sensoren und Schalter fehlen bewusst
+/// (sie bleiben im Pool des Editors).
+const HavenFloorPlan kFakeFloorPlan = HavenFloorPlan(
+  rooms: [
+    FloorRoom(
+      id: 'salon',
+      name: 'Salon',
+      areaId: 'salon',
+      x: 0,
+      y: 0,
+      w: 12,
+      h: 12,
+    ),
+    FloorRoom(
+      id: 'kochbereich',
+      name: 'Kochbereich',
+      areaId: 'kochbereich',
+      x: 12,
+      y: 0,
+      w: 8,
+      h: 7,
+    ),
+    FloorRoom(
+      id: 'diele',
+      name: 'Diele',
+      areaId: 'diele',
+      x: 12,
+      y: 7,
+      w: 8,
+      h: 8,
+    ),
+    FloorRoom(
+      id: 'ruheraum',
+      name: 'Ruheraum',
+      areaId: 'ruheraum',
+      x: 0,
+      y: 12,
+      w: 12,
+      h: 10,
+    ),
+    FloorRoom(
+      id: 'waschraum',
+      name: 'Waschraum',
+      areaId: 'waschraum',
+      x: 12,
+      y: 15,
+      w: 8,
+      h: 7,
+    ),
+  ],
+  placements: [
+    FloorPlacement(
+      entityId: 'light.tischlampe_salon',
+      roomId: 'salon',
+      rx: 0.82,
+      ry: 0.20,
+    ),
+    FloorPlacement(
+      entityId: 'light.lampe_decke_salon',
+      roomId: 'salon',
+      rx: 0.48,
+      ry: 0.50,
+    ),
+    FloorPlacement(
+      entityId: 'sensor.sensor_salon_temperature',
+      roomId: 'salon',
+      rx: 0.90,
+      ry: 0.55,
+    ),
+    FloorPlacement(
+      entityId: 'binary_sensor.bewegungsmelder_salon_occupancy',
+      roomId: 'salon',
+      rx: 0.70,
+      ry: 0.84,
+    ),
+    FloorPlacement(
+      entityId: 'light.kochbereich_arbeitslicht_2',
+      roomId: 'kochbereich',
+      rx: 0.50,
+      ry: 0.30,
+    ),
+    FloorPlacement(
+      entityId: 'light.kochbereich_arbeitslicht_1',
+      roomId: 'kochbereich',
+      rx: 0.68,
+      ry: 0.64,
+    ),
+    FloorPlacement(
+      entityId: 'switch.steckdose_messung_5',
+      roomId: 'kochbereich',
+      rx: 0.20,
+      ry: 0.78,
+    ),
+    FloorPlacement(
+      entityId: 'binary_sensor.kontaktsensor_schrank_contact',
+      roomId: 'diele',
+      rx: 0.50,
+      ry: 0.55,
+    ),
+    FloorPlacement(
+      entityId: 'light.lichtleiste_links',
+      roomId: 'ruheraum',
+      rx: 0.20,
+      ry: 0.32,
+    ),
+    FloorPlacement(
+      entityId: 'light.lichtleiste_rechts',
+      roomId: 'ruheraum',
+      rx: 0.80,
+      ry: 0.32,
+    ),
+    FloorPlacement(
+      entityId: 'light.lampe_decke_ruheraum',
+      roomId: 'ruheraum',
+      rx: 0.50,
+      ry: 0.55,
+    ),
+    FloorPlacement(
+      entityId: 'sensor.sensor_ruheraum_temperature',
+      roomId: 'ruheraum',
+      rx: 0.88,
+      ry: 0.84,
+    ),
+    FloorPlacement(
+      entityId: 'light.lampe_waschraum',
+      roomId: 'waschraum',
+      rx: 0.52,
+      ry: 0.52,
+    ),
+    FloorPlacement(
+      entityId: 'switch.lufter_waschraum',
+      roomId: 'waschraum',
+      rx: 0.80,
+      ry: 0.78,
+    ),
+    FloorPlacement(
+      entityId: 'binary_sensor.prasenz_waschraum_presence',
+      roomId: 'waschraum',
+      rx: 0.82,
+      ry: 0.20,
+    ),
+  ],
+  coordinator: PlanPoint('diele', 0.22, 0.26),
+);
