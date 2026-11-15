@@ -12,6 +12,7 @@ import '../../features/room/room_hero.dart';
 import '../../features/room/room_screen.dart';
 import '../../features/settings/settings_screen.dart';
 import '../../features/shell/app_shell.dart';
+import '../../features/updates/updates_screen.dart';
 import '../../features/zigbee/zigbee_routes.dart';
 import '../../features/zigbee/zigbee_screen.dart';
 import '../state/providers.dart';
@@ -30,6 +31,7 @@ abstract final class Routes {
   static const zigbee = '/zigbee';
   static const automations = '/automations';
   static const settings = '/settings';
+  static const updates = '/settings/updates';
   static String room(String id) => '/room/$id';
 }
 
@@ -169,6 +171,14 @@ GoRouter buildRouter(Ref ref, {String? initialLocation}) {
         parentNavigatorKey: rootNavigatorKey,
         pageBuilder: (context, state) =>
             _slidePage(state, const SettingsScreen()),
+        routes: [
+          GoRoute(
+            path: 'updates',
+            parentNavigatorKey: rootNavigatorKey,
+            pageBuilder: (context, state) =>
+                _slidePage(state, const UpdatesScreen()),
+          ),
+        ],
       ),
     ],
   );

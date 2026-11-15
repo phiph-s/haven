@@ -1,7 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:material_ui/material_ui.dart';
 
+import '../../core/router/router.dart';
 import '../../core/state/providers.dart';
 import '../../core/theme/tokens.dart';
 import '../../core/widgets/haven_button.dart';
@@ -11,10 +14,11 @@ import '../../data/models/room.dart';
 import '../../data/models/snapshot.dart';
 import '../ha_web/ha_web_screen.dart';
 import '../map/map_routes.dart';
+import '../updates/app_update_provider.dart';
+import '../updates/app_update_widgets.dart';
+import '../updates/ha_updates_provider.dart';
 import 'settings_widgets.dart';
 import '../room/widgets/light_control_list.dart';
-
-const String havenVersion = '0.1.0';
 
 /// Pfad des Grundriss-Editors. Der Karten-Agent legt die Route `editor` unter
 /// `/map` an. Solange sie fehlt, meldet der Eintrag das, statt ins Leere zu laufen.
@@ -37,6 +41,15 @@ class SettingsScreen extends ConsumerStatefulWidget {
 
 class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   bool _busy = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // Falls die Übersicht die Prüfung noch nicht angestoßen hat.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) unawaited(ref.read(appUpdateProvider.notifier).checkIfDue());
+    });
+  }
 
   static String _status(ConnectionStatus s) => switch (s) {
     ConnectionStatus.connected => 'Verbunden',
@@ -81,6 +94,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     final snap = ref.watch(snapshotProvider);
     final isFake = session.mode == SessionMode.fake;
     final url = ref.watch(settingsStoreProvider).haUrl;
+    final app = ref.watch(appUpdateProvider);
+    final haUpdates = ref.watch(haUpdatesProvider);
     final ok = snap.status == ConnectionStatus.connected;
     final statusColor = isFake
         ? hv.warn
@@ -255,6 +270,53 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 ],
               ),
             ),
+            section('Updates'),
+            pad(
+              SettingsGroup(
+                children: [
+                  SettingsRow(
+                    icon: Icons.system_update_alt_rounded,
+                    title: 'Haven-App',
+                    subtitle: app.available
+                        ? 'Version ${app.current}, ${app.release!.version} verfügbar'
+                        : (app.lastChecked == null
+                              ? 'Version ${app.current}'
+                              : 'Version ${app.current}, aktuell'),
+                    iconColor: app.available ? hv.acc : null,
+                  ),
+                  SettingsRow(
+                    icon: Icons.refresh_rounded,
+                    title: 'Nach Updates suchen',
+                    subtitle: app.phase == AppUpdatePhase.checking
+                        ? 'Sucht'
+                        : (app.error ??
+                              (app.lastChecked == null
+                                  ? 'Noch nicht geprüft'
+                                  : 'Zuletzt geprüft um ${_hhmm(app.lastChecked!)}')),
+                    onTap: () async {
+                      await ref.read(appUpdateProvider.notifier).check();
+                      if (!context.mounted) return;
+                      final s = ref.read(appUpdateProvider);
+                      if (s.error == null && !s.available) {
+                        showHavenToast(context, 'Haven ist aktuell');
+                      }
+                    },
+                  ),
+                  SettingsRow(
+                    icon: Icons.upgrade_rounded,
+                    title: 'Updates in Home Assistant',
+                    subtitle: haUpdates.isEmpty
+                        ? 'Alles aktuell'
+                        : (haUpdates.count == 1
+                              ? 'Ein Update verfügbar'
+                              : '${haUpdates.count} Updates verfügbar'),
+                    iconColor: haUpdates.isEmpty ? null : hv.warn,
+                    onTap: () => context.push(Routes.updates),
+                  ),
+                ],
+              ),
+            ),
+            pad(const AppUpdatePanel()),
             section('Über Haven'),
             pad(
               SettingsGroup(
@@ -262,10 +324,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   SettingsRow(
                     icon: Icons.info_outline_rounded,
                     title: 'Über Haven',
-                    subtitle: 'Version $havenVersion',
+                    subtitle: 'Version ${app.current}',
                     onTap: () => showHavenSheet<void>(
                       context,
-                      builder: (_) => const _AboutSheet(),
+                      builder: (_) => _AboutSheet(version: app.current),
                     ),
                   ),
                 ],
@@ -320,8 +382,12 @@ class _RoomsSheet extends ConsumerWidget {
   }
 }
 
+String _hhmm(DateTime t) =>
+    '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
+
 class _AboutSheet extends StatelessWidget {
-  const _AboutSheet();
+  const _AboutSheet({required this.version});
+  final String version;
 
   @override
   Widget build(BuildContext context) {
@@ -351,7 +417,7 @@ class _AboutSheet extends StatelessWidget {
           style: HavenText.section.copyWith(color: hv.tx),
         ),
         Text(
-          'Version $havenVersion',
+          'Version $version',
           textAlign: TextAlign.center,
           style: HavenText.caption.copyWith(color: hv.tx2),
         ),

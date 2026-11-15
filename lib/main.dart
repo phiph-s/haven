@@ -12,6 +12,10 @@ import 'dev/fake_repository.dart';
 import 'data/ha/ha_repository.dart';
 import 'data/storage/settings_store.dart';
 import 'debug_launch.dart';
+import 'dev/fake_updates.dart';
+import 'features/updates/app_update_provider.dart';
+
+import 'package:package_info_plus/package_info_plus.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -33,6 +37,13 @@ Future<void> main() async {
         settingsStoreProvider.overrideWithValue(store),
         tokenStoreProvider.overrideWithValue(tokens),
         initialSessionProvider.overrideWithValue(session),
+        appVersionProvider.overrideWithValue(await _appVersion()),
+        // Entwicklungsdaten: erfundene Releases, kein Netz zu GitHub.
+        if (kHavenFake && session.mode == SessionMode.fake) ...[
+          httpClientProvider.overrideWithValue(buildFakeReleaseClient()),
+          if (launch.screen != null)
+            appInstallerProvider.overrideWithValue(FakeAppInstaller()),
+        ],
       ],
       child: HavenApp(initialLocation: launch.location),
     ),
@@ -71,4 +82,13 @@ Future<Session> _bootstrap(
       return Session(SessionMode.ha, repo);
   }
   return const Session(SessionMode.none);
+}
+
+/// Version aus `pubspec.yaml` (über das Plattform-Paket).
+Future<String> _appVersion() async {
+  try {
+    final v = (await PackageInfo.fromPlatform()).version;
+    if (v.isNotEmpty) return v;
+  } catch (_) {}
+  return kFallbackAppVersion;
 }

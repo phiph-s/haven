@@ -9,7 +9,7 @@ import 'package:material_ui/material_ui.dart';
 /// Routenvorgabe, die Sitzung bleibt unberührt.
 ///
 /// Parameter: `theme` (light, dark, system), `screen` (home, room, sheet, map,
-/// zigbee, automations, settings, onboarding), `room` (Raum-ID),
+/// zigbee, automations, settings, updates, onboarding), `room` (Raum-ID),
 /// `preset` (party: Neon Tokyo im Salon, Chill im Ruheraum).
 /// `screen=floorplan_editor` öffnet den Grundriss-Editor, dort wählt `room`
 /// den markierten Raum und `preset=devices` den Modus „Geräte setzen“.
@@ -67,6 +67,7 @@ class LaunchOverrides {
       '/zigbee/mesh${ieee == null ? '' : '?select=${Uri.encodeQueryComponent(ieee!)}'}',
     'automations' => '/automations',
     'settings' => '/settings',
+    'updates' => '/settings/updates',
     'onboarding' => '/onboarding',
     _ => null,
   };

@@ -14,6 +14,7 @@ import '../data/storage/settings_store.dart';
 import 'fake_data.dart';
 import 'fake_floor_plan.dart';
 import 'fake_rooms.dart';
+import 'fake_updates.dart';
 import 'fake_zigbee.dart';
 
 /// Gedächtnis einer Lampe, damit Farbe und Helligkeit beim Aus- und
@@ -102,10 +103,22 @@ class FakeRepository extends BaseRepository {
     );
     if (simulate) {
       _timer = Timer.periodic(const Duration(seconds: 4), (_) => _tick());
+      // Das Add-on, das beim Start schon läuft, macht weiter.
+      for (final e in _entities.values.toList()) {
+        if (e.attributes['in_progress'] == true) {
+          _setProgress(
+            e.entityId,
+            ((e.attributes['update_percentage'] as num?) ?? 0).toInt(),
+          );
+        }
+      }
     }
   }
 
   void _build() {
+    for (final e in buildFakeUpdateEntities()) {
+      _entities[e.entityId] = e;
+    }
     for (final d in (inventory['z2m_devices'] as List)) {
       final caps = ((d['capabilities'] as List?) ?? const []).cast<String>();
       final ents = d['entities'] as Map<String, dynamic>;
@@ -411,6 +424,7 @@ class FakeRepository extends BaseRepository {
   }) async {
     final id = entityId ?? data['entity_id'] as String?;
     if (id == null) return;
+    if (domain == 'update') return _updateService(service, id);
     if (domain == 'light') {
       if (service == 'turn_off') return setLights([id], on: false);
       if (service == 'turn_on') return setLights([id], on: true);
@@ -439,16 +453,84 @@ class FakeRepository extends BaseRepository {
     _push();
   }
 
+  final Map<String, Timer> _installs = {};
+
+  /// `update.install` und `update.skip`. Mit Zeitgebern läuft der Fortschritt
+  /// in Schritten hoch, ohne ist die Installation sofort fertig.
+  Future<void> _updateService(String service, String id) async {
+    final e = _entities[id];
+    if (e == null) return;
+    if (service == 'skip') {
+      _entities[id] = e.copyWith(
+        state: 'off',
+        attributes: {
+          ...e.attributes,
+          'skipped_version': e.attributes['latest_version'],
+        },
+      );
+      _push();
+      return;
+    }
+    if (service != 'install') return;
+    if (!simulate) {
+      _finishInstall(id);
+      return;
+    }
+    _setProgress(
+      id,
+      ((e.attributes['update_percentage'] as num?) ?? 0).toInt(),
+    );
+  }
+
+  void _setProgress(String id, int pct) {
+    final e = _entities[id];
+    if (e == null) return;
+    _entities[id] = e.copyWith(
+      attributes: {
+        ...e.attributes,
+        'in_progress': true,
+        'update_percentage': pct,
+      },
+    );
+    _push();
+    _installs[id]?.cancel();
+    _installs[id] = Timer(const Duration(milliseconds: 700), () {
+      if (pct >= 100) {
+        _finishInstall(id);
+      } else {
+        _setProgress(id, (pct + 12).clamp(0, 100));
+      }
+    });
+  }
+
+  void _finishInstall(String id) {
+    _installs.remove(id)?.cancel();
+    final e = _entities[id];
+    if (e == null) return;
+    _entities[id] = e.copyWith(
+      state: 'off',
+      attributes: {
+        ...e.attributes,
+        'in_progress': false,
+        'update_percentage': null,
+        'installed_version': e.attributes['latest_version'],
+      },
+    );
+    _push();
+  }
+
   @override
   Future<dynamic> command(
     String type, [
     Map<String, dynamic> payload = const {},
   ]) async {
     switch (type) {
+      case 'update/release_notes':
+        return kFakeReleaseNotes[payload['entity_id']];
       case 'haven/info':
         return {
           'domain': 'haven',
-          'version': 'fake',
+          'version': '0.2.0',
           'api_version': 1,
           'loaded': true,
           'z2m': {
@@ -593,6 +675,10 @@ class FakeRepository extends BaseRepository {
   Future<void> dispose() async {
     await _zb.dispose();
     _timer?.cancel();
+    for (final t in _installs.values) {
+      t.cancel();
+    }
+    _installs.clear();
     await super.dispose();
   }
 }

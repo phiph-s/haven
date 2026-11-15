@@ -34,7 +34,8 @@ Future<Widget> _app({
 }
 
 void _phone(WidgetTester tester) {
-  tester.view.physicalSize = const Size(412 * 2.625, 915 * 2.625);
+  // Etwas höher als ein Handy: Die Update-Karte der Entwicklungsdaten schiebt Zuhause nach unten.
+  tester.view.physicalSize = const Size(412 * 2.625, 1080 * 2.625);
   tester.view.devicePixelRatio = 2.625;
   addTearDown(tester.view.reset);
 }

@@ -33,6 +33,9 @@ class SettingsStore implements LocalPrefs {
   static const _kUrl = 'ha_url';
   static const _kWidgets = 'home_widgets';
   static const _kExcluded = 'excluded_lights';
+  static const _kUpdateChecked = 'update_last_check';
+  static const _kUpdateDismissed = 'update_dismissed';
+  static const _kUpdateRelease = 'update_latest_release';
 
   @override
   Set<String> get excludedLights =>
@@ -40,6 +43,28 @@ class SettingsStore implements LocalPrefs {
   @override
   Future<void> setExcludedLights(Set<String> ids) =>
       _p.setStringList(_kExcluded, ids.toList()..sort());
+
+  /// Letzte erfolgreiche Prüfung auf eine neue App-Version.
+  DateTime? get updateLastCheck {
+    final ms = _p.getInt(_kUpdateChecked);
+    return ms == null ? null : DateTime.fromMillisecondsSinceEpoch(ms);
+  }
+
+  Future<void> setUpdateLastCheck(DateTime t) =>
+      _p.setInt(_kUpdateChecked, t.millisecondsSinceEpoch);
+
+  /// Version, deren Hinweiskarte auf der Übersicht weggewischt wurde.
+  String? get updateDismissed => _p.getString(_kUpdateDismissed);
+  Future<void> setUpdateDismissed(String? v) => v == null
+      ? _p.remove(_kUpdateDismissed)
+      : _p.setString(_kUpdateDismissed, v);
+
+  /// Zuletzt gefundenes Release als JSON (damit die Karte nach einem Neustart
+  /// ohne neue Prüfung da ist).
+  String? get updateRelease => _p.getString(_kUpdateRelease);
+  Future<void> setUpdateRelease(String? json) => json == null
+      ? _p.remove(_kUpdateRelease)
+      : _p.setString(_kUpdateRelease, json);
 
   ThemeMode get themeMode => switch (_p.getString(_kTheme)) {
     'light' => ThemeMode.light,

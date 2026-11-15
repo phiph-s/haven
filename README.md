@@ -20,6 +20,12 @@ Beim ersten Start fragt die App nach Adresse und Token.
 
 Der Token liegt verschlüsselt im Android-Keystore auf dem Gerät. Klartext-HTTP ist für Adressen im lokalen Netz erlaubt.
 
+## Updates
+
+**Die App selbst:** Haven fragt beim Start höchstens alle 6 Stunden die GitHub-Releases ab (`phiph-s/haven`, nur das neueste fertige Release, keine Vorabversionen). Gibt es eine neuere Version, erscheint auf der Übersicht eine Karte, die du schließen kannst (sie kommt erst mit der nächsten Version wieder). In den Einstellungen, Abschnitt „Updates“, stehen die Versionshinweise und der Knopf „Herunterladen und installieren“, dort suchst du auch von Hand. Haven lädt die APK in den App-Cache und übergibt sie dem Android-Installer. Beim ersten Mal fragt Android nach der Erlaubnis „Unbekannte Apps installieren“, Haven führt dich in die passende Einstellung. Das Update muss mit demselben Schlüssel signiert sein wie die installierte App. Auf Web und anderen Plattformen zeigt Haven nur die neue Version mit Link zur Release-Seite.
+
+**Home Assistant:** Unter Einstellungen, „Updates in Home Assistant“, stehen alle `update.*`-Entities, gruppiert nach Home Assistant (Core, OS, Supervisor), Add-ons, Integrationen (HACS), Geräte (Firmware) und Haven. Du kannst Versionshinweise lesen, aktualisieren (auf Wunsch mit Backup vorher), überspringen oder alles auf einmal aktualisieren. Core, OS und Supervisor sind bei „Alle aktualisieren“ ausgenommen, weil Home Assistant dabei neu startet. Das bestätigst du einzeln, Haven verbindet sich danach von selbst wieder. Ist die Integration nicht über HACS installiert, erscheint ihr Update hier nicht. Haven weist darauf hin und zeigt, wenn `haven-ha` eine neuere Version hat.
+
 ## Entwicklung
 
 ```

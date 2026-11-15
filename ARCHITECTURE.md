@@ -26,6 +26,7 @@ lib/
     onboarding/ shell/ home/ room/ settings/     fertig (room ohne Drehregler, die stehen in der Geräteansicht)
     map/                                         Karte und Grundriss-Editor (fertig)
     zigbee/ automations/                         Platzhalter, werden von Folge-Agents gebaut
+    updates/                                     App-Update und HA-Updates (siehe Abschnitt „Updates“)
   dev/                       Entwicklungsdaten, nur mit --dart-define=HAVEN_FAKE=true (siehe Abschnitt „Entwicklungsdaten“)
 ```
 
@@ -108,6 +109,18 @@ Dateien: `data/models/zigbee_network.dart` (Modell), `features/zigbee/mesh/` (`m
 - Tabwechsel: Nur der aktive Tab blendet, die anderen sind Offstage ohne Ticker.
 - Netzgraph: Zoomen und Auswählen dürfen keine Neubauten auslösen (Painter mit `repaint`).
 - Prüfen mit `--profile` und Impeller (Standard). Debug-Builds sind deutlich langsamer und taugen nicht zum Urteilen.
+
+## Updates (App und Home Assistant)
+Dateien: `features/updates/` (`app_release.dart`, `app_installer.dart`, `app_update_provider.dart`, `app_update_widgets.dart`, `ha_updates_provider.dart`, `updates_screen.dart`, `update_widgets.dart`), `data/models/ha_update.dart`, `core/widgets/simple_markdown.dart`, Entwicklungsdaten in `dev/fake_updates.dart`. Route `/settings/updates` (`Routes.updates`), Screenshot mit `?screen=updates`.
+
+**App-Update:**
+- `app_release.dart` ist reine Logik: `SemVer` (0.10.0 > 0.9.1, `-pre` unter der fertigen Version), `parseRelease` (Entwurf, Pre-Release und Tags ohne Version fallen weg, Asset `haven-<version>.apk`, sonst die einzige andere APK, nur https), `isCheckDue` (6 Stunden), `ReleaseChecker` über `package:http` (im Test `MockClient`).
+- `AppUpdateController` (`appUpdateProvider`): prüft beim Start über `HomeScreen.initState` (`checkIfDue`) und manuell (`check`). Letzte Prüfung, weggewischte Version und das gefundene Release liegen im `SettingsStore` (`update_last_check`, `update_dismissed`, `update_latest_release`). Download mit Fortschritt in den App-Cache, Größe wird gegen das Asset geprüft, eine fertige Datei wird wiederverwendet.
+- Installation: `AppInstaller` (`AndroidAppInstaller` ruft den `MethodChannel` `de.phiph.haven/installer` aus `MainActivity.kt`: `cacheDir`, `canInstall`, `openInstallSettings`, `install`). `install` nimmt nur Dateien aus dem App-Cache, baut per `FileProvider` (`${applicationId}.fileprovider`, `res/xml/provider_paths.xml`) die URI und startet `ACTION_VIEW`. Das Manifest hat `REQUEST_INSTALL_PACKAGES`. Fehlt die Erlaubnis, zeigt die Karte eine Erklärung und `Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES` mit `package:`-URI. Ohne Android (`supported == false`) öffnet der Knopf die Release-Seite (`url_launcher`).
+- Versionen kommen aus `package_info_plus` (`main` überschreibt `appVersionProvider`), ohne Treffer gilt `kFallbackAppVersion`.
+
+**HA-Updates:** `HaUpdate.fromEntity` liest die Attribute defensiv, `UpdateFeature` hält die Bits (INSTALL 1, SPECIFIC_VERSION 2, PROGRESS 4, BACKUP 8, RELEASE_NOTES 16). `classifyUpdate` ordnet nach `entity_id`, Titel, Symbol und `release_url` zu: Haven vor Core/OS/Supervisor-IDs vor Add-ons (`/api/hassio/addons/` im Bild) vor Firmware vor Rest (Integrationen). `HaUpdates` (mit `==`) hält die anstehenden (`state == on` oder laufend), `bulkTargets` schließt Core, OS, Supervisor und Laufendes aus. `UpdatesController` ruft `update.install` (mit `backup: true` nur bei Bit 8), `update.skip`, `update/release_notes` (nur bei Bit 16). Fortschritt kommt aus `in_progress` und `update_percentage` der normalen Zustands-Events. `timeout` und `disconnected` bei `update.install` gelten nicht als Fehler. Nach Core, OS oder Supervisor zeigt der Screen „Home Assistant startet neu“, solange die Verbindung weg ist, der vorhandene Reconnect holt sie zurück. `integrationInfoProvider` liest `haven/info.version` und das neueste Release von `phiph-s/haven-ha`, die Hinweiskarte gibt es nur, wenn keine Haven-Entity existiert.
+- Fake: fünf erfundene Entities, `update.install` simuliert Fortschritt (mit Zeitgebern), `buildFakeReleaseClient` liefert erfundene GitHub-Releases (App 0.4.0), `FakeAppInstaller` für Screenshots mit Installationsknopf. In `main.dart` nur hinter `kHavenFake`.
 
 ## Konventionen
 - Nur `Transform` und `Opacity` animieren, Glows in `RepaintBoundary`, Radialverlauf statt `BackdropFilter`. Regler und Drehregler zeichnen per `CustomPainter` mit `repaint:`-Listenable (kein Neubau pro Frame).

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -15,6 +17,8 @@ import '../../core/widgets/section_header.dart';
 import '../../core/widgets/skeleton.dart';
 import '../../data/models/snapshot.dart';
 import '../../data/models/widget_config.dart';
+import '../updates/app_update_provider.dart';
+import '../updates/app_update_widgets.dart';
 import 'weather_text.dart';
 import 'widgets/home_widgets.dart';
 import 'widgets/room_tile.dart';
@@ -29,6 +33,15 @@ class HomeScreen extends ConsumerStatefulWidget {
 
 class _HomeScreenState extends ConsumerState<HomeScreen> {
   bool _editing = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // Beim Start nach einer neuen App-Version sehen, höchstens alle 6 Stunden.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) unawaited(ref.read(appUpdateProvider.notifier).checkIfDue());
+    });
+  }
 
   static String _greeting() {
     final h = DateTime.now().hour;
@@ -144,6 +157,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                         ],
                       ),
                       _Notices(snap: snap, fake: repo.isFake),
+                      const UpdateNotices(),
                       SizedBox(
                         height: 56,
                         child: ListView.separated(
