@@ -83,7 +83,7 @@ void main() {
   testWidgets('Liste: Kopf, Braucht dich, Räume, Filter', (tester) async {
     await _open(tester, '/zigbee');
     expect(find.text('Zigbee'), findsWidgets);
-    expect(find.textContaining('20 Geräte'), findsOneWidget);
+    expect(find.textContaining('21 Geräte'), findsOneWidget);
     expect(find.textContaining('Kanal 25'), findsOneWidget);
     expect(find.text('Gerät hinzufügen'), findsOneWidget);
     expect(find.text('Funknetz'), findsOneWidget);

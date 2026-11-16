@@ -1,6 +1,7 @@
 import '../core/light/color_math.dart';
 import 'models/floor_plan.dart';
 import 'models/snapshot.dart';
+import 'models/state_history.dart';
 import 'sync/app_data.dart';
 import 'zigbee_api.dart';
 
@@ -91,6 +92,14 @@ abstract class HavenRepository implements ZigbeeApi {
   /// Ein Dokument hat sich geändert (Ereignis `haven_data_updated`, auch
   /// das eigene Speichern), außerdem nach jedem Verbinden für alle Arten.
   Stream<AppDataKind> get appDataChanges;
+
+  /// Zustandswechsel der [entityIds] seit [start] (HA-History,
+  /// `history/history_during_period`), nach Zeit sortiert. Ohne History
+  /// (Recorder aus, Fehler) eine leere Karte.
+  Future<Map<String, List<StateChange>>> stateHistory(
+    List<String> entityIds,
+    DateTime start,
+  );
 
   /// Rohbefehl an die HA-WebSocket-API, z. B. `haven/zigbee/devices`. Die
   /// Das `FakeRepository` beantwortet `haven/info`, `haven/rooms`,

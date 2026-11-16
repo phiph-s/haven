@@ -320,24 +320,18 @@ ZbNetworkMap buildFakeNetworkMap(
   DateTime? measuredAt,
 }) {
   final p = plan ?? kFakeFloorPlan;
-  final rects = p.layout();
   final points = p.devicePoints([
     for (final d in devices)
       FloorDevice(d.ieee, entityIds[d.ieee] ?? const [], roomId: d.areaId),
   ]);
-  final coordPoint = p.coordinator;
-  final coordPos = coordPoint == null
-      ? const Offset(10, 7)
-      : p.cellOf(coordPoint, layoutRects: rects);
+  final coordPoint = p.coordinatorPoint;
+  final coordPos = coordPoint?.offset ?? const Offset(13, 10);
   final coordRoom = coordPoint?.roomId;
 
   String? roomOf(String ieee) =>
       ieee == fakeCoordinatorIeee ? coordRoom : points[ieee]?.roomId;
-  Offset? posOf(String ieee) => ieee == fakeCoordinatorIeee
-      ? coordPos
-      : (points[ieee] == null
-            ? null
-            : p.cellOf(points[ieee]!, layoutRects: rects));
+  Offset? posOf(String ieee) =>
+      ieee == fakeCoordinatorIeee ? coordPos : points[ieee]?.offset;
   double dist(String a, String b) {
     final pa = posOf(a);
     final pb = posOf(b);
@@ -347,8 +341,8 @@ ZbNetworkMap buildFakeNetworkMap(
 
   bool adjacent(String? a, String? b) {
     if (a == null || b == null || a == b) return false;
-    final ra = rects[a];
-    final rb = rects[b];
+    final ra = p.room(a)?.bounds;
+    final rb = p.room(b)?.bounds;
     if (ra == null || rb == null) return false;
     final i = ra.inflate(0.01).intersect(rb.inflate(0.01));
     return i.width >= 0 && i.height >= 0;

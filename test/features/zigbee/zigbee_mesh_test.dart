@@ -302,9 +302,10 @@ void main() {
       final views = [for (final d in devs) ZbDeviceView.build(d)];
       final s = buildMeshScene(map: map, views: views, plan: kFakeFloorPlan);
       expect(s.autoLayout, isFalse);
-      expect(s.points[map.coordinator!], kFakeFloorPlan.coordinator);
-      final moved = s.withCoordinator(const PlanPoint('bad', 0.5, 0.5));
-      expect(moved.points[map.coordinator!]!.roomId, 'bad');
+      expect(s.points[map.coordinator!], kFakeFloorPlan.coordinatorPoint);
+      expect(s.points[map.coordinator!]!.roomId, 'diele');
+      final moved = s.withCoordinator(const PlanPoint(4.5, 4.5, 'salon'));
+      expect(moved.points[map.coordinator!]!.roomId, 'salon');
     });
   });
 
@@ -348,7 +349,9 @@ void main() {
       expect(find.text('Schwache'), findsOneWidget);
       expect(find.textContaining('gemessen vor'), findsOneWidget);
       expect(find.byType(MeshGraph), findsOneWidget);
-      expect(find.byType(MeshNodeDot), findsNWidgets(21));
+      // 21 Geräte und Koordinator, dazu der Gruppenknoten (zwei Lampen auf
+      // einem Feld) mit seinem ersten Gerät.
+      expect(find.byType(MeshNodeDot), findsNWidgets(23));
 
       final target = find.byWidgetPredicate(
         (w) => w is MeshNodeDot && w.info.name == 'Kochbereich Arbeitslicht 1',

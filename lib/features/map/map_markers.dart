@@ -220,3 +220,15 @@ class _Pill extends StatelessWidget {
     );
   }
 }
+
+/// Symbol einer Darstellungsart (Ziehen-Label, Listen).
+IconData floorKindIcon(FloorKind k) => switch (k) {
+  FloorKind.light => Icons.lightbulb_rounded,
+  FloorKind.temperature => Icons.thermostat_rounded,
+  FloorKind.switchKind => Icons.power_rounded,
+  FloorKind.presence => Icons.sensors_rounded,
+  FloorKind.contact => Icons.door_front_door_outlined,
+  FloorKind.media => Icons.speaker_outlined,
+  FloorKind.remote => Icons.radio_button_checked_rounded,
+  FloorKind.device => Icons.devices_other_rounded,
+};

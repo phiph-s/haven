@@ -19,9 +19,11 @@ final List<RouteBase> mapRoutes = <RouteBase>[
       transitionDuration: HavenMotion.pageIn,
       reverseTransitionDuration: HavenMotion.pageOut,
       child: FloorEditorScreen(
-        // Nur für Screenshots (debug_launch.dart): mode=devices, sel=<Raum>.
+        // Nur für Screenshots (debug_launch.dart): mode=devices, sel=<Raum>,
+        // drag=<Entity> zeigt das Ziehen-Label.
         startInDevices: state.uri.queryParameters['mode'] == 'devices',
         startSelected: state.uri.queryParameters['sel'],
+        startDrag: state.uri.queryParameters['drag'],
       ),
       transitionsBuilder: (context, animation, secondary, child) =>
           SlideTransition(

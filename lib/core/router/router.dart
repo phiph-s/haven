@@ -139,7 +139,16 @@ GoRouter buildRouter(Ref ref, {String? initialLocation}) {
             routes: [
               GoRoute(
                 path: Routes.map,
-                builder: (c, s) => _page(c, const MapScreen()),
+                builder: (c, s) => _page(
+                  c,
+                  MapScreen(
+                    // Nur für Screenshots (debug_launch.dart).
+                    startMenu: s.uri.queryParameters['menu'] == '1',
+                    startMinutes: double.tryParse(
+                      s.uri.queryParameters['t'] ?? '',
+                    ),
+                  ),
+                ),
                 routes: mapRoutes,
               ),
             ],

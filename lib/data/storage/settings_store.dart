@@ -37,6 +37,7 @@ class SettingsStore implements LocalPrefs {
   static const _kUpdateDismissed = 'update_dismissed';
   static const _kUpdateRelease = 'update_latest_release';
   static const _kRoomOrder = 'home_room_order';
+  static const _kMapLayer = 'map_layer';
 
   @override
   Set<String> get excludedLights =>
@@ -103,6 +104,10 @@ class SettingsStore implements LocalPrefs {
   List<String> get roomOrder => _p.getStringList(_kRoomOrder) ?? const [];
   Future<void> setRoomOrder(List<String> ids) =>
       _p.setStringList(_kRoomOrder, ids);
+
+  /// Gewählte Kartenart (`MapLayer.name`), lokal gemerkt.
+  String? get mapLayer => _p.getString(_kMapLayer);
+  Future<void> setMapLayer(String name) => _p.setString(_kMapLayer, name);
 
   // ---- Abgleich mit HA (sync/app_data.dart) ------------------------------
 

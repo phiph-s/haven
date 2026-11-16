@@ -83,7 +83,7 @@ const Map<String, String> kFakeReleaseNotes = {
 /// Release-Antworten der GitHub-API für die Entwicklungsdaten, damit die
 /// Update-Karte der App sichtbar ist. Die Version liegt über der der App.
 http.Client buildFakeReleaseClient({
-  String appVersion = '0.5.0',
+  String appVersion = '0.6.0',
   int apkSize = 48000000,
 }) => MockClient((req) async {
   final repo = req.url.pathSegments.length > 2

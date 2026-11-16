@@ -89,9 +89,9 @@ Zustand: Riverpod oder Bloc. Lampen, Räume, Plan als unveränderliche Modelle (
 - Haptik: `selectionClick` bei Schalter, jeder 10. Prozentstufe, Szene.
 - `prefers-reduced-motion` (Flutter: `MediaQuery.disableAnimations`): Dauer 0, keine Endlosanimationen, Farbwechsel bleiben als harter Wechsel.
 
-## 5. Datenmodell Grundriss
+## 5. Datenmodell Grundriss (Schema 2, ab App 0.5.0)
 
-Ein Raster aus Zellen, eine Zelle ist ungefähr 0,5 m. Räume sind achsenparallele Rechtecke in ganzen Zellen, ohne Überlappung, mindestens 3 mal 3. Entities liegen relativ zum Raum (0..1), damit sie beim Verschieben oder Skalieren des Raums mitwandern.
+Ein Raster aus Zellen, eine Zelle ist ungefähr 0,5 m. Räume sind Polygone, deren Ecken auf Rasterpunkten liegen. Kanten dürfen schräg sein (schräge Wände), Räume dürfen ineinandergreifen (L-Form, Nischen), sich aber nicht überlappen. Eine gemeinsame Kante oder Ecke ist erlaubt. Geräte liegen auf Rasterzellen (absolute Lage), der Ort ergibt sich aus der Geometrie: liegt die Zellmitte in einem Raum, gehört das Gerät zu ihm, sonst ist es **draußen**. „Draußen“ ist ein fester Ort (`outside`), kein Raum, und auf der Karte der Garten um die Wohnung.
 
 ```json
 {
@@ -100,7 +100,7 @@ Ein Raster aus Zellen, eine Zelle ist ungefähr 0,5 m. Räume sind achsenparalle
   "type": "object",
   "required": ["version", "grid", "rooms", "placements"],
   "properties": {
-    "version": { "const": 1 },
+    "version": { "const": 2 },
     "grid": {
       "type": "object",
       "required": ["cols", "rows", "cellMeters"],
@@ -114,15 +114,17 @@ Ein Raster aus Zellen, eine Zelle ist ungefähr 0,5 m. Räume sind achsenparalle
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["id", "name", "x", "y", "w", "h"],
+        "required": ["id", "name", "points"],
         "properties": {
-          "id": { "type": "string" },
+          "id": { "type": "string", "not": { "const": "outside" } },
           "name": { "type": "string" },
           "areaId": { "type": ["string", "null"], "description": "HA-Bereich, optional" },
-          "x": { "type": "integer", "minimum": 0 },
-          "y": { "type": "integer", "minimum": 0 },
-          "w": { "type": "integer", "minimum": 3 },
-          "h": { "type": "integer", "minimum": 3 }
+          "points": {
+            "type": "array",
+            "minItems": 3,
+            "items": { "type": "array", "items": { "type": "integer" }, "minItems": 2, "maxItems": 2 },
+            "description": "Ecken als Rasterpunkte [x, y], 0..cols bzw. 0..rows"
+          }
         }
       }
     },
@@ -130,30 +132,56 @@ Ein Raster aus Zellen, eine Zelle ist ungefähr 0,5 m. Räume sind achsenparalle
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["entityId", "roomId", "rx", "ry"],
+        "required": ["entityId", "x", "y"],
         "properties": {
-          "entityId": { "type": "string", "description": "HA entity_id, z. B. light.tischlampe_salon" },
-          "roomId": { "type": "string" },
-          "rx": { "type": "number", "minimum": 0, "maximum": 1 },
-          "ry": { "type": "number", "minimum": 0, "maximum": 1 },
-          "kind": { "enum": ["light", "temperature", "switch", "presence"], "description": "Darstellung, sonst aus Domain abgeleitet" }
+          "entityId": { "type": "string", "description": "Hauptentity des Geräts" },
+          "deviceId": { "type": "string", "description": "IEEE bzw. HA-Geräte-ID, optional" },
+          "x": { "type": "integer", "minimum": 0, "description": "Zelle, Spalte" },
+          "y": { "type": "integer", "minimum": 0, "description": "Zelle, Zeile" },
+          "kind": { "enum": ["light", "temperature", "switch", "presence", "remote", "contact", "media", "device"] }
         }
       }
-    }
+    },
+    "coordinator": { "type": "array", "items": { "type": "integer" }, "description": "Zelle des Zigbee-Sticks [x, y]" },
+    "outside": {
+      "type": "object",
+      "properties": { "margin": { "type": "integer", "default": 3, "description": "Zellen Garten um die Wohnung auf der Karte" } }
+    },
+    "updatedAt": { "type": "integer", "description": "Stempel des Abgleichs (ms)" }
   }
 }
 ```
 
-Regeln: Beim Ablegen außerhalb aller Räume wird die Platzierung entfernt (Entity kehrt in den Pool zurück). Beim Zeichnen, Verschieben und Skalieren rastet alles am Raster ein, überlappende Ergebnisse werden verworfen. Ein Raum mit `areaId` öffnet beim Tippen die Raumansicht. Lichtkegel: Radius ungefähr 0,95 mal kurze Raumseite, Deckkraft `.35 + .65 * Helligkeit`, geclippt auf den Raum.
+Regeln:
+- **Prüfung:** mindestens 3 Ecken, keine doppelten Ecken, keine kreuzenden Wände, Fläche mindestens 4 Zellen, alle Ecken im Raster, keine Überlappung (exakter Polygon-Schnitt mit Toleranz für gemeinsame Kanten), Raum-ID nicht `outside`. Ungültige Ergebnisse beim Bearbeiten werden verworfen und rot gezeigt.
+- **Editor:** Rechteck aufziehen legt einen Raum an. Ecke ziehen rastet ein, Kantenmitte antippen fügt eine Ecke ein, lange drücken auf eine Ecke entfernt sie (mindestens 3 bleiben), Raum ziehen verschiebt ihn samt Geräten. Rückgängig, große Griffe, Haptik bei jedem Rasterschritt. Geräte rasten auf Zellen ein, beim Ziehen schwebt über dem Finger ein Label mit Symbol, Name und Ziel (Raum, „Draußen“ oder „Zurück in die Liste“). Loslassen außerhalb des Grundrisses gibt das Gerät frei.
+- **Gruppen:** Mehrere Geräte auf einer Zelle sind ein Gruppenknoten mit Zahl, Antippen fächert sie auf. Gilt in Karte, Editor und Netzgraph.
+- **Raum ohne Platzierung:** Geräte mit bekanntem Raum, aber ohne Platzierung liegen auf freien Zellen nahe der Raummitte.
+- **Version 1** (Rechtecke `x, y, w, h`, Platzierungen `roomId, rx, ry` relativ zum Raum) wird beim Laden umgestellt: Rechteck-Polygone, Platzierungen auf die Zelle `x + floor(rx * w)`, alles rückt 3 Zellen nach rechts unten (Platz für Draußen), das Raster wächst um 6. Gespeichert wird danach Version 2.
+- Ein Raum mit `areaId` öffnet beim Tippen die Raumansicht (Kartenart Licht).
 
-Speicherort später: Haven-Integration in HA (`.storage`), pro Haus ein Dokument.
+Speicherort: Haven-Integration in HA (`.storage/haven.floorplan`), pro Haus ein Dokument, Abgleich zwischen Geräten (siehe `ARCHITECTURE.md`, „Geteilte Daten“).
+
+### 5.1 Kartenarten
+Auswahl schwebend oben rechts: zugeklappt ein runder Knopf mit dem Symbol der aktiven Art in der Lichtfarbe der Wohnung, aufgeklappt fächern die übrigen Arten mit Namen darunter auf (Feder, versetzt). Die Wahl merkt sich die App lokal. Alle Arten liegen auf derselben Karte, der Wechsel animiert.
+
+| Art | Darstellung |
+|---|---|
+| Licht | Lichtkegel in der echten Farbe, Deckkraft `.35 + .65 * Helligkeit`, auf den Raum geclippt. Antippen schaltet. |
+| Temperatur | Heatmap **pro Raum** nur aus den eigenen Sensoren (inverse Distanzgewichtung, ein Sensor färbt gleichmäßig), auf das Polygon geclippt. Farbskala **global** über alle Räume, auf 1 °C gerundet, mindestens 4 °C breit. Werte als Zahl am Sensor, Legende mit Skala. |
+| Luftfeuchte | wie Temperatur, Skala auf 5 % gerundet, mindestens 20 % breit, eigene Farben (Sand bis Indigo). |
+| Bewegung | Räume leuchten bei Bewegung und klingen ab (Halbwertszeit 3 min, nach 30 min aus), „vor 3 min“ unter dem Namen. Melder pulsieren beim Auslösen. Zeitstrahl der letzten 60 min aus der HA-History mit Schieber. |
+| Funknetz | Netzgraph nach 5a auf derselben Karte, die Räume rücken auseinander. Vollbild bleibt unter `/zigbee/mesh`. |
+| Batterie | Geräte als Ring mit Prozent, grün ab 40 %, gelb ab 20 %, darunter rot und hervorgehoben. |
+
+**Draußen bei Temperatur und Feuchte:** eigener Wert am Sensor und in der Legende, aber nicht Teil der Innenskala und nicht eingefärbt. Draußen weicht oft um 10 bis 20 °C ab: in einer gemeinsamen Skala würden die Räume fast gleich aussehen, und der Vergleich zwischen den Räumen ist der Zweck der Karte.
 
 ## 5a. Zigbee-Graph auf dem Grundriss (Vorgabe, 2026-11-15)
 Der Mesh-Graph nutzt **dieselbe Kartenansicht** wie die normale Karte, kein eigenes, handplatziertes Layout.
-- Knoten = Zigbee-Geräte an ihrer Grundriss-Position. Die Position eines Geräts ist die Platzierung einer seiner Entities (zuerst die Hauptentity, z. B. das Licht). Geräte ohne Platzierung, aber mit Raum liegen in der Raummitte, mehrere davon im kleinen Kreis darum, damit sie sich nicht überdecken. Geräte ohne Raum stehen in einem Bereich „Ohne Raum“ neben dem Grundriss.
+- Knoten = Zigbee-Geräte an ihrer Grundriss-Position. Die Position eines Geräts ist die Platzierung einer seiner Entities (zuerst die Hauptentity, z. B. das Licht). Geräte ohne Platzierung, aber mit Raum liegen auf freien Zellen nahe der Raummitte. Mehrere Geräte auf einer Zelle sind ein Gruppenknoten. Geräte ohne Raum stehen in einem Bereich „Ohne Raum“ neben dem Grundriss.
 - Die Koordinatorposition ist frei setzbar, wie eine Entity, z. B. dort, wo der Stick steht.
 - Kanten = Verbindungen aus der Z2M-Netzkarte (`bridge/request/networkmap`, raw) mit Richtung (Pfeil zum Elternknoten bzw. Router) und LQI als Beschriftung. Schwache Verbindungen werden hervorgehoben.
-- **In der Graph-Ansicht liegen die Räume weiter auseinander** (z. B. ein fester Spalt von 1 bis 2 Zellen zwischen allen Räumen, Räume behalten ihre Größe). So bleibt Platz für Pfeile und Beschriftungen zwischen den Räumen. Der Wechsel Karte ↔ Graph animiert die Räume auseinander und zurück.
+- **In der Graph-Ansicht liegen die Räume weiter auseinander** (etwa 2 Zellen Spalt zwischen Nachbarn, Räume behalten Größe und Form, jedes Polygon rückt als Ganzes vom Mittelpunkt der Wohnung weg). So bleibt Platz für Pfeile und Beschriftungen zwischen den Räumen. Der Wechsel Karte ↔ Graph animiert die Räume auseinander und zurück.
 - Router (Netzstrom) und Endgeräte (Batterie) unterscheiden sich in der Form, Lampen behalten ihre Lichtfarbe.
 
 ## 6. Offen

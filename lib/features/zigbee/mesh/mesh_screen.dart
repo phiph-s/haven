@@ -140,30 +140,15 @@ class _ZigbeeMeshScreenState extends ConsumerState<ZigbeeMeshScreen> {
     });
   }
 
-  /// Raumrelativer Punkt zu einem Pixel: im Raum darunter oder im nächsten.
+  /// Punkt zu einem Pixel: die Rasterzelle darunter (Raum oder Draußen),
+  /// im Raster gehalten, nie im Bereich „Ohne Raum“.
   PlanPoint? _pointAt(FloorGeometry geo, MeshScene scene, Offset px) {
-    String? best;
-    var bd = double.infinity;
-    for (final e in geo.rooms.entries) {
-      if (e.key == kNoRoomId) continue;
-      final r = e.value;
-      final c = Offset(
-        px.dx.clamp(r.left, r.right).toDouble(),
-        px.dy.clamp(r.top, r.bottom).toDouble(),
-      );
-      final d = (c - px).distance;
-      if (d < bd) {
-        bd = d;
-        best = e.key;
-      }
-    }
-    if (best == null) return null;
-    final r = geo.rooms[best]!;
-    return PlanPoint(
-      best,
-      ((px.dx - r.left) / r.width).clamp(0.08, 0.92).toDouble(),
-      ((px.dy - r.top) / r.height).clamp(0.16, 0.92).toDouble(),
-    );
+    final g = scene.plan.grid;
+    final c = geo.planCellAt(px);
+    final cell = GridPoint(c.x.clamp(0, g.cols - 1), c.y.clamp(0, g.rows - 1));
+    final p = scene.plan.pointOfCell(cell);
+    if (p.roomId == kNoRoomId) return null;
+    return p;
   }
 
   Future<void> _dropCoordinator() async {
@@ -171,7 +156,9 @@ class _ZigbeeMeshScreenState extends ConsumerState<ZigbeeMeshScreen> {
     _dragPx = null;
     final saved = ref.read(floorPlanProvider).value;
     if (p == null || saved == null) return;
-    await ref.read(floorPlanProvider.notifier).save(saved.withCoordinator(p));
+    await ref
+        .read(floorPlanProvider.notifier)
+        .save(saved.withCoordinator(p.cell));
     if (mounted) setState(() => _draft = null);
   }
 
@@ -278,8 +265,10 @@ class _ZigbeeMeshScreenState extends ConsumerState<ZigbeeMeshScreen> {
             constraints: cons,
             gap: 2,
             fill: true,
+            withOutside: !scene.autoLayout,
           ),
           gap: 2,
+          withOutside: !scene.autoLayout,
           nodes: MeshGraph.floorNodes(scene, map),
         );
         if (_placing && cid != null) {

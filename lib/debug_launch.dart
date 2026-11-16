@@ -16,6 +16,11 @@ import 'package:material_ui/material_ui.dart';
 /// `screen=zigbee_mesh` zeigt den Netz-Graphen, `select=<ieee>` (bzw. `ieee=`)
 /// wählt einen Knoten, `filter=all` zeigt alle Verbindungen.
 /// `screen=room&extent=0.5` öffnet das Raum-Sheet halb gezogen.
+/// `screen=map&layer=temperature` wählt die Kartenart (`light`,
+/// `temperature`, `humidity`, `presence`, `network`, `battery`),
+/// `menu=1` klappt die Auswahl der Kartenarten auf, `t=-20` stellt den
+/// Zeitstrahl der Bewegung auf vor 20 min.
+/// `screen=floorplan_editor&drag=<Entity>` zeigt das Ziehen-Label.
 class LaunchOverrides {
   const LaunchOverrides({
     this.theme,
@@ -25,6 +30,10 @@ class LaunchOverrides {
     this.ieee,
     this.extent,
     this.filter,
+    this.layer,
+    this.menu = false,
+    this.drag,
+    this.time,
   });
 
   factory LaunchOverrides.fromUri(Uri uri) {
@@ -42,6 +51,10 @@ class LaunchOverrides {
       ieee: q['ieee'] ?? q['select'],
       extent: q['extent'],
       filter: q['filter'],
+      layer: q['layer'],
+      menu: q['menu'] == '1',
+      drag: q['drag'],
+      time: q['t'],
     );
   }
 
@@ -61,6 +74,18 @@ class LaunchOverrides {
   /// Filter des Netz-Graphen (`tree`, `all`, `weak`, `routers`).
   final String? filter;
 
+  /// Kartenart (`MapLayer.name`).
+  final String? layer;
+
+  /// Auswahl der Kartenarten aufgeklappt (Screenshot).
+  final bool menu;
+
+  /// Entity, deren Ziehen-Label der Editor zeigt (Screenshot).
+  final String? drag;
+
+  /// Zeitstrahl der Bewegung in Minuten (z. B. `-20`).
+  final String? time;
+
   /// Es gibt etwas zu überschreiben.
   bool get active => screen != null || theme != null || preset != null;
 
@@ -68,9 +93,15 @@ class LaunchOverrides {
     'home' => '/home',
     'room' => '/room/$room${extent == null ? '' : '?extent=$extent'}',
     'sheet' => '/room/$room?sheet=1',
-    'map' => '/map',
+    'map' => Uri(
+      path: '/map',
+      queryParameters: !menu && time == null
+          ? null
+          : {if (menu) 'menu': '1', 't': ?time},
+    ).toString(),
     'floorplan_editor' =>
-      '/map/editor?mode=${preset == 'devices' ? 'devices' : 'rooms'}&sel=$room',
+      '/map/editor?mode=${preset == 'devices' ? 'devices' : 'rooms'}&sel=$room'
+          '${drag == null ? '' : '&drag=$drag'}',
     'zigbee' => '/zigbee',
     'zigbee_device' => '/zigbee/device/${ieee ?? '0x00124b0000000009'}',
     'zigbee_pair' => '/zigbee/pair',

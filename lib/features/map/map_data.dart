@@ -26,15 +26,19 @@ class RoomValues {
 /// neu, wenn sich eine platzierte Lampe oder ein Raumwert ändert.
 @immutable
 class MapLights {
-  const MapLights(this.lamps, this.rooms);
+  const MapLights(this.lamps, this.rooms, [this.where = const {}]);
   final Map<String, Lamp> lamps;
   final Map<String, RoomValues> rooms;
+
+  /// Ort (Raum-ID oder `outside`) je platzierter Lampe.
+  final Map<String, String> where;
 
   @override
   bool operator ==(Object other) =>
       other is MapLights &&
       mapEquals(other.lamps, lamps) &&
-      mapEquals(other.rooms, rooms);
+      mapEquals(other.rooms, rooms) &&
+      mapEquals(other.where, where);
 
   @override
   int get hashCode => Object.hash(lamps.length, rooms.length);
@@ -69,10 +73,14 @@ final mapLightsProvider = Provider.family<MapLights, HavenFloorPlan>((
 ) {
   final s = ref.watch(snapshotProvider);
   final lamps = <String, Lamp>{};
+  final where = <String, String>{};
   for (final p in plan.placements) {
     if (p.resolvedKind != FloorKind.light) continue;
     final l = s.lamp(p.entityId);
-    if (l != null) lamps[p.entityId] = l;
+    if (l != null) {
+      lamps[p.entityId] = l;
+      where[p.entityId] = plan.locationOf(p);
+    }
   }
   final rooms = <String, RoomValues>{};
   for (final r in plan.rooms) {
@@ -83,7 +91,8 @@ final mapLightsProvider = Provider.family<MapLights, HavenFloorPlan>((
     final h = sr?.humidityId == null ? null : s.entity(sr!.humidityId!)?.number;
     if (t == null) {
       for (final p in plan.placements) {
-        if (p.roomId == r.id && p.resolvedKind == FloorKind.temperature) {
+        if (p.resolvedKind == FloorKind.temperature &&
+            plan.locationOf(p) == r.id) {
           t = s.entity(p.entityId)?.number;
           if (t != null) break;
         }
@@ -91,7 +100,7 @@ final mapLightsProvider = Provider.family<MapLights, HavenFloorPlan>((
     }
     if (t != null || h != null) rooms[r.id] = RoomValues(t, h);
   }
-  return MapLights(lamps, rooms);
+  return MapLights(lamps, rooms, where);
 });
 
 String num1(double v) => v.toStringAsFixed(1).replaceAll('.', ',');

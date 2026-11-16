@@ -228,7 +228,7 @@ void main() {
     test('Rohbefehle der Integration kommen aus den Konstanten', () async {
       final r = await _repo();
       final devices = await r.command('haven/zigbee/devices') as Map;
-      expect((devices['devices'] as List), hasLength(20));
+      expect((devices['devices'] as List), hasLength(21));
       final groups = await r.command('haven/zigbee/groups') as Map;
       expect((groups['groups'] as List), hasLength(2));
       expect(

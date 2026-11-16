@@ -12,6 +12,7 @@ import '../models/floor_plan.dart';
 import '../models/light_groups.dart';
 import '../models/room.dart';
 import '../models/snapshot.dart';
+import '../models/state_history.dart';
 import '../models/zigbee.dart';
 import '../models/zigbee_network.dart';
 import '../scene_styles.dart';
@@ -206,6 +207,28 @@ class HaRepository extends BaseRepository {
   /// Integration speichert `updated_at` und `layout` (ab 0.3.0). Ältere
   /// lehnen unbekannte Felder ab.
   bool get _v3 => _features.contains('data_events');
+
+  @override
+  Future<Map<String, List<StateChange>>> stateHistory(
+    List<String> entityIds,
+    DateTime start,
+  ) async {
+    if (entityIds.isEmpty) return const {};
+    try {
+      final r = await client.send({
+        'type': 'history/history_during_period',
+        'start_time': start.toUtc().toIso8601String(),
+        'entity_ids': entityIds,
+        'minimal_response': true,
+        'no_attributes': true,
+        'significant_changes_only': false,
+      });
+      return parseStateHistory(r);
+    } catch (e) {
+      debugPrint('history: $e');
+      return const {};
+    }
+  }
 
   @override
   Future<RemoteDoc> fetchAppData(AppDataKind kind) async {

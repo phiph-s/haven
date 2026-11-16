@@ -68,11 +68,11 @@ Future<_Harness> _build({
 final _storedRelease = <String, Object>{
   'update_latest_release': jsonEncode(
     ReleaseInfo(
-      version: '0.5.0',
-      tag: 'v0.5.0',
+      version: '0.6.0',
+      tag: 'v0.6.0',
       notes: '## Neu\n\n- Schnellere **Raumansicht**',
-      pageUrl: 'https://github.com/phiph-s/haven/releases/tag/v0.5.0',
-      apkUrl: 'https://github.com/phiph-s/haven/releases/download/v0.5.0/haven-0.5.0.apk',
+      pageUrl: 'https://github.com/phiph-s/haven/releases/tag/v0.6.0',
+      apkUrl: 'https://github.com/phiph-s/haven/releases/download/v0.6.0/haven-0.6.0.apk',
       apkSize: 1000,
     ).toJson(),
   ),
@@ -267,13 +267,13 @@ void main() {
       final h = await _build(location: '/home');
       await tester.runAsync(() async => tester.pumpWidget(h.widget));
       await _settle(tester);
-      expect(find.text('Haven 0.5.0 ist da'), findsOneWidget);
+      expect(find.text('Haven 0.6.0 ist da'), findsOneWidget);
       expect(find.text('5 Updates verfügbar'), findsOneWidget);
 
       await tester.tap(find.byIcon(Icons.close_rounded));
       await tester.pumpAndSettle();
-      expect(find.text('Haven 0.5.0 ist da'), findsNothing);
-      expect(h.store.updateDismissed, '0.5.0');
+      expect(find.text('Haven 0.6.0 ist da'), findsNothing);
+      expect(h.store.updateDismissed, '0.6.0');
       expect(h.store.updateLastCheck, isNotNull);
     });
 
@@ -283,11 +283,11 @@ void main() {
       _phone(tester);
       final h = await _build(
         location: '/home',
-        prefs: {'update_dismissed': '0.5.0'},
+        prefs: {'update_dismissed': '0.6.0'},
       );
       await tester.runAsync(() async => tester.pumpWidget(h.widget));
       await _settle(tester);
-      expect(find.text('Haven 0.5.0 ist da'), findsNothing);
+      expect(find.text('Haven 0.6.0 ist da'), findsNothing);
     });
 
     testWidgets('keine Karte bei gleicher Version, kein Aufruf im Intervall', (
@@ -297,10 +297,10 @@ void main() {
       var calls = 0;
       final h = await _build(
         location: '/home',
-        version: '0.5.0',
+        version: '0.6.0',
         client: MockClient((req) async {
           calls++;
-          return buildFakeReleaseClient(appVersion: '0.5.0').get(req.url);
+          return buildFakeReleaseClient(appVersion: '0.6.0').get(req.url);
         }),
       );
       await tester.runAsync(() async => tester.pumpWidget(h.widget));
@@ -332,7 +332,7 @@ void main() {
         final h = await _build(location: '/settings', prefs: _storedRelease);
         await tester.runAsync(() async => tester.pumpWidget(h.widget));
         await tester.pumpAndSettle();
-        await _scrollTo(tester, find.text('Haven 0.5.0 ist verfügbar'));
+        await _scrollTo(tester, find.text('Haven 0.6.0 ist verfügbar'));
         expect(find.text('Du hast 0.3.0.'), findsOneWidget);
         expect(find.textContaining('Schnellere'), findsOneWidget);
         await _scrollTo(tester, find.text('Herunterladen und installieren'));
@@ -350,7 +350,7 @@ void main() {
       );
       await tester.runAsync(() async => tester.pumpWidget(h.widget));
       await _settle(tester);
-      await _scrollTo(tester, find.text('Neue Version 0.5.0 verfügbar'));
+      await _scrollTo(tester, find.text('Neue Version 0.6.0 verfügbar'));
       expect(find.text('Release-Seite öffnen'), findsOneWidget);
     });
   });

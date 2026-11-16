@@ -28,6 +28,7 @@ Future<void> main() async {
   final store = SettingsStore(await SharedPreferences.getInstance());
   final tokens = SecureTokenStore();
   if (launch.theme != null) await store.setThemeMode(launch.theme!);
+  if (launch.layer != null) await store.setMapLayer(launch.layer!);
 
   final session = await _bootstrap(store, tokens, launch);
 

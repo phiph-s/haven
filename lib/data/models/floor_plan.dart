@@ -4,13 +4,29 @@ import 'dart:ui' show Offset, Rect, Size;
 
 import 'package:flutter/foundation.dart';
 
-/// Kleinste Raumseite in Zellen (Spec 5).
-const int kMinRoomCells = 3;
+import 'polygon.dart';
+
+export 'polygon.dart' show GridPoint, PointLocation;
+
+/// Aktuelle Schema-Version des Grundrisses. Version 1 (Rechtecke, relative
+/// Platzierungen) wird beim Laden umgestellt und mit 2 gespeichert.
+const int kFloorPlanVersion = 2;
+
+/// Fester Ort „Draußen“: alles im Raster, was in keinem Raum liegt.
+const String kOutsideId = 'outside';
+const String kOutsideName = 'Draußen';
+
+/// Kleinste Raumfläche in Zellen.
+const double kMinRoomArea = 4;
+
+/// Rand um die Wohnung, um den Version-1-Pläne beim Umstellen wachsen, damit
+/// „Draußen“ Platz hat.
+const int kMigrateMargin = 3;
 
 /// Raster: eine Zelle ist ungefähr [cellMeters] groß.
 @immutable
 class FloorGrid {
-  const FloorGrid({this.cols = 20, this.rows = 26, this.cellMeters = 0.5});
+  const FloorGrid({this.cols = 26, this.rows = 32, this.cellMeters = 0.5});
 
   factory FloorGrid.fromJson(Map<String, dynamic> j) => FloorGrid(
     cols: (j['cols'] as num).toInt(),
@@ -21,6 +37,16 @@ class FloorGrid {
   final int cols;
   final int rows;
   final double cellMeters;
+
+  Rect get rect => Rect.fromLTWH(0, 0, cols.toDouble(), rows.toDouble());
+
+  bool containsCell(int x, int y) => x >= 0 && y >= 0 && x < cols && y < rows;
+
+  FloorGrid copyWith({int? cols, int? rows}) => FloorGrid(
+    cols: cols ?? this.cols,
+    rows: rows ?? this.rows,
+    cellMeters: cellMeters,
+  );
 
   Map<String, dynamic> toJson() => {
     'cols': cols,
@@ -37,6 +63,28 @@ class FloorGrid {
 
   @override
   int get hashCode => Object.hash(cols, rows, cellMeters);
+}
+
+/// Einstellungen für „Draußen“: [margin] Zellen Rand um die Wohnung, die die
+/// Karte als Außenbereich zeigt (im Raster).
+@immutable
+class FloorOutside {
+  const FloorOutside({this.margin = 3});
+
+  factory FloorOutside.fromJson(Object? j) => j is Map
+      ? FloorOutside(margin: (j['margin'] as num?)?.toInt() ?? 3)
+      : const FloorOutside();
+
+  final int margin;
+
+  Map<String, dynamic> toJson() => {'margin': margin};
+
+  @override
+  bool operator ==(Object other) =>
+      other is FloorOutside && other.margin == margin;
+
+  @override
+  int get hashCode => margin.hashCode;
 }
 
 /// Darstellungsart einer Platzierung.
@@ -77,27 +125,61 @@ enum FloorKind {
       };
 }
 
-/// Ein Raum: achsenparalleles Rechteck in ganzen Zellen.
+class _RoomGeo {
+  _RoomGeo(List<GridPoint> pts) : offsets = [for (final p in pts) p.offset] {
+    bounds = polygonBounds(offsets);
+    area = polygonArea(offsets);
+    centroid = polygonCentroid(offsets);
+  }
+  final List<Offset> offsets;
+  late final Rect bounds;
+  late final double area;
+  late final Offset centroid;
+  late final Rect inner = largestInnerRect(offsets);
+}
+
+final _geoCache = Expando<_RoomGeo>('room-geo');
+
+/// Ein Raum: Polygon, dessen Ecken auf Rasterpunkten liegen. Kanten dürfen
+/// schräg sein, die Form darf L-förmig sein oder Nischen haben.
 @immutable
 class FloorRoom {
   const FloorRoom({
     required this.id,
     required this.name,
-    required this.x,
-    required this.y,
-    required this.w,
-    required this.h,
+    required this.points,
     this.areaId,
+    this.detached = false,
   });
+
+  /// Rechteck aus Zellen (wie in Version 1).
+  factory FloorRoom.rect({
+    required String id,
+    required String name,
+    required int x,
+    required int y,
+    required int w,
+    required int h,
+    String? areaId,
+    bool detached = false,
+  }) => FloorRoom(
+    id: id,
+    name: name,
+    areaId: areaId,
+    detached: detached,
+    points: [
+      GridPoint(x, y),
+      GridPoint(x + w, y),
+      GridPoint(x + w, y + h),
+      GridPoint(x, y + h),
+    ],
+  );
 
   factory FloorRoom.fromJson(Map<String, dynamic> j) => FloorRoom(
     id: j['id'] as String,
     name: j['name'] as String,
     areaId: j['areaId'] as String?,
-    x: (j['x'] as num).toInt(),
-    y: (j['y'] as num).toInt(),
-    w: (j['w'] as num).toInt(),
-    h: (j['h'] as num).toInt(),
+    points: [for (final p in (j['points'] as List)) GridPoint.fromJson(p)],
   );
 
   final String id;
@@ -105,45 +187,65 @@ class FloorRoom {
 
   /// HA-Bereich, optional.
   final String? areaId;
-  final int x;
-  final int y;
-  final int w;
-  final int h;
 
-  /// Rechteck in Zellen.
-  Rect get rect =>
-      Rect.fromLTWH(x.toDouble(), y.toDouble(), w.toDouble(), h.toDouble());
+  /// Ecken in Reihenfolge (Uhrzeigersinn oder Gegenrichtung).
+  final List<GridPoint> points;
+
+  /// Gehört nicht zur Wohnung (z. B. „Ohne Raum“ im Netzgraph): zählt nicht
+  /// für Umriss und Draußen. Wird nie gespeichert.
+  final bool detached;
+
+  _RoomGeo get _geo => _geoCache[this] ??= _RoomGeo(points);
+
+  /// Ecken als Offsets (Zellen).
+  List<Offset> get offsets => _geo.offsets;
+
+  /// Umschließendes Rechteck in Zellen.
+  Rect get bounds => _geo.bounds;
+
+  /// Fläche in Zellen.
+  double get area => _geo.area;
+
+  Offset get centroid => _geo.centroid;
+
+  /// Größtes Rechteck aus vollen Zellen (Beschriftung, Mitte).
+  Rect get innerRect => _geo.inner;
+
+  /// Mitte für Geräte ohne Platzierung: liegt sicher im Raum.
+  Offset get anchor => innerRect.center;
+
+  PointLocation locate(Offset p) => locatePoint(offsets, p);
+
+  /// Punkt im Raum oder auf dem Rand.
+  bool contains(Offset p) => locate(p) != PointLocation.outside;
+
+  /// Liegt die Mitte der Zelle im Raum (Rand zählt)?
+  bool containsCell(int x, int y) => contains(Offset(x + 0.5, y + 0.5));
+
+  /// Überlappung der Flächen. Gemeinsame Kanten und Ecken zählen nicht.
+  bool overlaps(FloorRoom o) => polygonsOverlap(offsets, o.offsets);
+
+  FloorRoom translate(int dx, int dy) =>
+      copyWith(points: [for (final p in points) p.translate(dx, dy)]);
 
   FloorRoom copyWith({
     String? name,
     String? areaId,
     bool clearArea = false,
-    int? x,
-    int? y,
-    int? w,
-    int? h,
+    List<GridPoint>? points,
   }) => FloorRoom(
     id: id,
     name: name ?? this.name,
     areaId: clearArea ? null : (areaId ?? this.areaId),
-    x: x ?? this.x,
-    y: y ?? this.y,
-    w: w ?? this.w,
-    h: h ?? this.h,
+    points: points ?? this.points,
+    detached: detached,
   );
-
-  /// Überlappung der Flächen. Gemeinsame Kanten zählen nicht.
-  bool overlaps(FloorRoom o) =>
-      x < o.x + o.w && x + w > o.x && y < o.y + o.h && y + h > o.y;
 
   Map<String, dynamic> toJson() => {
     'id': id,
     'name': name,
     'areaId': areaId,
-    'x': x,
-    'y': y,
-    'w': w,
-    'h': h,
+    'points': [for (final p in points) p.toJson()],
   };
 
   @override
@@ -152,77 +254,87 @@ class FloorRoom {
       other.id == id &&
       other.name == name &&
       other.areaId == areaId &&
-      other.x == x &&
-      other.y == y &&
-      other.w == w &&
-      other.h == h;
+      other.detached == detached &&
+      listEquals(other.points, points);
 
   @override
-  int get hashCode => Object.hash(id, name, areaId, x, y, w, h);
+  int get hashCode => Object.hash(id, name, areaId, Object.hashAll(points));
+
+  @override
+  String toString() => 'FloorRoom($id, $points)';
 }
 
-/// Ein Punkt relativ zu einem Raum (rx, ry in 0..1).
+/// Ein Punkt im Grundriss in Zellen ([x], [y] als Kommazahl, die Mitte der
+/// Zelle (2, 3) ist (2,5; 3,5)) und der Ort, zu dem er gehört ([roomId] oder
+/// [kOutsideId]). Der Ort entscheidet, mit welchem Raum der Punkt wandert,
+/// wenn die Räume auseinanderrücken.
 @immutable
 class PlanPoint {
-  const PlanPoint(this.roomId, this.rx, this.ry);
+  const PlanPoint(this.x, this.y, this.roomId);
+  final double x;
+  final double y;
   final String roomId;
-  final double rx;
-  final double ry;
+
+  Offset get offset => Offset(x, y);
+
+  /// Rasterzelle des Punkts.
+  GridPoint get cell => GridPoint(x.floor(), y.floor());
+
+  bool get isOutside => roomId == kOutsideId;
 
   @override
   bool operator ==(Object other) =>
       other is PlanPoint &&
       other.roomId == roomId &&
-      other.rx == rx &&
-      other.ry == ry;
+      other.x == x &&
+      other.y == y;
 
   @override
-  int get hashCode => Object.hash(roomId, rx, ry);
+  int get hashCode => Object.hash(roomId, x, y);
 
   @override
-  String toString() => 'PlanPoint($roomId, $rx, $ry)';
+  String toString() => 'PlanPoint($roomId, $x, $y)';
 }
 
-/// Platzierung eines Geräts in einem Raum. [entityId] ist die Hauptentity
-/// des Geräts (Lampe, Schalter, Temperatur, Melder), die übrigen Entities
-/// des Geräts erben die Position. [deviceId] (IEEE bei Zigbee, sonst die
-/// HA-Geräte-ID) ist optional und additiv: Pläne ohne sie bleiben gültig,
-/// `migrateDevices` ergänzt sie.
+/// Platzierung eines Geräts auf einer Rasterzelle ([x], [y]). [entityId] ist
+/// die Hauptentity des Geräts (Lampe, Schalter, Temperatur, Melder), die
+/// übrigen Entities erben die Position. [deviceId] (IEEE bei Zigbee, sonst
+/// die HA-Geräte-ID) ist optional. Der Ort (Raum oder Draußen) ergibt sich
+/// aus der Lage, siehe [HavenFloorPlan.locationOfCell].
 @immutable
 class FloorPlacement {
   const FloorPlacement({
     required this.entityId,
-    required this.roomId,
-    required this.rx,
-    required this.ry,
+    required this.x,
+    required this.y,
     this.kind,
     this.deviceId,
   });
 
   factory FloorPlacement.fromJson(Map<String, dynamic> j) => FloorPlacement(
     entityId: j['entityId'] as String,
-    roomId: j['roomId'] as String,
-    rx: (j['rx'] as num).toDouble(),
-    ry: (j['ry'] as num).toDouble(),
+    x: (j['x'] as num).floor(),
+    y: (j['y'] as num).floor(),
     kind: FloorKind.fromJson(j['kind']),
     deviceId: j['deviceId'] as String?,
   );
 
   final String entityId;
-  final String roomId;
-  final double rx;
-  final double ry;
+  final int x;
+  final int y;
   final FloorKind? kind;
   final String? deviceId;
 
   FloorKind get resolvedKind => kind ?? FloorKind.ofEntity(entityId);
-  PlanPoint get point => PlanPoint(roomId, rx, ry);
+  GridPoint get cell => GridPoint(x, y);
+
+  /// Mitte der Zelle in Zellen.
+  Offset get center => Offset(x + 0.5, y + 0.5);
 
   Map<String, dynamic> toJson() => {
     'entityId': entityId,
-    'roomId': roomId,
-    'rx': rx,
-    'ry': ry,
+    'x': x,
+    'y': y,
     if (kind != null) 'kind': kind!.json,
     if (deviceId != null) 'deviceId': deviceId,
   };
@@ -231,11 +343,12 @@ class FloorPlacement {
     String? entityId,
     String? deviceId,
     FloorKind? kind,
+    int? x,
+    int? y,
   }) => FloorPlacement(
     entityId: entityId ?? this.entityId,
-    roomId: roomId,
-    rx: rx,
-    ry: ry,
+    x: x ?? this.x,
+    y: y ?? this.y,
     kind: kind ?? this.kind,
     deviceId: deviceId ?? this.deviceId,
   );
@@ -244,14 +357,16 @@ class FloorPlacement {
   bool operator ==(Object other) =>
       other is FloorPlacement &&
       other.entityId == entityId &&
-      other.roomId == roomId &&
-      other.rx == rx &&
-      other.ry == ry &&
+      other.x == x &&
+      other.y == y &&
       other.kind == kind &&
       other.deviceId == deviceId;
 
   @override
-  int get hashCode => Object.hash(entityId, roomId, rx, ry, kind, deviceId);
+  int get hashCode => Object.hash(entityId, x, y, kind, deviceId);
+
+  @override
+  String toString() => 'FloorPlacement($entityId @ $x, $y)';
 }
 
 /// Ein Gerät für die Positionsableitung: Entity-IDs mit der Hauptentity
@@ -264,24 +379,31 @@ class FloorDevice {
   final String? roomId;
 }
 
-/// Grundriss nach Spec 5: Raster, Räume als Rechtecke, Platzierungen relativ
-/// zum Raum. Unveränderlich, Änderungen liefern eine neue Instanz.
+/// Grundriss (Schema-Version 2): Raster, Räume als Polygone auf Rasterpunkten,
+/// Platzierungen als Rasterzellen, „Draußen“ als fester Ort um die Wohnung.
+/// Unveränderlich, Änderungen liefern eine neue Instanz.
 ///
-/// Das Dokument ist der Speicherinhalt (`toJson`). Geplanter Speicherort ist
-/// die Haven-Integration in HA (`.storage`), siehe `FloorPlanRepository`.
+/// Version-1-Dokumente (Rechtecke `x,y,w,h`, Platzierungen `roomId,rx,ry`)
+/// werden in [HavenFloorPlan.fromJson] umgestellt: Räume werden Polygone,
+/// Platzierungen absolute Zellen, alles rückt um [kMigrateMargin] nach
+/// rechts unten und das Raster wächst entsprechend.
 @immutable
 class HavenFloorPlan {
   const HavenFloorPlan({
-    this.version = 1,
+    this.version = kFloorPlanVersion,
     this.grid = const FloorGrid(),
     this.rooms = const [],
     this.placements = const [],
     this.coordinator,
+    this.outside = const FloorOutside(),
+    this.updatedAt,
+    this.migratedFrom,
   });
 
   factory HavenFloorPlan.fromJson(Map<String, dynamic> j) {
     final version = (j['version'] as num?)?.toInt();
-    if (version != 1) {
+    if (version == 1) return _fromV1(j);
+    if (version != 2) {
       throw FormatException('Unbekannte Grundriss-Version: $version');
     }
     final c = j['coordinator'];
@@ -295,13 +417,73 @@ class HavenFloorPlan {
         for (final p in (j['placements'] as List))
           FloorPlacement.fromJson(Map<String, dynamic>.from(p as Map)),
       ],
-      coordinator: c == null
-          ? null
-          : PlanPoint(
-              (c as Map)['roomId'] as String,
-              (c['rx'] as num).toDouble(),
-              (c['ry'] as num).toDouble(),
-            ),
+      coordinator: c == null ? null : GridPoint.fromJson(c),
+      outside: FloorOutside.fromJson(j['outside']),
+      updatedAt: (j['updatedAt'] as num?)?.toInt(),
+    );
+  }
+
+  /// Version 1: Räume als Rechtecke, Platzierungen relativ zum Raum.
+  static HavenFloorPlan _fromV1(Map<String, dynamic> j) {
+    const m = kMigrateMargin;
+    final g = FloorGrid.fromJson(Map<String, dynamic>.from(j['grid'] as Map));
+    final rects = <String, (int, int, int, int)>{};
+    final rooms = <FloorRoom>[];
+    for (final raw in (j['rooms'] as List)) {
+      final r = Map<String, dynamic>.from(raw as Map);
+      final x = (r['x'] as num).toInt() + m;
+      final y = (r['y'] as num).toInt() + m;
+      final w = (r['w'] as num).toInt();
+      final h = (r['h'] as num).toInt();
+      rects[r['id'] as String] = (x, y, w, h);
+      rooms.add(
+        FloorRoom.rect(
+          id: r['id'] as String,
+          name: r['name'] as String,
+          areaId: r['areaId'] as String?,
+          x: x,
+          y: y,
+          w: w,
+          h: h,
+        ),
+      );
+    }
+    GridPoint? cellOf(String roomId, num rx, num ry) {
+      final r = rects[roomId];
+      if (r == null) return null;
+      final (x, y, w, h) = r;
+      return GridPoint(
+        x + (rx * w).floor().clamp(0, math.max(0, w - 1)),
+        y + (ry * h).floor().clamp(0, math.max(0, h - 1)),
+      );
+    }
+
+    final placements = <FloorPlacement>[];
+    for (final raw in (j['placements'] as List)) {
+      final p = Map<String, dynamic>.from(raw as Map);
+      final c = cellOf(p['roomId'] as String, p['rx'] as num, p['ry'] as num);
+      if (c == null) continue;
+      placements.add(
+        FloorPlacement(
+          entityId: p['entityId'] as String,
+          x: c.x,
+          y: c.y,
+          kind: FloorKind.fromJson(p['kind']),
+          deviceId: p['deviceId'] as String?,
+        ),
+      );
+    }
+    final co = j['coordinator'];
+    final coord = co is Map
+        ? cellOf(co['roomId'] as String, co['rx'] as num, co['ry'] as num)
+        : null;
+    return HavenFloorPlan(
+      grid: g.copyWith(cols: g.cols + 2 * m, rows: g.rows + 2 * m),
+      rooms: rooms,
+      placements: placements,
+      coordinator: coord,
+      updatedAt: (j['updatedAt'] as num?)?.toInt(),
+      migratedFrom: 1,
     );
   }
 
@@ -313,20 +495,28 @@ class HavenFloorPlan {
   final List<FloorRoom> rooms;
   final List<FloorPlacement> placements;
 
-  /// Position des Zigbee-Koordinators (Stick), frei setzbar wie eine Entity.
-  final PlanPoint? coordinator;
+  /// Zelle des Zigbee-Koordinators (Stick), frei setzbar wie eine Entity.
+  final GridPoint? coordinator;
+  final FloorOutside outside;
+
+  /// Stempel des Abgleichs (ms), steht im Dokument. Zählt nicht für `==`.
+  final int? updatedAt;
+
+  /// Aus welcher Version dieser Stand umgestellt wurde (`null` = keine).
+  /// Nur im Speicher, zählt nicht für `==`.
+  final int? migratedFrom;
 
   Map<String, dynamic> toJson() => {
-    'version': version,
+    'version': kFloorPlanVersion,
     'grid': grid.toJson(),
-    'rooms': [for (final r in rooms) r.toJson()],
+    'rooms': [
+      for (final r in rooms)
+        if (!r.detached) r.toJson(),
+    ],
     'placements': [for (final p in placements) p.toJson()],
-    if (coordinator != null)
-      'coordinator': {
-        'roomId': coordinator!.roomId,
-        'rx': coordinator!.rx,
-        'ry': coordinator!.ry,
-      },
+    if (coordinator != null) 'coordinator': coordinator!.toJson(),
+    'outside': outside.toJson(),
+    if (updatedAt != null) 'updatedAt': updatedAt,
   };
 
   String encode() => jsonEncode(toJson());
@@ -361,32 +551,54 @@ class HavenFloorPlan {
 
   Set<String> get placedEntityIds => {for (final p in placements) p.entityId};
 
-  /// Raum, der die Zelle [cell] enthält (Zellkoordinaten), sonst `null`.
-  FloorRoom? roomAtCell(Offset cell) {
+  /// Raum am Punkt [p] (Zellen, Rand zählt), sonst `null`. Bei einem Punkt
+  /// auf einer gemeinsamen Kante gewinnt der Raum, der ihn im Inneren hat,
+  /// sonst der erste.
+  FloorRoom? roomAt(Offset p) {
+    FloorRoom? edge;
     for (final r in rooms) {
-      if (r.rect.contains(cell)) return r;
+      if (!r.bounds.inflate(1e-6).contains(p)) continue;
+      switch (r.locate(p)) {
+        case PointLocation.inside:
+          return r;
+        case PointLocation.boundary:
+          edge ??= r;
+        case PointLocation.outside:
+      }
     }
-    return null;
+    return edge;
   }
+
+  /// Ort der Zelle: Raum-ID oder [kOutsideId].
+  String locationOfCell(int x, int y) =>
+      roomAt(Offset(x + 0.5, y + 0.5))?.id ?? kOutsideId;
+
+  /// Ort einer Platzierung: Raum-ID oder [kOutsideId].
+  String locationOf(FloorPlacement p) => locationOfCell(p.x, p.y);
+
+  /// Platzierungen eines Orts (Raum-ID oder [kOutsideId]).
+  List<FloorPlacement> placementsAt(String locationId) => [
+    for (final p in placements)
+      if (locationOf(p) == locationId) p,
+  ];
+
+  /// Punkt einer Zelle (Mitte) samt Ort.
+  PlanPoint pointOfCell(GridPoint c) =>
+      PlanPoint(c.x + 0.5, c.y + 0.5, locationOfCell(c.x, c.y));
 
   // ---- Prüfung --------------------------------------------------------
 
-  /// Meldet jeden Verstoß gegen die Regeln aus Spec 5 (leer = gültig).
+  /// Meldet jeden Verstoß (leer = gültig).
   List<String> validate() {
     final e = <String>[];
     if (grid.cols < 4 || grid.rows < 4) e.add('Raster zu klein');
     final ids = <String>{};
     for (final r in rooms) {
       if (!ids.add(r.id)) e.add('Raum-ID doppelt: ${r.id}');
-      if (r.w < kMinRoomCells || r.h < kMinRoomCells) {
-        e.add('${r.name} ist kleiner als $kMinRoomCells x $kMinRoomCells');
-      }
-      if (r.x < 0 ||
-          r.y < 0 ||
-          r.x + r.w > grid.cols ||
-          r.y + r.h > grid.rows) {
-        e.add('${r.name} liegt außerhalb des Rasters');
-      }
+      if (r.id == kOutsideId) e.add('Raum-ID $kOutsideId ist vergeben');
+      final shape = polygonShapeProblem(r.offsets, minArea: kMinRoomArea);
+      if (shape != null) e.add('${r.name}: $shape');
+      if (!_inGrid(r)) e.add('${r.name} liegt außerhalb des Rasters');
     }
     for (var i = 0; i < rooms.length; i++) {
       for (var j = i + 1; j < rooms.length; j++) {
@@ -398,31 +610,28 @@ class HavenFloorPlan {
     final seen = <String>{};
     for (final p in placements) {
       if (!seen.add(p.entityId)) e.add('Platzierung doppelt: ${p.entityId}');
-      if (!ids.contains(p.roomId)) e.add('${p.entityId}: Raum fehlt');
-      if (p.rx < 0 || p.rx > 1 || p.ry < 0 || p.ry > 1) {
-        e.add('${p.entityId}: Position außerhalb des Raums');
+      if (!grid.containsCell(p.x, p.y)) {
+        e.add('${p.entityId}: Position außerhalb des Rasters');
       }
     }
     final c = coordinator;
-    if (c != null) {
-      if (!ids.contains(c.roomId)) e.add('Koordinator: Raum fehlt');
-      if (c.rx < 0 || c.rx > 1 || c.ry < 0 || c.ry > 1) {
-        e.add('Koordinator: Position außerhalb des Raums');
-      }
+    if (c != null && !grid.containsCell(c.x, c.y)) {
+      e.add('Koordinator: Position außerhalb des Rasters');
     }
     return e;
   }
 
   bool get isValid => validate().isEmpty;
 
+  bool _inGrid(FloorRoom r) => r.points.every(
+    (p) => p.x >= 0 && p.y >= 0 && p.x <= grid.cols && p.y <= grid.rows,
+  );
+
   /// `null`, wenn [r] (neu oder geändert) passt, sonst der Grund.
   String? roomProblem(FloorRoom r) {
-    if (r.w < kMinRoomCells || r.h < kMinRoomCells) {
-      return 'Mindestens $kMinRoomCells x $kMinRoomCells Zellen';
-    }
-    if (r.x < 0 || r.y < 0 || r.x + r.w > grid.cols || r.y + r.h > grid.rows) {
-      return 'Außerhalb des Rasters';
-    }
+    final shape = polygonShapeProblem(r.offsets, minArea: kMinRoomArea);
+    if (shape != null) return shape;
+    if (!_inGrid(r)) return 'Außerhalb des Rasters';
     for (final o in rooms) {
       if (o.id != r.id && o.overlaps(r)) return 'Überlappt ${o.name}';
     }
@@ -435,13 +644,17 @@ class HavenFloorPlan {
     FloorGrid? grid,
     List<FloorRoom>? rooms,
     List<FloorPlacement>? placements,
-    PlanPoint? coordinator,
+    GridPoint? coordinator,
     bool clearCoordinator = false,
+    FloorOutside? outside,
   }) => HavenFloorPlan(
     grid: grid ?? this.grid,
     rooms: rooms ?? this.rooms,
     placements: placements ?? this.placements,
     coordinator: clearCoordinator ? null : (coordinator ?? this.coordinator),
+    outside: outside ?? this.outside,
+    updatedAt: updatedAt,
+    migratedFrom: migratedFrom,
   );
 
   /// Fügt den Raum an oder ersetzt den mit gleicher ID.
@@ -456,20 +669,45 @@ class HavenFloorPlan {
     return copyWith(rooms: l);
   }
 
-  /// Entfernt den Raum samt Platzierungen (die Entities kehren in den Pool
+  /// Entfernt den Raum samt der Geräte darin (sie kehren in den Pool
   /// zurück) und den Koordinator, falls er dort stand.
-  HavenFloorPlan withoutRoom(String id) => HavenFloorPlan(
-    grid: grid,
-    rooms: [
-      for (final r in rooms)
-        if (r.id != id) r,
-    ],
-    placements: [
-      for (final p in placements)
-        if (p.roomId != id) p,
-    ],
-    coordinator: coordinator?.roomId == id ? null : coordinator,
-  );
+  HavenFloorPlan withoutRoom(String id) {
+    final r = room(id);
+    if (r == null) return this;
+    final c = coordinator;
+    return HavenFloorPlan(
+      grid: grid,
+      outside: outside,
+      updatedAt: updatedAt,
+      migratedFrom: migratedFrom,
+      rooms: [
+        for (final x in rooms)
+          if (x.id != id) x,
+      ],
+      placements: [
+        for (final p in placements)
+          if (locationOf(p) != id) p,
+      ],
+      coordinator: c != null && locationOfCell(c.x, c.y) == id ? null : c,
+    );
+  }
+
+  /// Verschiebt den Raum um ganze Zellen, Geräte und Koordinator darin
+  /// wandern mit.
+  HavenFloorPlan withRoomMoved(String id, int dx, int dy) {
+    final r = room(id);
+    if (r == null || (dx == 0 && dy == 0)) return this;
+    final c = coordinator;
+    return copyWith(
+      placements: [
+        for (final p in placements)
+          locationOf(p) == id ? p.copyWith(x: p.x + dx, y: p.y + dy) : p,
+      ],
+      coordinator: c != null && locationOfCell(c.x, c.y) == id
+          ? c.translate(dx, dy)
+          : null,
+    ).withRoom(r.translate(dx, dy));
+  }
 
   HavenFloorPlan withPlacement(FloorPlacement p) => copyWith(
     placements: [
@@ -547,96 +785,225 @@ class HavenFloorPlan {
     return null;
   }
 
-  /// Raster in der Raummitte für [count] Geräte, als relative Punkte.
-  /// Abstand etwa 1,6 Zellen, höchstens 80 % des Raums, Zeile für Zeile.
-  static List<(double, double)> quickGrid(FloorRoom room, int count) {
+  /// Freie Zellen im Raum für [count] Geräte, von der Mitte nach außen, mit
+  /// etwa [spacing] Zellen Abstand (bei Platzmangel dichter). [occupied]
+  /// sind belegte Zellen.
+  static List<GridPoint> quickCells(
+    FloorRoom room,
+    int count, {
+    Set<GridPoint> occupied = const {},
+    int spacing = 2,
+  }) {
     if (count <= 0) return const [];
-    final aspect = room.w / room.h;
-    var cols = math.max(1, math.sqrt(count * aspect).round());
-    cols = math.min(cols, count);
-    final rows = (count / cols).ceil();
-    final stepX = math.min(1.6 / room.w, 0.8 / math.max(1, cols - 1));
-    final stepY = math.min(1.6 / room.h, 0.8 / math.max(1, rows - 1));
-    final out = <(double, double)>[];
-    for (var i = 0; i < count; i++) {
-      final r = i ~/ cols;
-      final inRow = r == rows - 1 ? count - r * cols : cols;
-      final c = i % cols;
-      final x = 0.5 + (c - (inRow - 1) / 2) * stepX;
-      final y = 0.5 + (r - (rows - 1) / 2) * stepY;
-      double clip(double v) => (v.clamp(0.08, 0.92) * 100).round() / 100;
-      out.add((clip(x), clip(y)));
+    final inside = <GridPoint>[];
+    final b = room.bounds;
+    for (var y = b.top.floor(); y < b.bottom.ceil(); y++) {
+      for (var x = b.left.floor(); x < b.right.ceil(); x++) {
+        if (room.locate(Offset(x + 0.5, y + 0.5)) == PointLocation.inside &&
+            !occupied.contains(GridPoint(x, y))) {
+          inside.add(GridPoint(x, y));
+        }
+      }
+    }
+    final a = room.anchor;
+    double d(GridPoint c) => (c.center - a).distanceSquared;
+    inside.sort((p, q) {
+      final c = d(p).compareTo(d(q));
+      return c != 0 ? c : (p.y != q.y ? p.y - q.y : p.x - q.x);
+    });
+    final out = <GridPoint>[];
+    for (var s = spacing; s >= 1 && out.length < count; s--) {
+      for (final c in inside) {
+        if (out.length >= count) break;
+        if (out.contains(c)) continue;
+        final ok = out.every(
+          (o) => math.max((o.x - c.x).abs(), (o.y - c.y).abs()) >= s,
+        );
+        if (ok) out.add(c);
+      }
+    }
+    // Volles Zimmer: der Rest teilt sich die Mitte (wird gruppiert).
+    while (out.length < count) {
+      out.add(
+        inside.isEmpty ? GridPoint(a.dx.floor(), a.dy.floor()) : inside.first,
+      );
     }
     return out;
   }
 
-  HavenFloorPlan withCoordinator(PlanPoint? p) =>
+  /// Freie Zellen draußen für [count] Geräte: auf einem Ring knapp neben der
+  /// Wohnung (eine Zelle Abstand), im Uhrzeigersinn ab oben links, mit etwa
+  /// [spacing] Zellen Abstand.
+  List<GridPoint> outsideCells(int count, {int spacing = 2}) {
+    if (count <= 0) return const [];
+    final occupied = {for (final p in placements) p.cell};
+    final h = houseBounds;
+    final l = h.left.round() - 2;
+    final t = h.top.round() - 2;
+    final r = h.right.round() + 1;
+    final b = h.bottom.round() + 1;
+    final ring = <GridPoint>[
+      for (var x = l; x <= r; x++) GridPoint(x, t),
+      for (var y = t + 1; y <= b; y++) GridPoint(r, y),
+      for (var x = r - 1; x >= l; x--) GridPoint(x, b),
+      for (var y = b - 1; y > t; y--) GridPoint(l, y),
+    ];
+    final free = [
+      for (final c in ring)
+        if (grid.containsCell(c.x, c.y) &&
+            !occupied.contains(c) &&
+            locationOfCell(c.x, c.y) == kOutsideId)
+          c,
+    ];
+    final out = <GridPoint>[];
+    for (var s = spacing; s >= 1 && out.length < count; s--) {
+      for (final c in free) {
+        if (out.length >= count) break;
+        if (out.contains(c)) continue;
+        if (out.every(
+          (o) => math.max((o.x - c.x).abs(), (o.y - c.y).abs()) >= s,
+        )) {
+          out.add(c);
+        }
+      }
+    }
+    while (out.length < count && free.isNotEmpty) {
+      out.add(free.first);
+    }
+    return out;
+  }
+
+  HavenFloorPlan withCoordinator(GridPoint? p) =>
       p == null ? copyWith(clearCoordinator: true) : copyWith(coordinator: p);
 
-  // ---- Layout und Positionen -------------------------------------------
+  // ---- Umriss, Draußen, Abstand -----------------------------------------
 
-  /// Raumrechtecke in Zellen mit zusätzlichem Abstand [gap] (Zellen) zwischen
-  /// allen Räumen. Die Räume behalten ihre Größe. Jede neue linke (obere)
-  /// Kante, die weiter rechts (unten) liegt als eine andere, rückt um [gap]
-  /// weiter weg. So bekommt jedes Nachbarpaar mindestens [gap] Abstand, und
-  /// der Verlauf ist für Bruchwerte stetig (Animation 0 bis 2).
-  Map<String, Rect> layout({double gap = 0}) {
-    final xs = ({for (final r in rooms) r.x}.toList()..sort());
-    final ys = ({for (final r in rooms) r.y}.toList()..sort());
-    return {
+  /// Umschließendes Rechteck der Wohnung (ohne abgesetzte Räume) in Zellen.
+  Rect get houseBounds {
+    Rect? b;
+    for (final r in rooms) {
+      if (r.detached) continue;
+      b = b == null ? r.bounds : b.expandToInclude(r.bounds);
+    }
+    return b ?? grid.rect;
+  }
+
+  /// Außenbereich: Wohnung plus [FloorOutside.margin] im Raster, erweitert um
+  /// draußen platzierte Geräte und den Koordinator.
+  Rect get outsideRect {
+    var r = houseBounds.inflate(outside.margin.toDouble()).intersect(grid.rect);
+    for (final p in placements) {
+      if (locationOf(p) == kOutsideId) {
+        r = r.expandToInclude(Rect.fromLTWH(p.x - 0.5, p.y - 0.5, 2, 2));
+      }
+    }
+    final c = coordinator;
+    if (c != null && locationOfCell(c.x, c.y) == kOutsideId) {
+      r = r.expandToInclude(Rect.fromLTWH(c.x - 0.5, c.y - 0.5, 2, 2));
+    }
+    return r.intersect(grid.rect);
+  }
+
+  /// Mittelpunkt, von dem aus die Räume auseinanderrücken.
+  Offset get explodeCenter => houseBounds.center;
+
+  /// Faktor, um den Abstände zum Mittelpunkt bei [gap] wachsen. Zwei Räume
+  /// mit gemeinsamer Kante bekommen so etwa [gap] Zellen Abstand.
+  double explodeFactor(double gap) {
+    if (gap == 0 || rooms.isEmpty) return 0;
+    final sides = [
       for (final r in rooms)
-        r.id: Rect.fromLTWH(
-          r.x + gap * xs.indexOf(r.x),
-          r.y + gap * ys.indexOf(r.y),
-          r.w.toDouble(),
-          r.h.toDouble(),
-        ),
+        if (!r.detached) math.min(r.bounds.width, r.bounds.height),
+    ]..sort();
+    final s = sides.isEmpty ? 8.0 : sides[sides.length ~/ 2].clamp(4.0, 16.0);
+    return gap / s;
+  }
+
+  /// Verschiebung jedes Raums in Zellen bei Abstand [gap]: jedes Polygon
+  /// rückt als Ganzes vom Mittelpunkt weg (Schwerpunkt), die Form bleibt.
+  Map<String, Offset> roomOffsets({double gap = 0}) {
+    final k = explodeFactor(gap);
+    final c = explodeCenter;
+    return {
+      for (final r in rooms) r.id: k == 0 ? Offset.zero : (r.centroid - c) * k,
     };
   }
 
-  /// Umschließendes Rechteck aller Räume bei Abstand [gap] (Zellen).
-  Rect layoutBounds({double gap = 0}) {
-    final l = layout(gap: gap).values;
-    if (l.isEmpty) {
-      return Rect.fromLTWH(0, 0, grid.cols.toDouble(), grid.rows.toDouble());
+  /// Lage eines Punkts (Zellen) bei Abstand [gap]: Punkte in Räumen wandern
+  /// mit dem Raum, Punkte draußen rücken wie alles vom Mittelpunkt weg.
+  Offset explodePoint(
+    Offset p,
+    String roomId, {
+    double gap = 0,
+    Map<String, Offset>? offsets,
+  }) {
+    if (gap == 0) return p;
+    final o = (offsets ?? roomOffsets(gap: gap))[roomId];
+    if (o != null) return p + o;
+    final c = explodeCenter;
+    return c + (p - c) * (1 + explodeFactor(gap));
+  }
+
+  /// Umschließendes Rechteck aller Räume (und mit [withOutside] des
+  /// Außenbereichs) bei Abstand [gap] in Zellen.
+  Rect layoutBounds({double gap = 0, bool withOutside = false}) {
+    if (rooms.isEmpty) return grid.rect;
+    final offs = roomOffsets(gap: gap);
+    Rect? b;
+    for (final r in rooms) {
+      final rb = r.bounds.shift(offs[r.id]!);
+      b = b == null ? rb : b.expandToInclude(rb);
     }
-    return l.reduce((a, b) => a.expandToInclude(b));
+    if (withOutside) {
+      final o = outsideRect;
+      final c = explodeCenter;
+      final k = 1 + explodeFactor(gap);
+      b = b!.expandToInclude(
+        Rect.fromPoints(c + (o.topLeft - c) * k, c + (o.bottomRight - c) * k),
+      );
+    }
+    return b!;
   }
 
-  Size layoutSize({double gap = 0}) => layoutBounds(gap: gap).size;
+  Size layoutSize({double gap = 0, bool withOutside = false}) =>
+      layoutBounds(gap: gap, withOutside: withOutside).size;
 
-  /// Zellposition eines Punkts. Mit [layoutRects] aus [layout], sonst Abstand 0.
-  Offset cellOf(PlanPoint p, {Map<String, Rect>? layoutRects}) {
-    final rects = layoutRects ?? layout();
-    final r = rects[p.roomId];
-    if (r == null) return Offset.zero;
-    return Offset(r.left + p.rx * r.width, r.top + p.ry * r.height);
+  // ---- Positionen -------------------------------------------------------
+
+  /// Punkt einer platzierten Entity (Zellmitte) oder `null`.
+  PlanPoint? entityPoint(String entityId) {
+    final p = placementOf(entityId);
+    return p == null ? null : pointOfCell(p.cell);
   }
 
-  /// Raumrelativer Punkt einer Entity oder `null`, wenn nicht platziert.
-  PlanPoint? entityPoint(String entityId) => placementOf(entityId)?.point;
-
-  /// Position einer Entity in Zellen (Abstand [gap]) oder `null`.
+  /// Position einer Entity in Zellen (Zellmitte, Abstand [gap]) oder `null`.
   Offset? entityPosition(String entityId, {double gap = 0}) {
     final p = entityPoint(entityId);
-    return p == null ? null : cellOf(p, layoutRects: layout(gap: gap));
+    return p == null ? null : explodePoint(p.offset, p.roomId, gap: gap);
+  }
+
+  /// Punkt des Koordinators oder `null`.
+  PlanPoint? get coordinatorPoint {
+    final c = coordinator;
+    return c == null ? null : pointOfCell(c);
   }
 
   /// Position des Koordinators in Zellen oder `null`.
   Offset? coordinatorPosition({double gap = 0}) {
-    final p = coordinator;
-    return p == null ? null : cellOf(p, layoutRects: layout(gap: gap));
+    final p = coordinatorPoint;
+    return p == null ? null : explodePoint(p.offset, p.roomId, gap: gap);
   }
 
   /// Punkte aller Geräte, die sich verorten lassen.
   ///
-  /// 1. Das Gerät nimmt die Platzierung seiner ersten platzierten Entity.
-  /// 2. Sonst liegt es in der Raummitte seines Raums. Mehrere davon liegen im
-  ///    kleinen Kreis um die Mitte, damit sie sich nicht überdecken.
+  /// 1. Das Gerät nimmt die Zelle seiner ersten platzierten Entity.
+  /// 2. Sonst liegt es in seinem Raum auf einer freien Zelle nahe der Mitte
+  ///    (mehrere verteilen sich, damit sie sich nicht überdecken).
   /// 3. Geräte ohne Platzierung und ohne bekannten Raum fehlen im Ergebnis.
   Map<String, PlanPoint> devicePoints(Iterable<FloorDevice> devices) {
     final out = <String, PlanPoint>{};
     final byRoom = <String, List<FloorDevice>>{};
+    final used = <GridPoint>{};
     for (final d in devices) {
       PlanPoint? p;
       for (final id in d.entityIds) {
@@ -645,6 +1012,7 @@ class HavenFloorPlan {
       }
       if (p != null) {
         out[d.id] = p;
+        used.add(p.cell);
         continue;
       }
       final room = d.roomId == null ? null : roomByIdOrArea(d.roomId!);
@@ -652,22 +1020,13 @@ class HavenFloorPlan {
     }
     for (final e in byRoom.entries) {
       final room = this.room(e.key)!;
-      final n = e.value.length;
-      if (n == 1) {
-        out[e.value.first.id] = PlanPoint(room.id, 0.5, 0.5);
-        continue;
-      }
-      // Radius in Zellen: wächst mit der Zahl, bleibt im Raum.
-      final r = math.min(
-        0.3 * math.min(room.w, room.h),
-        math.max(1.0, 0.22 * n),
-      );
-      for (var i = 0; i < n; i++) {
-        final a = -math.pi / 2 + 2 * math.pi * i / n;
+      final cells = quickCells(room, e.value.length, occupied: used);
+      for (var i = 0; i < e.value.length; i++) {
+        used.add(cells[i]);
         out[e.value[i].id] = PlanPoint(
+          cells[i].x + 0.5,
+          cells[i].y + 0.5,
           room.id,
-          0.5 + math.cos(a) * r / room.w,
-          0.5 + math.sin(a) * r / room.h,
         );
       }
     }
@@ -675,17 +1034,17 @@ class HavenFloorPlan {
   }
 
   /// Position eines einzelnen Geräts in Zellen (Abstand [gap]), siehe
-  /// [devicePoints]. Für mehrere Geräte lieber [devicePoints] aufrufen,
-  /// sonst fehlt der Kreis um die Raummitte.
+  /// [devicePoints].
   Offset? devicePosition(FloorDevice d, {double gap = 0}) {
     final p = devicePoints([d])[d.id];
-    return p == null ? null : cellOf(p, layoutRects: layout(gap: gap));
+    return p == null ? null : explodePoint(p.offset, p.roomId, gap: gap);
   }
 
   @override
   bool operator ==(Object other) =>
       other is HavenFloorPlan &&
       other.grid == grid &&
+      other.outside == outside &&
       listEquals(other.rooms, rooms) &&
       listEquals(other.placements, placements) &&
       other.coordinator == coordinator;
@@ -693,6 +1052,7 @@ class HavenFloorPlan {
   @override
   int get hashCode => Object.hash(
     grid,
+    outside,
     Object.hashAll(rooms),
     Object.hashAll(placements),
     coordinator,

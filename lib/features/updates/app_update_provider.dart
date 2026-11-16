@@ -13,7 +13,7 @@ import 'app_release.dart';
 
 /// Version, falls `package_info_plus` nichts liefert (Tests). `main`
 /// überschreibt den Provider mit der echten Version aus `pubspec.yaml`.
-const String kFallbackAppVersion = '0.4.0';
+const String kFallbackAppVersion = '0.5.0';
 
 final appVersionProvider = Provider<String>((ref) => kFallbackAppVersion);
 

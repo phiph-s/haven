@@ -22,9 +22,9 @@ void main() {
       ZbDevice.fromJson(Map<String, dynamic>.from(d as Map)),
   ];
   final snap = HavenSnapshot(entities: entities, rooms: rooms);
-  const plan = HavenFloorPlan(
+  final plan = HavenFloorPlan(
     rooms: [
-      FloorRoom(
+      FloorRoom.rect(
         id: 'wz',
         name: 'Salon',
         areaId: 'salon',
@@ -33,7 +33,7 @@ void main() {
         w: 10,
         h: 8,
       ),
-      FloorRoom(
+      FloorRoom.rect(
         id: 'k',
         name: 'Kochbereich',
         areaId: 'kochbereich',
@@ -176,9 +176,8 @@ void main() {
     final placed = plan.withPlacement(
       FloorPlacement(
         entityId: bad.mainEntityId,
-        roomId: 'wz',
-        rx: 0.3,
-        ry: 0.4,
+        x: 3,
+        y: 3,
         kind: bad.kind,
         deviceId: bad.id,
       ),
@@ -191,7 +190,7 @@ void main() {
     );
     // Jede Entity des Geräts liegt an derselben Stelle (Netzgraph, Karte).
     final pts = placed.devicePoints([bad.floorDevice]);
-    expect(pts[bad.id], const PlanPoint('wz', 0.3, 0.4));
+    expect(pts[bad.id], const PlanPoint(3.5, 3.5, 'wz'));
     final json = HavenFloorPlan.decode(placed.encode());
     expect(json.placements.single.deviceId, bad.id);
     expect(json.placements.single.kind, FloorKind.presence);
@@ -201,24 +200,13 @@ void main() {
     final pool = buildDevicePool(snap, zigbee, plan);
     final dev = pool.all.firstWhere((d) => d.name == 'Präsenz Salon');
     final old = plan.withPlacements(const [
-      FloorPlacement(
-        entityId: 'sensor.prasenz_salon_temperature',
-        roomId: 'wz',
-        rx: 0.2,
-        ry: 0.2,
-      ),
+      FloorPlacement(entityId: 'sensor.prasenz_salon_temperature', x: 2, y: 2),
       FloorPlacement(
         entityId: 'binary_sensor.prasenz_salon_presence',
-        roomId: 'wz',
-        rx: 0.7,
-        ry: 0.6,
+        x: 7,
+        y: 5,
       ),
-      FloorPlacement(
-        entityId: 'light.tischlampe_salon',
-        roomId: 'wz',
-        rx: 0.5,
-        ry: 0.5,
-      ),
+      FloorPlacement(entityId: 'light.tischlampe_salon', x: 5, y: 4),
     ]);
     final m = old.migrateDevices(
       [for (final d in pool.all) d.floorDevice],
@@ -227,11 +215,7 @@ void main() {
     expect(m.placements, hasLength(2));
     final p = m.placements.firstWhere((p) => p.deviceId == dev.id);
     expect(p.entityId, dev.mainEntityId);
-    expect(
-      (p.rx, p.ry),
-      (0.7, 0.6),
-      reason: 'Platzierung der Hauptentity bleibt',
-    );
+    expect((p.x, p.y), (7, 5), reason: 'Platzierung der Hauptentity bleibt');
     expect(m.isValid, isTrue);
     expect(
       identical(m.migrateDevices([for (final d in pool.all) d.floorDevice]), m),
@@ -239,18 +223,24 @@ void main() {
     );
   });
 
-  test('Schnell platzieren: Raster in der Raummitte, ohne Überdeckung', () {
-    const room = FloorRoom(id: 'wz', name: 'Salon', x: 0, y: 0, w: 10, h: 8);
+  test('Schnell platzieren: freie Zellen um die Raummitte', () {
+    final room = FloorRoom.rect(
+      id: 'wz',
+      name: 'Salon',
+      x: 0,
+      y: 0,
+      w: 10,
+      h: 8,
+    );
     for (final n in [1, 2, 5, 16]) {
-      final pts = HavenFloorPlan.quickGrid(room, n);
-      expect(pts, hasLength(n));
-      expect(pts.toSet(), hasLength(n), reason: 'n=$n');
-      for (final (x, y) in pts) {
-        expect(x, inInclusiveRange(0.08, 0.92));
-        expect(y, inInclusiveRange(0.08, 0.92));
+      final cells = HavenFloorPlan.quickCells(room, n);
+      expect(cells, hasLength(n));
+      expect(cells.toSet(), hasLength(n), reason: 'n=$n');
+      for (final c in cells) {
+        expect(room.containsCell(c.x, c.y), isTrue);
       }
-      final cx = pts.map((p) => p.$1).reduce((a, b) => a + b) / n;
-      expect(cx, closeTo(0.5, 0.11));
+      final cx = cells.map((c) => c.x + 0.5).reduce((a, b) => a + b) / n;
+      expect(cx, closeTo(5, 2.5));
     }
   });
 }

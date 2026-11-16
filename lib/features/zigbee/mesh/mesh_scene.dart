@@ -127,10 +127,12 @@ MeshScene buildMeshScene({
     final ids = names.keys.toList()
       ..sort((a, b) => names[a]!.compareTo(names[b]!));
     final cols = math.max(1, math.sqrt(ids.length).ceil());
+    final rows = math.max(1, (ids.length / cols).ceil());
     base = HavenFloorPlan(
+      grid: FloorGrid(cols: math.max(8, cols * 8), rows: math.max(8, rows * 8)),
       rooms: [
         for (var i = 0; i < ids.length; i++)
-          FloorRoom(
+          FloorRoom.rect(
             id: ids[i],
             name: names[ids[i]]!,
             areaId: ids[i],
@@ -184,52 +186,62 @@ MeshScene buildMeshScene({
   if (lost.isNotEmpty) {
     final b = base.rooms.isEmpty
         ? const Rect.fromLTWH(0, 0, 8, 0)
-        : base.layoutBounds();
+        : (auto ? base.houseBounds : base.outsideRect);
     final w = math.max(8, b.width.round());
-    // Rasterpunkte mit etwa 2,2 Zellen Abstand.
-    final cols = math.max(1, ((w - 1) / 2.2).floor());
+    // Rasterzellen mit 2 Zellen Abstand.
+    final cols = math.max(1, ((w - 1) / 2).floor());
     final rows = (lost.length / cols).ceil();
-    final h = math.max(5, (rows * 2.2 + 2.6).ceil());
-    plan2 = base.withRoom(
-      FloorRoom(
-        id: kNoRoomId,
-        name: 'Ohne Raum',
-        x: b.left.round(),
-        y: b.bottom.round(),
-        w: w,
-        h: h,
-      ),
-    );
+    final h = math.max(5, rows * 2 + 3);
+    final top = b.bottom.round() + (auto ? 0 : 1);
+    plan2 = base
+        .copyWith(
+          grid: base.grid.copyWith(
+            rows: math.max(base.grid.rows, top + h),
+            cols: math.max(base.grid.cols, b.left.round() + w),
+          ),
+        )
+        .withRoom(
+          FloorRoom.rect(
+            id: kNoRoomId,
+            name: 'Ohne Raum',
+            x: b.left.round(),
+            y: top,
+            w: w,
+            h: h,
+            detached: true,
+          ),
+        );
     for (var i = 0; i < lost.length; i++) {
       final c = i % cols;
       final r = i ~/ cols;
       final inRow = math.min(cols, lost.length - r * cols);
-      final x = (w - (inRow - 1) * 2.2) / 2 + c * 2.2;
-      final y = 2.4 + r * 2.2;
-      points[lost[i]] = PlanPoint(kNoRoomId, x / w, y / h);
+      final x = b.left.round() + ((w - (inRow - 1) * 2) / 2).floor() + c * 2;
+      final y = top + 2 + r * 2;
+      points[lost[i]] = PlanPoint(x + 0.5, y + 0.5, kNoRoomId);
     }
   }
 
   // Koordinator.
   final ci = map.coordinator;
   if (ci != null) {
-    PlanPoint? cp = plan?.coordinator;
-    if (cp != null && plan2.room(cp.roomId) == null) cp = null;
+    PlanPoint? cp = plan == null || auto ? null : plan.coordinatorPoint;
     if (cp == null && plan2.rooms.isNotEmpty) {
       final count = <String, int>{};
       for (final k in map.childrenOf(ci)) {
         final r = points[k]?.roomId;
         if (r != null && r != kNoRoomId) count[r] = (count[r] ?? 0) + 1;
       }
-      var best = plan2.rooms.first.id;
+      var best = plan2.rooms.first;
       var bn = -1;
       for (final r in plan2.rooms) {
         if ((count[r.id] ?? 0) > bn && r.id != kNoRoomId) {
           bn = count[r.id] ?? 0;
-          best = r.id;
+          best = r;
         }
       }
-      cp = PlanPoint(best, 0.84, 0.26);
+      final used = {for (final p in points.values) p.cell};
+      final cell = HavenFloorPlan.quickCells(best, 1, occupied: used).first;
+      cp = PlanPoint(cell.x + 0.5, cell.y + 0.5, best.id);
     }
     if (cp != null) points[ci] = cp;
   }

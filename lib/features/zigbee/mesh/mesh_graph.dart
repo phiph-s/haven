@@ -111,6 +111,7 @@ class MeshGraph extends StatelessWidget {
       onRoomTap: onRoomTap == null ? null : (_) => onRoomTap!(),
       interactive: interactive,
       showLabels: !mini,
+      showOutside: !scene.autoLayout,
       fill: true,
       padding: mini ? 6 : 12,
       transformationController: transformationController,

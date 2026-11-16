@@ -8,6 +8,7 @@ import '../data/models/entity_state.dart';
 import '../data/models/floor_plan.dart';
 import '../data/models/room.dart';
 import '../data/models/snapshot.dart';
+import '../data/models/state_history.dart';
 import '../data/models/zigbee.dart';
 import '../data/models/zigbee_network.dart';
 import '../data/storage/settings_store.dart';
@@ -203,6 +204,66 @@ class FakeRepository extends BaseRepository {
       }
     }
     _rooms = FakeRooms(inventory).derive();
+    // Melder: letzte Auslösung kurz vor dem Start (Anwesenheit auf der Karte).
+    final now = DateTime.now();
+    _motionAgo.forEach((id, min) {
+      final e = _entities[id];
+      if (e != null) {
+        _entities[id] = EntityState(
+          id,
+          e.state,
+          e.attributes,
+          now.subtract(Duration(minutes: min)),
+        );
+      }
+    });
+  }
+
+  /// Minuten seit dem letzten Wechsel der Melder beim Start.
+  static const _motionAgo = {
+    'binary_sensor.bewegungsmelder_salon_occupancy': 1,
+    'binary_sensor.prasenz_waschraum_presence': 3,
+  };
+
+  /// Auslöse-Muster der Melder im Takt von 4 s: (Periode, Takte an, Versatz).
+  static const _motionPattern = {
+    'binary_sensor.bewegungsmelder_salon_occupancy': (9, 4, 0),
+    'binary_sensor.prasenz_waschraum_presence': (13, 2, 6),
+  };
+  int _motionTick = 0;
+
+  bool _isMotion(EntityState? e) =>
+      e != null &&
+      e.domain == 'binary_sensor' &&
+      const {'occupancy', 'motion', 'presence'}.contains(e.deviceClass);
+
+  /// Erfundene, aber feste History der Melder für die letzte Stunde: Wechsel
+  /// rückwärts ab dem letzten echten Wechsel, Längen aus einem Hash.
+  @override
+  Future<Map<String, List<StateChange>>> stateHistory(
+    List<String> entityIds,
+    DateTime start,
+  ) async {
+    final out = <String, List<StateChange>>{};
+    for (final id in entityIds) {
+      final e = _entities[id];
+      if (!_isMotion(e)) continue;
+      final list = <StateChange>[];
+      var on = e!.isOn;
+      var t = e.lastChanged ?? DateTime.now();
+      list.add(StateChange(e.state, t));
+      var seed = id.codeUnits.fold<int>(17, (a, c) => (a * 31 + c) & 0xffff);
+      while (t.isAfter(start)) {
+        seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+        // Vorheriger Zustand: das Gegenteil, mit seiner Dauer.
+        on = !on;
+        final minutes = on ? 1 + seed % 4 : 3 + seed % 10;
+        t = t.subtract(Duration(minutes: minutes, seconds: seed % 50));
+        list.add(StateChange(on ? 'on' : 'off', t));
+      }
+      out[id] = list.reversed.toList();
+    }
+    return out;
   }
 
   EntityState _lampEntity(String id) {
@@ -613,6 +674,17 @@ class FakeRepository extends BaseRepository {
   /// Leichte Bewegung in den Messwerten, damit Zahlen leben.
   void _tick() {
     var changed = false;
+    _motionTick++;
+    _motionPattern.forEach((id, p) {
+      final e = _entities[id];
+      if (e == null) return;
+      final (period, onTicks, offset) = p;
+      final next = (_motionTick + offset) % period < onTicks ? 'on' : 'off';
+      if (next != e.state) {
+        _entities[id] = e.copyWith(state: next);
+        changed = true;
+      }
+    });
     for (final e in _entities.values.toList()) {
       if (e.deviceClass == 'power' && (e.number ?? 0) > 5) {
         final v = (e.number! + (_rng.nextInt(9) - 4)).clamp(5, 400);

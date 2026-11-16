@@ -3,6 +3,7 @@ import 'dart:convert';
 
 import 'haven_repository.dart';
 import 'models/snapshot.dart';
+import 'models/state_history.dart';
 import 'sync/app_data.dart';
 
 /// Gemeinsamer Unterbau: hält den Snapshot und den Broadcast-Stream.
@@ -33,6 +34,12 @@ abstract class BaseRepository implements HavenRepository {
   void emitAppData(AppDataKind kind) {
     if (!_appData.isClosed) _appData.add(kind);
   }
+
+  @override
+  Future<Map<String, List<StateChange>>> stateHistory(
+    List<String> entityIds,
+    DateTime start,
+  ) async => const {};
 
   @override
   Future<RemoteDoc> fetchAppData(AppDataKind kind) async =>

@@ -72,9 +72,11 @@ void main() {
     expect(find.text('Karte'), findsWidgets);
     expect(find.byType(FloorPlanView), findsOneWidget);
     final plan = kFakeFloorPlan;
-    expect(find.byType(MapMarker), findsNWidgets(plan.placements.length));
-    expect(find.text('Lichter'), findsOneWidget);
-    expect(find.text('Werte'), findsOneWidget);
+    // Jede Platzierung hat einen Marker, die Gruppe (zwei Lampen auf einem
+    // Feld) zeigt zusätzlich ihr erstes Gerät im Gruppenknoten.
+    expect(find.byType(MapMarker), findsNWidgets(plan.placements.length + 1));
+    expect(find.byType(FloorGroupBadge), findsOneWidget);
+    expect(find.bySemanticsLabel('Kartenart: Licht'), findsOneWidget);
 
     // Alle platzierten Entities gibt es in den Beispieldaten.
     final snap = c.read(snapshotProvider);
@@ -90,9 +92,29 @@ void main() {
     expect(pool.zigbee.open, greaterThan(0));
   });
 
+  testWidgets('Gruppe fächert auf, dann schaltet die Lampe darin', (
+    tester,
+  ) async {
+    final c = await _pump(tester, '/map', repo: _MemoryRepo());
+    const id = 'light.lampe_salon';
+    final before = c.read(snapshotProvider).entity(id)!.isOn;
+    await tester.tap(find.byType(FloorGroupBadge));
+    await tester.pumpAndSettle();
+    final marker = find.byWidgetPredicate(
+      (w) => w is MapMarker && w.entityId == id,
+    );
+    // Aufgefächert: die Lampe liegt nicht mehr unter dem Gruppenknoten.
+    final g = tester.getCenter(find.byType(FloorGroupBadge));
+    final m = tester.getCenter(marker.first);
+    expect((g - m).distance, greaterThan(20));
+    await tester.tap(marker.first, warnIfMissed: false);
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(c.read(snapshotProvider).entity(id)!.isOn, !before);
+  });
+
   testWidgets('Antippen einer Lampe schaltet sie', (tester) async {
     final c = await _pump(tester, '/map', repo: _MemoryRepo());
-    const id = 'light.tischlampe_salon';
+    const id = 'light.lampe_decke_salon';
     final before = c.read(snapshotProvider).entity(id)!.isOn;
     final marker = find.byWidgetPredicate(
       (w) => w is MapMarker && w.entityId == id,
@@ -137,7 +159,12 @@ void main() {
     final plan = c.read(floorPlanProvider).value!;
     expect(plan.rooms.length, 1);
     final r = plan.rooms.single;
-    expect((r.x, r.y, r.w, r.h), (2, 2, 7, 6));
+    expect(r.points, const [
+      GridPoint(2, 2),
+      GridPoint(9, 2),
+      GridPoint(9, 8),
+      GridPoint(2, 8),
+    ]);
     expect(r.name, 'Salon');
     expect(r.areaId, 'salon');
     expect(plan.isValid, isTrue);
@@ -163,8 +190,8 @@ void main() {
     );
     // Von freier Fläche unter dem Bad in das Bad ziehen: überlappt.
     final origin = tester.getTopLeft(view);
-    final a = origin + geo.cellToPx(const Offset(13, 25));
-    final b = origin + geo.cellToPx(const Offset(19, 20));
+    final a = origin + geo.cellToPx(const Offset(16, 27));
+    final b = origin + geo.cellToPx(const Offset(21, 22));
     await tester.dragFrom(a, b - a);
     await tester.pumpAndSettle();
     expect(find.text('Raum zuordnen'), findsNothing);
@@ -172,11 +199,53 @@ void main() {
     expect(find.textContaining('Überlappt'), findsOneWidget);
   });
 
+  testWidgets('Editor: Ecke einfügen, entfernen, ziehen und rückgängig', (
+    tester,
+  ) async {
+    final start = HavenFloorPlan(
+      rooms: [FloorRoom.rect(id: 'a', name: 'A', x: 2, y: 2, w: 8, h: 6)],
+    );
+    final repo = _MemoryRepo(start);
+    final c = await _pump(tester, '/map/editor?sel=a', repo: repo);
+    final view = find.byType(FloorPlanView);
+    final origin = tester.getTopLeft(view);
+    Offset px(int x, int y) =>
+        origin +
+        FloorGeometry.compute(
+          plan: c.read(floorPlanProvider).value!,
+          size: tester.getSize(view),
+          fitGrid: true,
+          withOutside: true,
+        ).cellToPx(Offset(x.toDouble(), y.toDouble()));
+    List<GridPoint> pts() => c.read(floorPlanProvider).value!.room('a')!.points;
+
+    // Kantenmitte antippen: neue Ecke auf (6, 2).
+    await tester.tapAt(px(6, 2));
+    await tester.pumpAndSettle();
+    expect(pts(), hasLength(5));
+    expect(pts(), contains(const GridPoint(6, 2)));
+
+    // Lange drücken entfernt sie wieder.
+    await tester.longPressAt(px(6, 2));
+    await tester.pumpAndSettle();
+    expect(pts(), start.room('a')!.points);
+
+    // Ecke ziehen: rastet auf dem Rasterpunkt ein, schräge Wand.
+    await tester.dragFrom(px(10, 2), px(12, 1) - px(10, 2));
+    await tester.pumpAndSettle();
+    expect(pts()[1], const GridPoint(12, 1));
+    expect(repo.plan!.room('a')!.points[1], const GridPoint(12, 1));
+
+    await tester.tap(find.bySemanticsLabel('Rückgängig'));
+    await tester.pumpAndSettle();
+    expect(pts(), start.room('a')!.points);
+  });
+
   testWidgets('FloorPlanView: gap 0 zu 2 fährt die Räume weich auseinander', (
     tester,
   ) async {
     final plan = kFakeFloorPlan;
-    const node = FloorNode(id: 'k', point: PlanPoint('kochbereich', 0.5, 0.5));
+    const node = FloorNode(id: 'k', point: PlanPoint(19.5, 6.5, 'kochbereich'));
     Widget app(double gap) => MaterialApp(
       theme: havenLightTheme,
       home: Scaffold(

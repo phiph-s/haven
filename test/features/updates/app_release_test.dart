@@ -158,7 +158,7 @@ void main() {
       final c = ReleaseChecker(
         MockClient((req) async {
           asked = req.url;
-          return http.Response(jsonEncode(_release('v0.5.0')), 200);
+          return http.Response(jsonEncode(_release('v0.6.0')), 200);
         }),
       );
       final r = await c.latest(kAppRepo);
@@ -166,7 +166,7 @@ void main() {
         asked.toString(),
         'https://api.github.com/repos/phiph-s/haven/releases/latest',
       );
-      expect(r?.version, '0.5.0');
+      expect(r?.version, '0.6.0');
     });
 
     test('404 heißt kein Release, andere Fehler werfen', () async {

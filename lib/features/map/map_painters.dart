@@ -31,7 +31,8 @@ class MapLightPainter extends FloorOverlayPainter {
       if (rect == null) continue;
       final mine = [
         for (final p in plan.placements)
-          if (p.roomId == room.id && lights.lamps[p.entityId]?.on == true)
+          if (lights.lamps[p.entityId]?.on == true &&
+              lights.where[p.entityId] == room.id)
             (p, lights.lamps[p.entityId]!),
       ];
       if (mine.isEmpty) continue;
@@ -40,7 +41,7 @@ class MapLightPainter extends FloorOverlayPainter {
       ], dark: dark);
 
       canvas.save();
-      canvas.clipRRect(FloorGeometry.roomShape(rect));
+      canvas.clipPath(geo.roomPath(room.id));
       // Raumton: sanftes Licht über der ganzen Fläche.
       final a = (pal.intensity * hv.ambientGlow * 0.5).clamp(0.0, 1.0);
       canvas.drawRect(
@@ -59,11 +60,14 @@ class MapLightPainter extends FloorOverlayPainter {
                 ),
               ),
       );
-      final radius = 0.95 * math.min(rect.width, rect.height) * 0.62;
+      final inner = geo.roomCellRect(room.id, room.innerRect);
+      final radius =
+          0.95 * math.min(rect.width, rect.height) * 0.5 +
+          0.12 * math.min(inner.width, inner.height);
       for (final (p, lamp) in mine) {
         final c = colorOf(uiColor(lamp.color, dark: dark));
         final op = 0.35 + 0.65 * lamp.brightness / 100;
-        final center = geo.pointToPx(p.point);
+        final center = geo.pointToPx(plan.pointOfCell(p.cell));
         canvas.drawCircle(
           center,
           radius,
