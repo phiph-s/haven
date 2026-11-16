@@ -1,5 +1,7 @@
 import 'package:material_ui/material_ui.dart';
 
+import '../../core/widgets/haven_sheet.dart';
+
 import '../../core/theme/tokens.dart';
 import '../../core/widgets/haptics.dart';
 import '../../core/widgets/haven_button.dart';
@@ -22,14 +24,8 @@ Future<RoomAssignment?> showRoomAssignSheet(
   required List<Room> areas,
   required Set<String> usedAreaIds,
 }) {
-  return showModalBottomSheet<RoomAssignment>(
-    context: context,
-    isScrollControlled: true,
-    useRootNavigator: true,
-    // Sheet reicht bis unter die Gestenleiste, Abstand innen (edge-to-edge).
-    useSafeArea: false,
-    backgroundColor: const Color(0x00000000),
-    barrierColor: const Color(0x8C000000),
+  return showHavenModalSheet<RoomAssignment>(
+    context,
     builder: (_) =>
         _AssignSheet(room: room, areas: areas, usedAreaIds: usedAreaIds),
   );
@@ -88,6 +84,8 @@ class _AssignSheetState extends State<_AssignSheet> {
           child: SafeArea(
             top: false,
             child: SingleChildScrollView(
+              // Am oberen Ende übernimmt das Sheet das Ziehen.
+              controller: HavenSheetScope.maybeOf(context)?.scrollController,
               padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
               child: Column(
                 mainAxisSize: MainAxisSize.min,

@@ -45,9 +45,10 @@ class HaZigbee {
   Future<Map<String, dynamic>> _send(
     String type, [
     Map<String, dynamic> payload = const {},
+    Duration? timeout,
   ]) async {
     try {
-      final r = await client.send({'type': type, ...payload});
+      final r = await client.send({'type': type, ...payload}, timeout: timeout);
       return r is Map ? Map<String, dynamic>.from(r) : const {};
     } on HavenException catch (e) {
       if (e.code == 'unknown_command' || e.code == 'not_found') {
@@ -124,9 +125,17 @@ class HaZigbee {
   Future<void> permitJoin(int seconds, String? via) =>
       _send('haven/zigbee/permit_join', {'time': seconds, 'device': via});
 
-  /// `haven/zigbee/networkmap` (Integration parallel in Arbeit, nur Vertrag).
+  /// Wartezeit für `refresh: true`. Die Integration antwortet erst nach der
+  /// Messung (Z2M braucht bei 40 Geräten 60 bis 90 s, die Integration
+  /// wartet höchstens 90 s), deshalb nicht der normale Timeout von 15 s.
+  static const networkMapRefreshTimeout = Duration(seconds: 120);
+
+  /// `haven/zigbee/networkmap`. Ohne [refresh] der Cache der Integration
+  /// (ohne Cache `null`, dann eine leere Karte).
   Future<ZbNetworkMap> networkMap(bool refresh) async => ZbNetworkMap.fromJson(
-    await _send('haven/zigbee/networkmap', {'refresh': refresh}),
+    await _send('haven/zigbee/networkmap', {
+      'refresh': refresh,
+    }, refresh ? networkMapRefreshTimeout : null),
   );
 
   Future<void> dispose() async {

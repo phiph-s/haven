@@ -14,7 +14,8 @@ import 'package:material_ui/material_ui.dart';
 /// `screen=floorplan_editor` öffnet den Grundriss-Editor, dort wählt `room`
 /// den markierten Raum und `preset=devices` den Modus „Geräte setzen“.
 /// `screen=zigbee_mesh` zeigt den Netz-Graphen, `select=<ieee>` (bzw. `ieee=`)
-/// wählt einen Knoten.
+/// wählt einen Knoten, `filter=all` zeigt alle Verbindungen.
+/// `screen=room&extent=0.5` öffnet das Raum-Sheet halb gezogen.
 class LaunchOverrides {
   const LaunchOverrides({
     this.theme,
@@ -22,6 +23,8 @@ class LaunchOverrides {
     this.room = 'salon',
     this.preset,
     this.ieee,
+    this.extent,
+    this.filter,
   });
 
   factory LaunchOverrides.fromUri(Uri uri) {
@@ -37,6 +40,8 @@ class LaunchOverrides {
       room: q['room'] ?? 'salon',
       preset: q['preset'],
       ieee: q['ieee'] ?? q['select'],
+      extent: q['extent'],
+      filter: q['filter'],
     );
   }
 
@@ -50,12 +55,18 @@ class LaunchOverrides {
   /// Zigbee-Gerät für `screen=zigbee_device&ieee=0x...`.
   final String? ieee;
 
+  /// Raum-Sheet halb gezogen (`0.5`), nur für Screenshots.
+  final String? extent;
+
+  /// Filter des Netz-Graphen (`tree`, `all`, `weak`, `routers`).
+  final String? filter;
+
   /// Es gibt etwas zu überschreiben.
   bool get active => screen != null || theme != null || preset != null;
 
   String? get location => switch (screen) {
     'home' => '/home',
-    'room' => '/room/$room',
+    'room' => '/room/$room${extent == null ? '' : '?extent=$extent'}',
     'sheet' => '/room/$room?sheet=1',
     'map' => '/map',
     'floorplan_editor' =>
@@ -63,8 +74,12 @@ class LaunchOverrides {
     'zigbee' => '/zigbee',
     'zigbee_device' => '/zigbee/device/${ieee ?? '0x00124b0000000009'}',
     'zigbee_pair' => '/zigbee/pair',
-    'zigbee_mesh' =>
-      '/zigbee/mesh${ieee == null ? '' : '?select=${Uri.encodeQueryComponent(ieee!)}'}',
+    'zigbee_mesh' => Uri(
+      path: '/zigbee/mesh',
+      queryParameters: ieee == null && filter == null
+          ? null
+          : {'select': ?ieee, 'filter': ?filter},
+    ).toString(),
     'automations' => '/automations',
     'settings' => '/settings',
     'updates' => '/settings/updates',

@@ -243,11 +243,14 @@ MeshScene buildMeshScene({
   );
 }
 
-/// Filter der Graph-Ansicht.
+/// Filter der Graph-Ansicht. Standard sind nur die Wege zum Koordinator
+/// (Baumkanten, je Gerät eine). „Alle Verbindungen“ zeigt zusätzlich jede
+/// gemessene Nachbarschaft, bei echten Netzen einige Hundert.
 enum MeshFilter {
-  all('Alle'),
-  weak('Nur schwache'),
-  routers('Nur Router');
+  tree('Wege'),
+  all('Alle Verbindungen'),
+  weak('Schwache'),
+  routers('Router');
 
   const MeshFilter(this.label);
   final String label;
@@ -259,7 +262,7 @@ enum MeshFilter {
 @immutable
 class MeshViewState {
   const MeshViewState({
-    this.filter = MeshFilter.all,
+    this.filter = MeshFilter.tree,
     this.selected,
     this.pathNodes = const {},
     this.pathEdges = const {},
@@ -267,7 +270,7 @@ class MeshViewState {
 
   factory MeshViewState.of(
     ZbNetworkMap map, {
-    MeshFilter filter = MeshFilter.all,
+    MeshFilter filter = MeshFilter.tree,
     String? selected,
   }) {
     if (selected == null || map.node(selected) == null) {
@@ -293,10 +296,12 @@ class MeshViewState {
   /// Gehört die Kante zum Filter?
   bool edgeShown(ZbMeshEdge e, Map<String, MeshNodeInfo> infos) =>
       switch (filter) {
+        MeshFilter.tree => e.inTree,
         MeshFilter.all => true,
-        MeshFilter.weak => e.lqi < kWeakLqi,
+        MeshFilter.weak => e.inTree && e.lqi < kWeakLqi,
         MeshFilter.routers =>
-          infos[e.a]?.kind != ZbNodeKind.endDevice &&
+          e.inTree &&
+              infos[e.a]?.kind != ZbNodeKind.endDevice &&
               infos[e.b]?.kind != ZbNodeKind.endDevice,
       };
 
@@ -306,8 +311,8 @@ class MeshViewState {
     ZbNetworkMap map,
     Map<String, MeshNodeInfo> infos,
   ) => switch (filter) {
-    MeshFilter.all => true,
-    MeshFilter.weak => map.edges.any(
+    MeshFilter.tree || MeshFilter.all => true,
+    MeshFilter.weak => map.treeEdges.any(
       (e) => e.touches(ieee) && e.lqi < kWeakLqi,
     ),
     MeshFilter.routers => infos[ieee]?.kind != ZbNodeKind.endDevice,

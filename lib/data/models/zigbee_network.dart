@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/foundation.dart';
 
 /// Netzkarte von Zigbee2MQTT (`bridge/request/networkmap`, type `raw`,
@@ -27,12 +29,13 @@ enum ZbNodeKind {
   };
 }
 
-/// Beziehung des Ziels zur Quelle (Zigbee-Neighbor-Table).
+/// Beziehung des Nachbarn (`source`) zum meldenden Gerät (`target`), wie in
+/// der Zigbee-Neighbor-Table.
 abstract final class ZbRelationship {
-  /// Das Ziel ist der Elternknoten der Quelle.
+  /// Der Nachbar ist der Elternknoten des meldenden Geräts.
   static const parent = 0;
 
-  /// Das Ziel ist ein Kind der Quelle.
+  /// Der Nachbar ist ein Kind des meldenden Geräts.
   static const child = 1;
   static const sibling = 2;
   static const none = 3;
@@ -106,7 +109,7 @@ class ZbMeshRoute {
   final String? status;
 }
 
-/// Eine Verbindung aus der Neighbor-Table von [source] über [target].
+/// Ein Eintrag der Neighbor-Table von [target] über den Nachbarn [source].
 @immutable
 class ZbMeshLink {
   const ZbMeshLink({
@@ -135,17 +138,18 @@ class ZbMeshLink {
   final String target;
   final int lqi;
 
-  /// Tiefe der Quelle im Baum (Koordinator 0).
+  /// Tiefe des Nachbarn im Baum (Koordinator 0, 15 oder 255: unbekannt).
   final int depth;
 
-  /// Siehe [ZbRelationship]: Beziehung von [target] zu [source].
+  /// Siehe [ZbRelationship]: Beziehung von [source] zu [target].
   final int relationship;
   final List<ZbMeshRoute> routes;
 }
 
-/// Eine Kante zum Zeichnen. Hierarchisch (`parent != null`): [a] ist das Kind,
-/// [b] der Elternknoten, der Pfeil zeigt zu [b]. Sonst Geschwisterverbindung
-/// ohne Pfeil.
+/// Eine Kante zum Zeichnen, je Knotenpaar eine (beide Richtungen der
+/// Neighbor-Tables zusammengefasst). Baumkanten ([inTree]): [a] ist das Kind,
+/// [b] der gewählte Elternknoten, der Pfeil zeigt zu [b]. Alle anderen sind
+/// Nachbarschaften ohne Pfeil.
 @immutable
 class ZbMeshEdge {
   const ZbMeshEdge({
@@ -162,7 +166,11 @@ class ZbMeshEdge {
 
   /// Elternknoten (bzw. andere Seite).
   final String b;
+
+  /// Signal der Verbindung. Melden beide Seiten, ist es der Mittelwert.
   final int lqi;
+
+  /// Z2M meldet die Verbindung als Eltern/Kind (`relationship` 0 oder 1).
   final bool hierarchical;
 
   /// Diese Kante ist der gewählte Weg des Kindes zum Koordinator.
@@ -171,9 +179,50 @@ class ZbMeshEdge {
 
   bool touches(String ieee) => a == ieee || b == ieee;
   String get key => '$a>$b';
+
+  ZbMeshEdge _tree(String child, String parent) => ZbMeshEdge(
+    a: child,
+    b: parent,
+    lqi: lqi,
+    hierarchical: hierarchical,
+    inTree: true,
+    depth: depth,
+  );
+}
+
+/// Zwischenstand je Knotenpaar beim Einlesen.
+class _Pair {
+  _Pair(this.x, this.y);
+  final String x;
+  final String y;
+  int lqiSum = 0;
+  int reports = 0;
+  int depth = 0;
+
+  /// Gemeldetes Kind und Eltern (aus `relationship` 0 oder 1).
+  String? child;
+  String? parent;
+
+  int get lqi => reports == 0 ? 0 : (lqiSum / reports).round();
+  String other(String v) => v == x ? y : x;
 }
 
 /// Netzkarte mit Knoten, Verbindungen und Zeitstempel der Messung.
+///
+/// Z2M-Rohformat: Jeder Router und der Koordinator melden ihre Neighbor-Table.
+/// Ein Link ist ein Eintrag darin: `target` ist das meldende Gerät, `source`
+/// der Nachbar, `relationship` beschreibt den Nachbarn aus Sicht des
+/// meldenden Geräts (0: Nachbar ist sein Elternknoten, 1: Nachbar ist sein
+/// Kind, 2: Geschwister, 3: keine, 4: früheres Kind). Endgeräte melden nichts,
+/// sie stehen nur als `source` mit `relationship` 1 bei ihrem Elternknoten.
+///
+/// Elternwahl:
+/// - Endgeräte: der gemeldete Elternknoten (bei mehreren der stärkste), sonst
+///   der stärkste Router-Nachbar. Endgeräte leiten nie weiter.
+/// - Router: kürzester Weg zum Koordinator über Router (Dijkstra), Kosten je
+///   Sprung `1 + (255 - lqi) / 85`, gemeldete Eltern/Kind-Kanten etwas
+///   billiger. Echte Router haben nach dem Beitritt meist nur Geschwister.
+/// - Ohne Weg bleibt der Knoten ohne Eltern (leerer Pfad).
 class ZbNetworkMap {
   ZbNetworkMap({
     required List<ZbMeshNode> nodes,
@@ -183,139 +232,134 @@ class ZbNetworkMap {
     final byIeee = {for (final n in nodes) n.ieee: n};
     final coordinator = nodes.where((n) => n.isCoordinator).firstOrNull?.ieee;
     _coordinator = coordinator;
-    final edgeMap = <String, ZbMeshEdge>{};
-    String pair(String x, String y) => x.compareTo(y) < 0 ? '$x|$y' : '$y|$x';
+    bool routes(String v) => byIeee[v]?.kind != ZbNodeKind.endDevice;
+
+    // 1. Je Knotenpaar zusammenfassen.
+    final pairs = <String, _Pair>{};
+    String pairKey(String x, String y) =>
+        x.compareTo(y) < 0 ? '$x|$y' : '$y|$x';
     for (final l in links) {
-      if (l.source == l.target ||
-          !byIeee.containsKey(l.source) ||
-          !byIeee.containsKey(l.target)) {
-        continue;
-      }
-      String? child;
-      String? parent;
-      switch (l.relationship) {
-        case ZbRelationship.parent:
-          child = l.source;
-          parent = l.target;
-        case ZbRelationship.child:
-          child = l.target;
-          parent = l.source;
-        case ZbRelationship.sibling:
-          break;
-        default:
-          continue;
-      }
-      final k = pair(l.source, l.target);
-      final old = edgeMap[k];
-      final e = ZbMeshEdge(
-        a: child ?? l.source,
-        b: parent ?? l.target,
-        lqi: l.lqi,
-        hierarchical: child != null,
-        depth: l.depth,
+      final s = l.source, t = l.target;
+      if (s == t || !byIeee.containsKey(s) || !byIeee.containsKey(t)) continue;
+      if (l.relationship == ZbRelationship.previousChild) continue;
+      final p = pairs.putIfAbsent(
+        pairKey(s, t),
+        () => s.compareTo(t) < 0 ? _Pair(s, t) : _Pair(t, s),
       );
-      if (old == null ||
-          (e.hierarchical && !old.hierarchical) ||
-          (e.hierarchical == old.hierarchical && e.lqi > old.lqi)) {
-        edgeMap[k] = e;
+      p.lqiSum += l.lqi;
+      p.reports++;
+      if (l.depth > 0 && l.depth < 64) {
+        p.depth = math.max(p.depth, l.depth);
       }
+      if (p.child == null) {
+        if (l.relationship == ZbRelationship.parent) {
+          p.child = t;
+          p.parent = s;
+        } else if (l.relationship == ZbRelationship.child) {
+          p.child = s;
+          p.parent = t;
+        }
+      }
+    }
+    final adj = <String, List<_Pair>>{};
+    for (final p in pairs.values) {
+      (adj[p.x] ??= []).add(p);
+      (adj[p.y] ??= []).add(p);
     }
 
-    // Eltern wählen: unter den hierarchischen Kanten die stärkste.
-    final parents = <String, ZbMeshEdge>{};
-    for (final e in edgeMap.values) {
-      if (!e.hierarchical || e.a == coordinator) continue;
-      final cur = parents[e.a];
-      if (cur == null ||
-          e.lqi > cur.lqi ||
-          (e.lqi == cur.lqi && e.b.compareTo(cur.b) < 0)) {
-        parents[e.a] = e;
-      }
-    }
-    // Hierarchische Eltern, die nicht zum Koordinator führen (Zyklen oder
-    // Inseln), werden verworfen und unten über alle Kanten neu gesucht.
-    bool reaches(String start) {
-      final seen = <String>{};
-      var cur = start;
-      while (cur != coordinator) {
-        if (!seen.add(cur)) return false;
-        final p = parents[cur];
-        if (p == null) return false;
-        cur = p.b;
-      }
-      return true;
-    }
-
+    // 2. Router: Dijkstra vom Koordinator über Router.
+    final parents = <String, _Pair>{};
+    final parentId = <String, String>{};
     if (coordinator != null) {
-      for (final n in nodes) {
-        if (n.ieee != coordinator && !reaches(n.ieee)) parents.remove(n.ieee);
+      final dist = <String, double>{coordinator: 0};
+      final done = <String>{};
+      double cost(_Pair p) {
+        final c = 1 + (255 - p.lqi.clamp(0, 255)) / 85;
+        return p.child != null ? c * 0.85 : c;
       }
-      // Breitensuche über alle Kanten für Knoten ohne Elternweg.
-      final adj = <String, List<ZbMeshEdge>>{};
-      for (final e in edgeMap.values) {
-        (adj[e.a] ??= []).add(e);
-        (adj[e.b] ??= []).add(e);
-      }
-      final done = <String>{
-        coordinator,
-        for (final n in nodes)
-          if (parents.containsKey(n.ieee) && reaches(n.ieee)) n.ieee,
-      };
-      var frontier = [...done];
-      while (frontier.isNotEmpty) {
-        final next = <String>[];
-        for (final u in frontier) {
-          final es = [...?adj[u]]..sort((x, y) => y.lqi.compareTo(x.lqi));
-          for (final e in es) {
-            final v = e.a == u ? e.b : e.a;
-            if (done.contains(v)) continue;
-            done.add(v);
-            parents[v] = ZbMeshEdge(
-              a: v,
-              b: u,
-              lqi: e.lqi,
-              hierarchical: true,
-              depth: e.depth,
-            );
-            next.add(v);
+
+      while (true) {
+        String? u;
+        var best = double.infinity;
+        for (final e in dist.entries) {
+          if (done.contains(e.key)) continue;
+          if (e.value < best || (e.value == best && e.key.compareTo(u!) < 0)) {
+            best = e.value;
+            u = e.key;
           }
         }
-        frontier = next;
+        if (u == null) break;
+        done.add(u);
+        for (final p in adj[u] ?? const <_Pair>[]) {
+          final v = p.other(u);
+          if (!routes(v) || done.contains(v)) continue;
+          final d = best + cost(p);
+          final old = dist[v];
+          if (old == null ||
+              d < old - 1e-9 ||
+              ((d - old).abs() < 1e-9 && u.compareTo(parentId[v]!) < 0)) {
+            dist[v] = d;
+            parents[v] = p;
+            parentId[v] = u;
+          }
+        }
+      }
+
+      // 3. Endgeräte: gemeldeter Elternknoten vor stärkstem Nachbarn.
+      for (final n in nodes) {
+        if (routes(n.ieee)) continue;
+        _Pair? pick;
+        var pickScore = -1;
+        for (final p in adj[n.ieee] ?? const <_Pair>[]) {
+          final v = p.other(n.ieee);
+          if (!routes(v) || !dist.containsKey(v)) continue;
+          final reported = p.child == n.ieee && p.parent == v;
+          final score = (reported ? 1000 : 0) + p.lqi;
+          if (score > pickScore ||
+              (score == pickScore && v.compareTo(pick!.other(n.ieee)) < 0)) {
+            pickScore = score;
+            pick = p;
+          }
+        }
+        if (pick != null) {
+          parents[n.ieee] = pick;
+          parentId[n.ieee] = pick.other(n.ieee);
+        }
       }
     }
-    _parent = parents;
-    _edges = [
-      for (final e in edgeMap.values)
-        ZbMeshEdge(
-          a: e.a,
-          b: e.b,
-          lqi: e.lqi,
-          hierarchical: e.hierarchical,
-          depth: e.depth,
-          inTree: e.hierarchical && parents[e.a]?.b == e.b,
-        ),
-    ];
-    // Fallback-Kanten (Breitensuche), die es als eigene Kante nicht gibt.
-    final have = {for (final e in _edges) pair(e.a, e.b)};
-    for (final p in parents.values) {
-      if (!have.contains(pair(p.a, p.b))) {
-        _edges.add(
-          ZbMeshEdge(
-            a: p.a,
-            b: p.b,
-            lqi: p.lqi,
-            hierarchical: true,
-            inTree: true,
-            depth: p.depth,
-          ),
-        );
+
+    // 4. Kanten: Baumkanten mit Richtung Kind -> Eltern, Rest als Nachbarn.
+    final treePairs = <_Pair, String>{
+      for (final e in parents.entries) e.value: e.key,
+    };
+    _parent = {};
+    _edges = [];
+    for (final p in pairs.values) {
+      final child = treePairs[p];
+      final base = ZbMeshEdge(
+        a: p.child ?? p.x,
+        b: p.parent ?? p.y,
+        lqi: p.lqi,
+        hierarchical: p.child != null,
+        depth: p.depth,
+      );
+      if (child != null) {
+        final e = base._tree(child, p.other(child));
+        _parent[child] = e;
+        _edges.add(e);
+      } else {
+        _edges.add(base);
       }
     }
     this.nodes = [
       for (final n in nodes)
-        n.lqi != null || n.isCoordinator ? n : n.withLqi(parents[n.ieee]?.lqi),
+        n.lqi != null || n.isCoordinator ? n : n.withLqi(_parent[n.ieee]?.lqi),
     ];
     _byIeee = {for (final n in this.nodes) n.ieee: n};
+    _tree = [
+      for (final e in _edges)
+        if (e.inTree) e,
+    ];
   }
 
   factory ZbNetworkMap.fromJson(Map<String, dynamic> j) {
@@ -377,6 +421,7 @@ class ZbNetworkMap {
   late final String? _coordinator;
   late final Map<String, ZbMeshEdge> _parent;
   late final List<ZbMeshEdge> _edges;
+  late final List<ZbMeshEdge> _tree;
   late final Map<String, ZbMeshNode> _byIeee;
 
   bool get isEmpty => nodes.isEmpty;
@@ -384,8 +429,14 @@ class ZbNetworkMap {
   /// IEEE des Koordinators oder `null`.
   String? get coordinator => _coordinator;
 
-  /// Alle Kanten zum Zeichnen, je Knotenpaar eine.
+  /// Alle Kanten zum Zeichnen, je Knotenpaar eine (dedupliziert).
   List<ZbMeshEdge> get edges => _edges;
+
+  /// Nur die Baumkanten: je Knoten die Kante zu seinem Elternknoten.
+  List<ZbMeshEdge> get treeEdges => _tree;
+
+  /// Alle Nachbarn eines Knotens (beliebige Beziehung).
+  int neighborCount(String ieee) => _edges.where((e) => e.touches(ieee)).length;
 
   ZbMeshNode? node(String ieee) => _byIeee[ieee];
 

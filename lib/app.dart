@@ -6,6 +6,7 @@ import 'core/router/router.dart';
 import 'core/state/providers.dart';
 import 'core/theme/theme.dart';
 import 'core/widgets/system_bars.dart';
+import 'features/zigbee/widgets/zb_common.dart' show zbToast;
 
 /// Wurzel der App: Theme (Hell, Dunkel, System), Router, Deutsch.
 class HavenApp extends ConsumerWidget {
@@ -18,6 +19,11 @@ class HavenApp extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final router = ref.watch(routerProvider(initialLocation));
     final mode = ref.watch(themeModeProvider);
+    // Hinweise beim Speichern geteilter Daten (z. B. ohne Admin-Rechte).
+    ref.listen(syncNoticeProvider, (_, n) {
+      final ctx = rootNavigatorKey.currentContext;
+      if (n != null && ctx != null) zbToast(ctx, n.text, error: true);
+    });
     return MaterialApp.router(
       title: 'Haven',
       debugShowCheckedModeBanner: false,

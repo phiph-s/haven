@@ -4,6 +4,7 @@ import 'package:material_ui/material_ui.dart';
 import '../../core/router/router.dart';
 import '../../core/theme/tokens.dart';
 import '../../core/widgets/system_bars.dart';
+import 'mesh/mesh_scene.dart';
 import 'mesh/mesh_screen.dart';
 import 'zigbee_device_screen.dart';
 import 'zigbee_pair_screen.dart';
@@ -39,7 +40,12 @@ final List<RouteBase> zigbeeRoutes = <RouteBase>[
     parentNavigatorKey: rootNavigatorKey,
     pageBuilder: (context, state) => _slide(
       state,
-      ZigbeeMeshScreen(select: state.uri.queryParameters['select']),
+      ZigbeeMeshScreen(
+        select: state.uri.queryParameters['select'],
+        filter: MeshFilter.values
+            .where((f) => f.name == state.uri.queryParameters['filter'])
+            .firstOrNull,
+      ),
     ),
   ),
   GoRoute(

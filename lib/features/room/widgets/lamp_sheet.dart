@@ -1,6 +1,8 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:material_ui/material_ui.dart';
 
+import '../../../core/widgets/haven_sheet.dart';
+
 import '../../../core/light/color_math.dart';
 import '../../../core/light/room_palette.dart';
 import '../../../core/state/providers.dart';
@@ -35,14 +37,8 @@ final lampGroupProvider = Provider.family<HouseView, String>((ref, key) {
 });
 
 Future<void> showLampSheet(BuildContext context, LampTarget target) {
-  return showModalBottomSheet<void>(
-    context: context,
-    isScrollControlled: true,
-    useRootNavigator: true,
-    // Sheet reicht bis unter die Gestenleiste, Abstand innen (edge-to-edge).
-    useSafeArea: false,
-    backgroundColor: const Color(0x00000000),
-    barrierColor: const Color(0x8C000000),
+  return showHavenModalSheet<void>(
+    context,
     builder: (_) => _LampSheet(target: target),
   );
 }
@@ -110,6 +106,8 @@ class _LampSheetState extends ConsumerState<_LampSheet> {
                 border: Border.all(color: hv.ln),
               ),
               child: SingleChildScrollView(
+                // Am oberen Ende übernimmt das Sheet das Ziehen.
+                controller: HavenSheetScope.maybeOf(context)?.scrollController,
                 padding: EdgeInsets.fromLTRB(
                   20,
                   10,

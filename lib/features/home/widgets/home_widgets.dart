@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:material_ui/material_ui.dart';
 
+import '../../../core/widgets/haven_sheet.dart';
+
 import '../../../core/state/providers.dart';
 import '../../../core/theme/tokens.dart';
 import '../../../core/widgets/haven_card.dart';
@@ -419,14 +421,8 @@ class _WeatherCard extends ConsumerWidget {
 // ---- Hinzufügen ---------------------------------------------------------
 
 Future<void> showAddWidgetSheet(BuildContext context, WidgetRef ref) {
-  return showModalBottomSheet<void>(
-    context: context,
-    isScrollControlled: true,
-    useRootNavigator: true,
-    // Sheet reicht bis unter die Gestenleiste, Abstand innen (edge-to-edge).
-    useSafeArea: false,
-    backgroundColor: const Color(0x00000000),
-    barrierColor: const Color(0x8C000000),
+  return showHavenModalSheet<void>(
+    context,
     builder: (_) => const _AddWidgetSheet(),
   );
 }

@@ -1,5 +1,7 @@
 import 'package:material_ui/material_ui.dart';
 
+import '../../core/widgets/haven_sheet.dart';
+
 import '../../core/theme/tokens.dart';
 import '../../core/widgets/press_scale.dart';
 
@@ -125,14 +127,8 @@ Future<T?> showHavenSheet<T>(
   BuildContext context, {
   required WidgetBuilder builder,
 }) {
-  return showModalBottomSheet<T>(
-    context: context,
-    isScrollControlled: true,
-    useRootNavigator: true,
-    // Sheet reicht bis unter die Gestenleiste, Abstand innen (edge-to-edge).
-    useSafeArea: false,
-    backgroundColor: const Color(0x00000000),
-    barrierColor: const Color(0x8C000000),
+  return showHavenModalSheet<T>(
+    context,
     builder: (ctx) {
       final hv = ctx.hv;
       return ConstrainedBox(
@@ -150,6 +146,8 @@ Future<T?> showHavenSheet<T>(
           child: SafeArea(
             top: false,
             child: SingleChildScrollView(
+              // Am oberen Ende übernimmt das Sheet das Ziehen.
+              controller: HavenSheetScope.maybeOf(ctx)?.scrollController,
               padding: const EdgeInsets.fromLTRB(20, 10, 20, 20),
               child: Column(
                 mainAxisSize: MainAxisSize.min,

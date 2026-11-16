@@ -1,6 +1,7 @@
 import '../core/light/color_math.dart';
 import 'models/floor_plan.dart';
 import 'models/snapshot.dart';
+import 'sync/app_data.dart';
 import 'zigbee_api.dart';
 
 /// Einzige Schnittstelle der Oberfläche zu den Daten. Zwei Implementierungen:
@@ -73,6 +74,23 @@ abstract class HavenRepository implements ZigbeeApi {
     String? entityId,
     Map<String, dynamic> data = const {},
   });
+
+  /// Geteilte Dokumente in HA (Grundriss, Widgets mit Layout), siehe
+  /// `sync/app_data.dart`. Wirft [HavenException] (offline, `unknown_command`
+  /// bei alter Integration). Die Entwicklungsdaten halten sie im Speicher.
+  Future<RemoteDoc> fetchAppData(AppDataKind kind);
+
+  /// Speichert ein Dokument mit Zeitstempel [updatedAt] (ms). Wirft
+  /// [HavenException], ohne Admin-Rechte mit `unauthorized`.
+  Future<void> storeAppData(
+    AppDataKind kind,
+    Map<String, dynamic> data,
+    int updatedAt,
+  );
+
+  /// Ein Dokument hat sich geändert (Ereignis `haven_data_updated`, auch
+  /// das eigene Speichern), außerdem nach jedem Verbinden für alle Arten.
+  Stream<AppDataKind> get appDataChanges;
 
   /// Rohbefehl an die HA-WebSocket-API, z. B. `haven/zigbee/devices`. Die
   /// Das `FakeRepository` beantwortet `haven/info`, `haven/rooms`,

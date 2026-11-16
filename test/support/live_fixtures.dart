@@ -26,6 +26,12 @@ Map<String, EntityState> liveEntities() => {
     ),
 };
 
+/// Antwort mit Fehler [code] (z. B. `unauthorized`) für [LiveHa.answers].
+class HaFail {
+  const HaFail(this.code);
+  final String code;
+}
+
 /// Fake-HA, das auf die Befehle mit den Live-Antworten reagiert. [answers]
 /// überschreibt einzelne Befehle (Rückgabe `null` = Erfolg ohne Inhalt,
 /// [unknown] = HA kennt den Befehl nicht).
@@ -50,9 +56,11 @@ class LiveHa {
     dynamic result;
     var ok = true;
     final custom = answers[type];
+    String errorCode = 'unknown_command';
     if (custom != null) {
       result = custom(m);
-      ok = !identical(result, unknown);
+      ok = !identical(result, unknown) && result is! HaFail;
+      if (result is HaFail) errorCode = result.code;
     } else {
       switch (type) {
         case 'get_states':
@@ -92,8 +100,7 @@ class LiveHa {
       'type': 'result',
       'success': ok,
       'result': ok ? result : null,
-      if (!ok)
-        'error': {'code': 'unknown_command', 'message': 'Unknown command.'},
+      if (!ok) 'error': {'code': errorCode, 'message': 'Fehler $errorCode.'},
     });
   }
 

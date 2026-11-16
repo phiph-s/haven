@@ -8,7 +8,6 @@ import '../../features/home/home_screen.dart';
 import '../../features/map/map_routes.dart';
 import '../../features/map/map_screen.dart';
 import '../../features/onboarding/onboarding_screen.dart';
-import '../../features/room/room_hero.dart';
 import '../../features/room/room_screen.dart';
 import '../../features/settings/settings_screen.dart';
 import '../../features/shell/app_shell.dart';
@@ -17,6 +16,7 @@ import '../../features/zigbee/zigbee_routes.dart';
 import '../../features/zigbee/zigbee_screen.dart';
 import '../state/providers.dart';
 import '../theme/tokens.dart';
+import '../widgets/haven_sheet.dart';
 import '../widgets/system_bars.dart';
 
 final GlobalKey<NavigatorState> rootNavigatorKey = GlobalKey<NavigatorState>(
@@ -32,21 +32,29 @@ abstract final class Routes {
   static const automations = '/automations';
   static const settings = '/settings';
   static const updates = '/settings/updates';
-  static String room(String id) => '/room/$id';
+
+  /// Raum als Sheet über der aktuellen Seite. Unter Zuhause eingehängt,
+  /// damit ein Deep Link Zuhause dahinter hat. `/room/<id>` leitet um.
+  static String room(String id) => '/home/room/$id';
 }
 
-/// Raum: Der Übergang steckt in `RoomReveal` (RoomScreen), die Seite wächst
-/// aus der Kachel. `opaque`: Nach dem Öffnen baut und malt Zuhause nicht mehr
-/// mit, während des Übergangs bleibt es sichtbar.
-Page<void> _roomPage(GoRouterState state, Widget child) =>
-    CustomTransitionPage<void>(
-      key: state.pageKey,
-      transitionDuration: HavenMotion.roomOpen,
-      reverseTransitionDuration: HavenMotion.roomClose,
-      child: child,
-      transitionsBuilder: (context, animation, secondary, child) =>
-          SystemBars(child: child),
-    );
+/// Raum: Sheet von unten (`HavenSheetPage`), die App dahinter rückt zurück.
+/// `extent` (nur Entwicklungsdaten) öffnet halb gezogen für Screenshots.
+Page<void> _roomPage(Ref ref, GoRouterState state) {
+  final fake = ref.read(sessionProvider).mode == SessionMode.fake;
+  final q = state.uri.queryParameters;
+  return HavenSheetPage<void>(
+    key: state.pageKey,
+    name: state.name,
+    scalesBackground: true,
+    initialExtent: fake ? (double.tryParse(q['extent'] ?? '') ?? 1) : 1,
+    child: RoomScreen(
+      roomId: state.pathParameters['id']!,
+      // Nur für Screenshots mit den Entwicklungsdaten (siehe debug_launch.dart).
+      autoSheet: q['sheet'] == '1' && fake,
+    ),
+  );
+}
 
 /// Push-Seiten kommen von rechts, die alte Seite rückt ein Stück mit.
 Page<void> _slidePage(GoRouterState state, Widget child) =>
@@ -104,7 +112,8 @@ GoRouter buildRouter(Ref ref, {String? initialLocation}) {
         builder: (context, state) => const OnboardingScreen(),
       ),
       StatefulShellRoute(
-        builder: (context, state, shell) => AppShell(shell: shell),
+        builder: (context, state, shell) =>
+            SheetBackdrop(child: AppShell(shell: shell)),
         navigatorContainerBuilder: (context, shell, children) =>
             BranchContainer(
               currentIndex: shell.currentIndex,
@@ -116,6 +125,13 @@ GoRouter buildRouter(Ref ref, {String? initialLocation}) {
               GoRoute(
                 path: Routes.home,
                 builder: (c, s) => _page(c, const HomeScreen(), safeTop: false),
+                routes: [
+                  GoRoute(
+                    path: 'room/:id',
+                    parentNavigatorKey: rootNavigatorKey,
+                    pageBuilder: (context, state) => _roomPage(ref, state),
+                  ),
+                ],
               ),
             ],
           ),
@@ -148,23 +164,15 @@ GoRouter buildRouter(Ref ref, {String? initialLocation}) {
           ),
         ],
       ),
+      // Alte Adresse des Raums (Links, Screenshots).
       GoRoute(
         path: '/room/:id',
-        parentNavigatorKey: rootNavigatorKey,
-        pageBuilder: (context, state) => _roomPage(
-          state,
-          Material(
-            type: MaterialType.transparency,
-            child: RoomScreen(
-              roomId: state.pathParameters['id']!,
-              origin: originFromExtra(state.extra),
-              // Nur für Screenshots mit den Entwicklungsdaten (siehe debug_launch.dart).
-              autoSheet:
-                  state.uri.queryParameters['sheet'] == '1' &&
-                  ref.read(sessionProvider).mode == SessionMode.fake,
-            ),
-          ),
-        ),
+        redirect: (context, state) => Uri(
+          path: Routes.room(state.pathParameters['id']!),
+          queryParameters: state.uri.queryParameters.isEmpty
+              ? null
+              : state.uri.queryParameters,
+        ).toString(),
       ),
       GoRoute(
         path: Routes.settings,

@@ -85,6 +85,9 @@ class MeshEdgePainter extends FloorOverlayPainter {
         if (st.edgeShown(e, infos)) e,
     ];
     final labelAll = !mini && shown.length <= 12;
+    // Bei „Alle Verbindungen“ nur am gewählten Knoten beschriften, sonst
+    // werden es Hunderte Zahlen.
+    final many = st.filter == MeshFilter.all;
     final stroke = Paint()
       ..style = PaintingStyle.stroke
       ..strokeCap = StrokeCap.round;
@@ -92,8 +95,9 @@ class MeshEdgePainter extends FloorOverlayPainter {
 
     // Erst gedimmte, dann normale, zuletzt hervorgehobene Kanten.
     int rank(ZbMeshEdge e) {
-      if (!st.hasSelection) return 1;
-      return st.pathEdges.contains(e.key) ? 2 : 0;
+      final base = e.inTree ? 1 : 0;
+      if (!st.hasSelection) return base;
+      return st.pathEdges.contains(e.key) ? 3 : base;
     }
 
     final ordered = [...shown]..sort((a, b) => rank(a).compareTo(rank(b)));
@@ -122,7 +126,7 @@ class MeshEdgePainter extends FloorOverlayPainter {
       );
       final start = pa + _unit(ctrl - pa) * (ra + 1);
       final tip = pb + _unit(ctrl - pb) * (rb + 1.5);
-      final arrow = e.hierarchical ? (mini ? 3.4 : 6.5) : 0.0;
+      final arrow = e.inTree ? (mini ? 3.4 : 6.5) : 0.0;
       final dirEnd = _unit(tip - ctrl);
       final lineEnd = tip - dirEnd * arrow * 0.8;
 
@@ -132,8 +136,10 @@ class MeshEdgePainter extends FloorOverlayPainter {
       final touchSel = st.selected != null && e.touches(st.selected!);
       var alpha = weak ? 0.95 : (inter ? 0.8 : 0.42);
       var width = (inter ? 1.9 : 1.2) * (mini ? 0.7 : 1.0);
-      if (!e.hierarchical) {
-        alpha *= 0.65;
+      if (!e.inTree) {
+        // Nachbarschaft ohne Weg: dünn und leise, damit der Baum lesbar bleibt.
+        alpha = weak ? 0.32 : 0.2;
+        width = mini ? 0.5 : 0.8;
       }
       if (st.hasSelection) {
         if (onPath) {
@@ -153,7 +159,7 @@ class MeshEdgePainter extends FloorOverlayPainter {
         ..moveTo(start.dx, start.dy)
         ..quadraticBezierTo(ctrl.dx, ctrl.dy, lineEnd.dx, lineEnd.dy);
       canvas.drawPath(path, stroke);
-      if (e.hierarchical) {
+      if (e.inTree) {
         final n = Offset(-dirEnd.dy, dirEnd.dx);
         final base = tip - dirEnd * arrow;
         final head = Path()
@@ -164,7 +170,10 @@ class MeshEdgePainter extends FloorOverlayPainter {
         canvas.drawPath(head, fill..color = color);
       }
       final dimmed = st.hasSelection && !onPath && !touchSel;
-      if (!mini && !dimmed && (weak || touchSel || onPath || labelAll)) {
+      final wantLabel = many
+          ? (touchSel || onPath)
+          : (weak || touchSel || onPath || labelAll);
+      if (!mini && !dimmed && (e.inTree || touchSel) && wantLabel) {
         labels.add(
           _Label(
             (pa + ctrl * 2 + pb) / 4,

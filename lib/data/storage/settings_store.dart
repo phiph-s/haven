@@ -36,6 +36,7 @@ class SettingsStore implements LocalPrefs {
   static const _kUpdateChecked = 'update_last_check';
   static const _kUpdateDismissed = 'update_dismissed';
   static const _kUpdateRelease = 'update_latest_release';
+  static const _kRoomOrder = 'home_room_order';
 
   @override
   Set<String> get excludedLights =>
@@ -94,6 +95,31 @@ class SettingsStore implements LocalPrefs {
 
   Future<void> setWidgets(List<HavenWidgetConfig> l) =>
       _p.setString(_kWidgets, HavenWidgetConfig.encodeList(l));
+
+  /// Wurden die Widgets je gespeichert (sonst gelten die Voreinstellungen)?
+  bool get hasWidgets => _p.containsKey(_kWidgets);
+
+  /// Reihenfolge der Räume in der Übersicht (Raum-IDs). Leer: wie in HA.
+  List<String> get roomOrder => _p.getStringList(_kRoomOrder) ?? const [];
+  Future<void> setRoomOrder(List<String> ids) =>
+      _p.setStringList(_kRoomOrder, ids);
+
+  // ---- Abgleich mit HA (sync/app_data.dart) ------------------------------
+
+  /// Stempel (ms) der lokalen Fassung eines geteilten Dokuments.
+  int? syncStamp(String kind) => _p.getInt('sync_${kind}_at');
+
+  /// Lokal geändert, aber noch nicht in HA gespeichert.
+  bool syncDirty(String kind) => _p.getBool('sync_${kind}_dirty') ?? false;
+
+  Future<void> setSync(String kind, {int? stamp, required bool dirty}) async {
+    if (stamp == null) {
+      await _p.remove('sync_${kind}_at');
+    } else {
+      await _p.setInt('sync_${kind}_at', stamp);
+    }
+    await _p.setBool('sync_${kind}_dirty', dirty);
+  }
 }
 
 /// Ablage für den Long-Lived-Token.

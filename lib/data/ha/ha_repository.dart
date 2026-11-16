@@ -16,6 +16,7 @@ import '../models/zigbee.dart';
 import '../models/zigbee_network.dart';
 import '../scene_styles.dart';
 import '../storage/settings_store.dart';
+import '../sync/app_data.dart';
 import 'ha_zigbee.dart';
 import 'ha_client.dart';
 
@@ -66,6 +67,9 @@ class HaRepository extends BaseRepository {
   bool _roomsAgain = false;
   ConnectionStatus _status = ConnectionStatus.connecting;
   bool _subscribed = false;
+
+  /// `features` aus `haven/info` (z. B. `data_events` ab 0.3.0).
+  Set<String> _features = const {};
   Timer? _flush;
   StreamSubscription<void>? _connSub;
   StreamSubscription<ConnectionStatus>? _statusSub;
@@ -106,6 +110,16 @@ class HaRepository extends BaseRepository {
           'type': 'subscribe_events',
           'event_type': 'state_changed',
         }, _onStateChanged);
+        try {
+          await client.subscribe({
+            'type': 'subscribe_events',
+            'event_type': dataUpdatedEvent,
+          }, _onDataUpdated);
+        } catch (e) {
+          // Ohne Admin erlaubt HA nur bestimmte Ereignisse: Dann gleicht
+          // die App nur beim Verbinden und Aktualisieren ab.
+          debugPrint('Abo $dataUpdatedEvent: $e');
+        }
         for (final t in registryEvents) {
           try {
             await client.subscribe({
@@ -117,10 +131,14 @@ class HaRepository extends BaseRepository {
           }
         }
       }
+      await _loadInfo();
       await _loadPrefs();
       await _loadRooms();
       _status = ConnectionStatus.connected;
       _pushNow();
+      // Nach jedem Verbinden: geteilte Dokumente abgleichen.
+      emitAppData(AppDataKind.floorplan);
+      emitAppData(AppDataKind.widgets);
     } catch (e) {
       debugPrint('Laden fehlgeschlagen: $e');
     }
@@ -158,6 +176,99 @@ class HaRepository extends BaseRepository {
       _roomsLoading = null;
     }
   }
+
+  /// HA-Ereignis der Integration nach jedem `set` (ab 0.3.0).
+  static const dataUpdatedEvent = 'haven_data_updated';
+
+  void _onDataUpdated(dynamic event) {
+    final data = (event as Map?)?['data'] as Map?;
+    final kind = AppDataKind.parse(data?['kind']);
+    if (kind == null) return;
+    if (kind == AppDataKind.prefs) {
+      unawaited(
+        _loadPrefs().then((_) {
+          if (!disposed) _pushNow();
+        }),
+      );
+    }
+    emitAppData(kind);
+  }
+
+  Future<void> _loadInfo() async {
+    try {
+      final r = await client.send({'type': 'haven/info'}) as Map?;
+      _features = {for (final f in (r?['features'] as List? ?? const [])) '$f'};
+    } on HavenException catch (e) {
+      debugPrint('haven/info: $e');
+    }
+  }
+
+  /// Integration speichert `updated_at` und `layout` (ab 0.3.0). Ältere
+  /// lehnen unbekannte Felder ab.
+  bool get _v3 => _features.contains('data_events');
+
+  @override
+  Future<RemoteDoc> fetchAppData(AppDataKind kind) async {
+    switch (kind) {
+      case AppDataKind.floorplan:
+        final r = await client.send({'type': 'haven/floorplan/get'}) as Map?;
+        final plan = r?['plan'];
+        if (plan is! Map) return RemoteDoc.empty;
+        return RemoteDoc(
+          data: {'plan': Map<String, dynamic>.from(plan)},
+          updatedAt:
+              parseStamp(r?['updated_at']) ?? parseStamp(plan['updatedAt']),
+        );
+      case AppDataKind.widgets:
+        final r = await client.send({'type': 'haven/widgets/get'}) as Map?;
+        final w = r?['widgets'];
+        if (w is! List) return RemoteDoc.empty;
+        final layout = r?['layout'];
+        return RemoteDoc(
+          data: {
+            'widgets': w,
+            'layout': layout is Map ? Map<String, dynamic>.from(layout) : null,
+          },
+          updatedAt: parseStamp(r?['updated_at']),
+        );
+      case AppDataKind.prefs:
+        final r = await client.send({'type': 'haven/prefs/get'}) as Map?;
+        final p = r?['prefs'];
+        return RemoteDoc(
+          data: p is Map ? Map<String, dynamic>.from(p) : null,
+          updatedAt: p is Map ? parseStamp(p['updatedAt']) : null,
+        );
+    }
+  }
+
+  @override
+  Future<void> storeAppData(
+    AppDataKind kind,
+    Map<String, dynamic> data,
+    int updatedAt,
+  ) async {
+    switch (kind) {
+      case AppDataKind.floorplan:
+        await client.send({
+          'type': 'haven/floorplan/set',
+          // Der Stempel steht auch im Dokument, das speichert jede Version.
+          'plan': {...data['plan'] as Map, 'updatedAt': updatedAt},
+          if (_v3) 'updated_at': updatedAt,
+        });
+      case AppDataKind.widgets:
+        await client.send({
+          'type': 'haven/widgets/set',
+          'widgets': data['widgets'],
+          if (_v3) 'layout': data['layout'],
+          if (_v3) 'updated_at': updatedAt,
+        });
+      case AppDataKind.prefs:
+        await client.send({'type': 'haven/prefs/set', 'prefs': data});
+    }
+  }
+
+  /// Ob die Integration das Layout (Reihenfolge der Räume) speichern kann.
+  bool get storesLayout => _v3;
 
   Future<void> _loadPrefs() async {
     try {

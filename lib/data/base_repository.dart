@@ -1,7 +1,9 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'haven_repository.dart';
 import 'models/snapshot.dart';
+import 'sync/app_data.dart';
 
 /// Gemeinsamer Unterbau: hält den Snapshot und den Broadcast-Stream.
 abstract class BaseRepository implements HavenRepository {
@@ -18,6 +20,37 @@ abstract class BaseRepository implements HavenRepository {
 
   bool get disposed => _disposed;
 
+  // ---- Geteilte Dokumente, im Speicher (Entwicklungsdaten, Tests) --------
+
+  final Map<AppDataKind, RemoteDoc> _docs = {};
+  final StreamController<AppDataKind> _appData =
+      StreamController<AppDataKind>.broadcast();
+
+  @override
+  Stream<AppDataKind> get appDataChanges => _appData.stream;
+
+  /// Meldet eine Änderung an die Hörer von [appDataChanges].
+  void emitAppData(AppDataKind kind) {
+    if (!_appData.isClosed) _appData.add(kind);
+  }
+
+  @override
+  Future<RemoteDoc> fetchAppData(AppDataKind kind) async =>
+      _docs[kind] ?? RemoteDoc.empty;
+
+  @override
+  Future<void> storeAppData(
+    AppDataKind kind,
+    Map<String, dynamic> data,
+    int updatedAt,
+  ) async {
+    _docs[kind] = RemoteDoc(
+      data: Map<String, dynamic>.from(jsonDecode(jsonEncode(data)) as Map),
+      updatedAt: updatedAt,
+    );
+    emitAppData(kind);
+  }
+
   /// Ersetzt den Snapshot und benachrichtigt die Hörer.
   void publish(HavenSnapshot s) {
     if (_disposed) return;
@@ -30,5 +63,6 @@ abstract class BaseRepository implements HavenRepository {
     if (_disposed) return;
     _disposed = true;
     await _controller.close();
+    await _appData.close();
   }
 }

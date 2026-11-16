@@ -440,61 +440,64 @@ ZbNetworkMap buildFakeNetworkMap(
     lqiOf[d.ieee] = lqi(d, best!, router: false);
   }
 
+  // Z2M-Rohformat: `target` meldet, `source` ist der Nachbar,
+  // `relationship` beschreibt den Nachbarn aus Sicht von `target`.
   final links = <ZbMeshLink>[];
-  void both(String child, String parent, int q, int dep, int rel) {
-    links.add(
-      ZbMeshLink(
-        source: child,
-        target: parent,
-        lqi: q,
-        depth: dep,
-        relationship: rel,
-      ),
-    );
-  }
+  void report(String reporter, String neighbor, int q, int dep, int rel) =>
+      links.add(
+        ZbMeshLink(
+          source: neighbor,
+          target: reporter,
+          lqi: q,
+          depth: dep,
+          relationship: rel,
+        ),
+      );
 
   final linked = <String>{};
   String key(String a, String b) => a.compareTo(b) < 0 ? '$a|$b' : '$b|$a';
+  final isRouter = {for (final r in routers) r.ieee};
   for (final e in parentOf.entries) {
     final dep = depth[e.key]!;
-    links.add(
-      ZbMeshLink(
-        source: e.key,
-        target: e.value,
-        lqi: lqiOf[e.key]!,
-        depth: dep,
-        relationship: ZbRelationship.parent,
-      ),
-    );
-    links.add(
-      ZbMeshLink(
-        source: e.value,
-        target: e.key,
-        lqi: lqiOf[e.key]!,
-        depth: dep - 1,
-        relationship: ZbRelationship.child,
-      ),
-    );
+    final q = lqiOf[e.key]!;
+    // Der Elternknoten führt das Kind in seiner Tabelle.
+    report(e.value, e.key, q, dep, ZbRelationship.child);
+    if (isRouter.contains(e.key)) {
+      // Router melden selbst: Eltern nur bei jedem zweiten (wie im echten
+      // Netz, dort sind Router meist nur Geschwister), sonst Geschwister.
+      final rel = hash(e.key).isEven
+          ? ZbRelationship.parent
+          : ZbRelationship.sibling;
+      report(e.key, e.value, q, dep - 1, rel);
+    }
     linked.add(key(e.key, e.value));
   }
-  // Geschwister: jeder Router mit seinem nächsten Router, falls nah genug.
-  for (final r in routers) {
-    String? best;
-    var bd = double.infinity;
-    for (final o in routers) {
-      if (o.ieee == r.ieee || linked.contains(key(r.ieee, o.ieee))) continue;
-      final dd = dist(r.ieee, o.ieee);
-      if (dd < bd) {
-        bd = dd;
-        best = o.ieee;
+  // Geschwister: jeder Router (und der Koordinator) mit den Routern in
+  // Reichweite, je Richtung ein Eintrag mit leicht anderem LQI.
+  final meshers = [fakeCoordinatorIeee, for (final r in routers) r.ieee];
+  for (var i = 0; i < meshers.length; i++) {
+    for (var j = i + 1; j < meshers.length; j++) {
+      final a = meshers[i], b = meshers[j];
+      if (linked.contains(key(a, b))) continue;
+      // Die absichtlich schwachen Geräte bekommen keinen besseren Umweg.
+      if (weak.containsKey(byName[a]?.friendlyName) ||
+          weak.containsKey(byName[b]?.friendlyName)) {
+        continue;
       }
+      final dd = dist(a, b);
+      if (dd > 11) continue;
+      linked.add(key(a, b));
+      final q = (238 - dd * 11 - hash('$a$b') % 13).round().clamp(40, 240);
+      final rel = dd > 9.5 ? ZbRelationship.none : ZbRelationship.sibling;
+      report(a, b, q, depth[b] ?? 2, rel);
+      report(
+        b,
+        a,
+        (q + hash('$b$a') % 9 - 4).clamp(40, 240),
+        depth[a] ?? 2,
+        rel,
+      );
     }
-    final o = best;
-    if (o == null || bd > 7) continue;
-    linked.add(key(r.ieee, o));
-    final q = (236 - bd * 8 - hash('${r.ieee}$o') % 11).round().clamp(110, 240);
-    both(r.ieee, o, q, depth[r.ieee]!, ZbRelationship.sibling);
-    both(o, r.ieee, q, depth[o]!, ZbRelationship.sibling);
   }
 
   return ZbNetworkMap(

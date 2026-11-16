@@ -68,30 +68,35 @@ Map<String, dynamic> _raw() => {
         'networkAddress': 13,
       },
     ],
+    // Z2M-Rohformat: `target` meldet seine Neighbor-Table, `source` ist der
+    // Nachbar, `relationship` beschreibt den Nachbarn (0 Eltern, 1 Kind,
+    // 2 Geschwister).
     'links': [
+      // Tabelle des Koordinators: Flur ist sein Kind.
       {
         'source': {'ieeeAddr': '0xr1', 'networkAddress': 10},
         'target': {'ieeeAddr': '0xc0', 'networkAddress': 0},
         'linkquality': 200,
         'depth': 1,
-        'relationship': 0,
+        'relationship': 1,
         'routes': [
           {'destinationAddress': 12, 'nextHop': 11, 'status': 'ACTIVE'},
         ],
       },
+      // Tabelle des Flurs: der Koordinator ist sein Elternknoten.
       {
         'source': {'ieeeAddr': '0xc0'},
         'target': {'ieeeAddr': '0xr1'},
         'linkquality': 205,
         'depth': 0,
-        'relationship': 1,
+        'relationship': 0,
       },
       // Bad hängt nur über die Tabelle des Flurs (Kind).
       {
-        'source': {'ieeeAddr': '0xr1'},
-        'target': {'ieeeAddr': '0xr2'},
+        'source': {'ieeeAddr': '0xr2'},
+        'target': {'ieeeAddr': '0xr1'},
         'linkquality': 120,
-        'depth': 1,
+        'depth': 2,
         'relationship': 1,
       },
       // Sensor: zwei mögliche Eltern, der stärkere gewinnt.
@@ -100,21 +105,21 @@ Map<String, dynamic> _raw() => {
         'target': {'ieeeAddr': '0xr1'},
         'linkquality': 90,
         'depth': 2,
-        'relationship': 0,
+        'relationship': 1,
       },
       {
         'source': {'ieeeAddr': '0xe1'},
         'target': {'ieeeAddr': '0xr2'},
         'linkquality': 170,
-        'depth': 2,
-        'relationship': 0,
+        'depth': 3,
+        'relationship': 1,
       },
       // Insel: nur Geschwister-Verbindung zum Bad.
       {
         'source': {'ieeeAddr': '0xe2'},
         'target': {'ieeeAddr': '0xr2'},
         'linkquality': 60,
-        'depth': 2,
+        'depth': 3,
         'relationship': 2,
       },
     ],
@@ -193,7 +198,7 @@ void main() {
       ]);
     });
 
-    test('nur Geschwisterverbindung: Breitensuche findet den Weg', () {
+    test('nur Geschwisterverbindung: stärkster Router-Nachbar', () {
       expect(map.parentOf('0xe2'), '0xr2');
       expect(map.pathToCoordinator('0xe2').last, '0xc0');
     });
@@ -338,9 +343,9 @@ void main() {
       }
       expect(find.text('Funknetz'), findsOneWidget);
       expect(find.text('Netz neu messen'), findsOneWidget);
-      expect(find.text('Alle'), findsOneWidget);
-      expect(find.text('Nur schwache'), findsOneWidget);
-      expect(find.text('Nur Router'), findsOneWidget);
+      expect(find.text('Wege'), findsOneWidget);
+      expect(find.text('Alle Verbindungen'), findsOneWidget);
+      expect(find.text('Schwache'), findsOneWidget);
       expect(find.textContaining('gemessen vor'), findsOneWidget);
       expect(find.byType(MeshGraph), findsOneWidget);
       expect(find.byType(MeshNodeDot), findsNWidgets(21));

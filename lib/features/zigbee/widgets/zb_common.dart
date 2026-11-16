@@ -1,5 +1,7 @@
 import 'package:material_ui/material_ui.dart';
 
+import '../../../core/widgets/haven_sheet.dart';
+
 import '../../../core/theme/tokens.dart';
 import '../../../core/widgets/press_scale.dart';
 import '../zigbee_model.dart';
@@ -232,14 +234,8 @@ Future<T?> showZbSheet<T>(
   required WidgetBuilder builder,
   bool scroll = true,
 }) {
-  return showModalBottomSheet<T>(
-    context: context,
-    isScrollControlled: true,
-    useRootNavigator: true,
-    // Sheet reicht bis unter die Gestenleiste, Abstand innen (edge-to-edge).
-    useSafeArea: false,
-    backgroundColor: const Color(0x00000000),
-    barrierColor: const Color(0x8C000000),
+  return showHavenModalSheet<T>(
+    context,
     builder: (ctx) {
       final hv = ctx.hv;
       final media = MediaQuery.of(ctx);
@@ -256,6 +252,8 @@ Future<T?> showZbSheet<T>(
               border: Border.all(color: hv.ln),
             ),
             child: SingleChildScrollView(
+              // Am oberen Ende übernimmt das Sheet das Ziehen.
+              controller: HavenSheetScope.maybeOf(ctx)?.scrollController,
               padding: EdgeInsets.fromLTRB(
                 20,
                 10,

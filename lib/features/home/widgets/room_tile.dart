@@ -8,12 +8,13 @@ import '../../../core/theme/tokens.dart';
 import '../../../core/widgets/animated_palette.dart';
 import '../../../core/widgets/press_scale.dart';
 import '../../../data/room_view.dart';
+import '../../../core/router/router.dart';
 import '../../room/room_hero.dart';
 import '../../../core/light/room_palette.dart';
 import '../weather_text.dart';
 
 /// Raumkachel: Lichtfarbe als Glow, Temperatur und Feuchte. Tippen schaltet,
-/// Halten oder der Pfeil öffnet den Raum (wächst aus der Kachel, `RoomReveal`).
+/// Halten oder der Pfeil öffnet den Raum (Sheet von unten).
 class RoomTile extends ConsumerWidget {
   const RoomTile({super.key, required this.roomId, this.wide = false});
 
@@ -30,7 +31,7 @@ class RoomTile extends ConsumerWidget {
 
     void open() {
       HapticFeedback.mediumImpact();
-      context.push('/room/$roomId', extra: originExtra(context));
+      context.push(Routes.room(roomId));
     }
 
     final status = view.lamps.isEmpty

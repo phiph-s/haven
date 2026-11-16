@@ -60,13 +60,13 @@ void main() {
     });
   }
 
-  test('Prüfung findet 0.4.0 und merkt sich Zeit und Release', () async {
+  test('Prüfung findet 0.5.0 und merkt sich Zeit und Release', () async {
     await setUpWith();
     final ctl = container.read(appUpdateProvider.notifier);
     expect(container.read(appUpdateProvider).available, isFalse);
     await ctl.check();
     final s = container.read(appUpdateProvider);
-    expect(s.release?.version, '0.4.0');
+    expect(s.release?.version, '0.5.0');
     expect(s.showCard, isTrue);
     expect(s.lastChecked, isNotNull);
     ctl.dismiss();
@@ -103,7 +103,7 @@ void main() {
     final s = container.read(appUpdateProvider);
     expect(s.error, isNull);
     expect(s.phase, AppUpdatePhase.idle);
-    final path = '${dir.path}/haven-0.4.0.apk';
+    final path = '${dir.path}/haven-0.5.0.apk';
     expect(installer.installed, [path]);
     expect(File(path).lengthSync(), 2000);
     // Zweiter Versuch nimmt die fertige Datei, kein neuer Download.
@@ -154,7 +154,7 @@ void main() {
     installer.allowed = true;
     await ctl.downloadAndInstall();
     expect(container.read(appUpdateProvider).needsPermission, isFalse);
-    expect(apkRequests.single, endsWith('haven-0.4.0.apk'));
+    expect(apkRequests.single, endsWith('haven-0.5.0.apk'));
   });
 
   test('Ohne Android öffnet der Knopf die Release-Seite', () async {
@@ -175,6 +175,6 @@ void main() {
     addTearDown(c.dispose);
     await c.read(appUpdateProvider.notifier).check();
     await c.read(appUpdateProvider.notifier).downloadAndInstall();
-    expect(opened.single.toString(), contains('/releases/tag/v0.4.0'));
+    expect(opened.single.toString(), contains('/releases/tag/v0.5.0'));
   });
 }

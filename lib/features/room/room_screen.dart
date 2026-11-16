@@ -9,6 +9,7 @@ import '../../core/theme/tokens.dart';
 import '../../core/widgets/accent_scope.dart';
 import '../../core/widgets/animated_palette.dart';
 import '../../core/widgets/haven_card.dart';
+import '../../core/widgets/haven_sheet.dart';
 import '../../core/widgets/haven_switch.dart';
 import '../../core/widgets/section_header.dart';
 import '../../data/room_view.dart';
@@ -19,20 +20,14 @@ import 'widgets/lamp_sheet.dart';
 import 'widgets/light_control_list.dart';
 import 'widgets/scene_card.dart';
 
-/// Raum: Hintergrund aus der Raumfarbe, Helligkeitsregler, Szenen und
-/// Lampen. Drehregler und Taster stehen nicht hier, sondern in der
-/// Geräteansicht (dort steht, welchen Raum sie steuern).
+/// Raum als Sheet von unten (Route in `router.dart`, `HavenSheetPage`):
+/// Hintergrund aus der Raumfarbe, Helligkeitsregler, Szenen und Lampen.
+/// Ziehen am Griff oder am oberen Ende der Liste schließt. Drehregler und
+/// Taster stehen nicht hier, sondern in der Geräteansicht (dort steht,
+/// welchen Raum sie steuern).
 class RoomScreen extends ConsumerStatefulWidget {
-  const RoomScreen({
-    super.key,
-    required this.roomId,
-    this.autoSheet = false,
-    this.origin,
-  });
+  const RoomScreen({super.key, required this.roomId, this.autoSheet = false});
   final String roomId;
-
-  /// Rechteck der Kachel, aus dem der Raum aufgeht (siehe [RoomReveal]).
-  final Rect? origin;
 
   /// Öffnet das Sheet "Farbe für alle" beim Start (Screenshots).
   final bool autoSheet;
@@ -77,26 +72,47 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
       );
     }
     final palette = view.palette(dark: hv.isDark);
-    final route = ModalRoute.of(context);
-    final page = AccentScope(
+    const radius = BorderRadius.vertical(top: Radius.circular(HavenRadii.xl));
+    return AccentScope(
       palette: palette,
-      child: Stack(
-        fit: StackFit.expand,
-        children: [
-          RoomPageBackdrop(palette: palette),
-          SafeArea(
-            bottom: false,
-            child: _RoomBody(view: view, palette: palette),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          borderRadius: radius,
+          boxShadow: [
+            BoxShadow(
+              color: const Color(0xFF000000).withValues(alpha: 0.18),
+              blurRadius: 24,
+              offset: const Offset(0, -2),
+            ),
+          ],
+        ),
+        child: ClipRRect(
+          borderRadius: radius,
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              RoomPageBackdrop(palette: palette),
+              // Haarlinie oben, damit das Sheet im Dunkeln eine Kante hat.
+              IgnorePointer(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    borderRadius: radius,
+                    border: Border(top: BorderSide(color: hv.ln2)),
+                  ),
+                ),
+              ),
+              Column(
+                children: [
+                  const SheetGrabber(),
+                  Expanded(
+                    child: _RoomBody(view: view, palette: palette),
+                  ),
+                ],
+              ),
+            ],
           ),
-        ],
+        ),
       ),
-    );
-    if (route?.animation == null) return page;
-    return RoomReveal(
-      animation: route!.animation!,
-      origin: widget.origin,
-      palette: palette,
-      child: page,
     );
   }
 }
@@ -135,18 +151,23 @@ class _RoomBody extends ConsumerWidget {
       );
     }
 
+    final sheet = HavenSheetScope.maybeOf(context);
     return ListView(
+      controller: sheet?.scrollController,
+      physics: const AlwaysScrollableScrollPhysics(
+        parent: ClampingScrollPhysics(),
+      ),
       padding: EdgeInsets.only(bottom: 40 + bottom),
       children: [
         // Kopfzeile
         Padding(
-          padding: const EdgeInsets.fromLTRB(8, 6, 12, 0),
+          padding: const EdgeInsets.fromLTRB(8, 0, 12, 0),
           child: Row(
             children: [
               RoundIconButton(
-                icon: Icons.arrow_back_rounded,
-                label: 'Zurück',
-                onTap: () => context.pop(),
+                icon: Icons.keyboard_arrow_down_rounded,
+                label: 'Schließen',
+                onTap: () => sheet != null ? sheet.close() : context.pop(),
               ),
               Expanded(
                 child: Text(

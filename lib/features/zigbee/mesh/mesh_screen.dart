@@ -9,6 +9,7 @@ import '../../../core/widgets/skeleton.dart';
 import '../../../core/widgets/haven_button.dart';
 import '../../../core/widgets/haven_card.dart';
 import '../../../core/widgets/press_scale.dart';
+import '../../../core/widgets/section_header.dart';
 import '../../../data/models/floor_plan.dart';
 import '../../../data/models/zigbee_network.dart';
 import '../../map/floor_plan_store.dart';
@@ -26,10 +27,13 @@ const String zigbeeMeshPath = '/zigbee/mesh';
 
 /// Vollbild: Netz-Graph auf dem Grundriss (Spec 5a).
 class ZigbeeMeshScreen extends ConsumerStatefulWidget {
-  const ZigbeeMeshScreen({super.key, this.select});
+  const ZigbeeMeshScreen({super.key, this.select, this.filter});
 
   /// IEEE eines Knotens, der beim Öffnen gewählt ist.
   final String? select;
+
+  /// Filter beim Öffnen (Standard: nur die Wege).
+  final MeshFilter? filter;
 
   @override
   ConsumerState<ZigbeeMeshScreen> createState() => _ZigbeeMeshScreenState();
@@ -39,7 +43,8 @@ class _ZigbeeMeshScreenState extends ConsumerState<ZigbeeMeshScreen> {
   final _state = ValueNotifier(const MeshViewState());
   final _zoom = TransformationController();
   double _gap = 0;
-  MeshFilter _filter = MeshFilter.all;
+  MeshFilter _filter = MeshFilter.tree;
+  bool _cancelled = false;
   String? _selected;
   bool _placing = false;
   PlanPoint? _draft;
@@ -49,6 +54,7 @@ class _ZigbeeMeshScreenState extends ConsumerState<ZigbeeMeshScreen> {
   void initState() {
     super.initState();
     _selected = widget.select;
+    _filter = widget.filter ?? MeshFilter.tree;
     // Nach dem ersten Bild auseinanderfahren.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) setState(() => _gap = 2);
@@ -109,9 +115,15 @@ class _ZigbeeMeshScreenState extends ConsumerState<ZigbeeMeshScreen> {
       },
     );
     if (ok != true || !mounted) return;
+    _cancelled = false;
     final err = await ref.read(zigbeeMeshProvider.notifier).refresh();
-    if (!mounted) return;
+    if (!mounted || _cancelled) return;
     zbToast(context, err ?? 'Netz neu gemessen', error: err != null);
+  }
+
+  void _cancelMeasure() {
+    _cancelled = true;
+    ref.read(zigbeeMeshProvider.notifier).cancel();
   }
 
   // ---- Koordinator platzieren ----------------------------------------------
@@ -218,10 +230,34 @@ class _ZigbeeMeshScreenState extends ConsumerState<ZigbeeMeshScreen> {
                   icon: Icons.open_with_rounded,
                   text: 'Zieh den Koordinator dorthin, wo der Stick steckt. Die Lage wird im Grundriss gespeichert.',
                 ),
-              Expanded(child: _graph(context, scene, map)),
+              Expanded(
+                child: Stack(
+                  children: [
+                    Positioned.fill(child: _graph(context, scene, map)),
+                    Positioned(
+                      left: 12,
+                      right: 12,
+                      top: 8,
+                      child: AnimatedSwitcher(
+                        duration: context.motion(HavenMotion.d2),
+                        child: data.refreshing
+                            ? MeasureProgress(
+                                started: data.refreshStarted,
+                                onCancel: _cancelMeasure,
+                              )
+                            : const SizedBox.shrink(),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ] else
               Expanded(
-                child: _Empty(data: data, onMeasure: _measure),
+                child: _Empty(
+                  data: data,
+                  onMeasure: _measure,
+                  onCancel: _cancelMeasure,
+                ),
               ),
           ],
         ),
@@ -356,7 +392,7 @@ class _Header extends StatelessWidget {
   Widget build(BuildContext context) {
     final hv = context.hv;
     final sub = refreshing
-        ? 'Messung läuft, das dauert bis zu eine Minute'
+        ? 'Messung läuft'
         : measuredAt == null
         ? 'Noch nicht gemessen'
         : 'gemessen ${agoLabel(measuredAt!)}';
@@ -609,26 +645,40 @@ class _Hint extends StatelessWidget {
 }
 
 class _Empty extends StatelessWidget {
-  const _Empty({required this.data, required this.onMeasure});
+  const _Empty({
+    required this.data,
+    required this.onMeasure,
+    required this.onCancel,
+  });
   final MeshData data;
   final VoidCallback onMeasure;
+  final VoidCallback onCancel;
 
   @override
   Widget build(BuildContext context) {
     final hv = context.hv;
-    if (!data.loaded || data.refreshing) {
+    if (data.refreshing) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: MeasureProgress(
+            started: data.refreshStarted,
+            onCancel: onCancel,
+          ),
+        ),
+      );
+    }
+    if (!data.loaded) {
       return Center(
         child: SkeletonScope(
-          label: data.refreshing ? 'Netz wird gemessen' : 'Netzkarte lädt',
+          label: 'Netzkarte lädt',
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               const Skeleton(width: 260, height: 260, radius: HavenRadii.xl),
               const SizedBox(height: 14),
               Text(
-                data.refreshing
-                    ? 'Zigbee2MQTT misst das Netz. Das dauert bis zu einer Minute.'
-                    : 'Netzkarte lädt',
+                'Netzkarte lädt',
                 textAlign: TextAlign.center,
                 style: HavenText.body.copyWith(color: hv.tx2, fontSize: 14),
               ),
@@ -643,10 +693,16 @@ class _Empty extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text(
+            Icon(
               data.error != null
-                  ? 'Die Netzkarte ist gerade nicht verfügbar. ${data.error}'
-                  : 'Es gibt noch keine Netzkarte.',
+                  ? Icons.cloud_off_rounded
+                  : Icons.radar_rounded,
+              size: 36,
+              color: hv.tx3,
+            ),
+            const SizedBox(height: 12),
+            Text(
+              data.error ?? 'Es gibt noch keine Netzkarte. Miss das Netz einmal, danach liegt sie in Home Assistant bereit.',
               textAlign: TextAlign.center,
               style: HavenText.body.copyWith(color: hv.tx2),
             ),
@@ -655,6 +711,108 @@ class _Empty extends StatelessWidget {
               label: 'Netz neu messen',
               icon: Icons.refresh_rounded,
               onTap: onMeasure,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Wartezustand während „Netz neu messen“: Fortschritt nach Zeit (die
+/// Integration meldet keinen echten), Text und Abbrechen.
+class MeasureProgress extends StatefulWidget {
+  const MeasureProgress({super.key, this.started, required this.onCancel});
+  final DateTime? started;
+  final VoidCallback onCancel;
+
+  /// Geschätzter Anteil nach [elapsed]: schnell bis etwa 60 %, dann
+  /// langsamer, nie ganz voll.
+  static double estimate(Duration elapsed) {
+    final t = elapsed.inMilliseconds / 1000;
+    return (1 - math.exp(-t / 28)).clamp(0.0, 0.95);
+  }
+
+  @override
+  State<MeasureProgress> createState() => _MeasureProgressState();
+}
+
+class _MeasureProgressState extends State<MeasureProgress>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _tick = AnimationController(
+    vsync: this,
+    duration: const Duration(seconds: 1),
+  )..repeat();
+  late final DateTime _start = widget.started ?? DateTime.now();
+
+  @override
+  void dispose() {
+    _tick.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final hv = context.hv;
+    return Semantics(
+      liveRegion: true,
+      label: 'Messung läuft',
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(16, 14, 8, 12),
+        decoration: BoxDecoration(
+          color: hv.s1,
+          borderRadius: BorderRadius.circular(HavenRadii.l),
+          border: Border.all(color: hv.ln2),
+          boxShadow: hv.shadow,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.radar_rounded, size: 20, color: hv.acc),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    'Messung läuft, das kann bis zu einer Minute dauern',
+                    style: HavenText.body.copyWith(color: hv.tx, fontSize: 14),
+                  ),
+                ),
+                const SizedBox(width: 6),
+                TextLink('Abbrechen', onTap: widget.onCancel),
+                const SizedBox(width: 8),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(3),
+                child: SizedBox(
+                  height: 6,
+                  child: ColoredBox(
+                    color: hv.s3,
+                    child: AnimatedBuilder(
+                      animation: _tick,
+                      builder: (context, _) => Align(
+                        alignment: Alignment.centerLeft,
+                        child: FractionallySizedBox(
+                          widthFactor: MeasureProgress.estimate(
+                            DateTime.now().difference(_start),
+                          ),
+                          child: ColoredBox(color: hv.acc),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'Zigbee2MQTT fragt jedes Gerät nach seinen Nachbarn. Du kannst die Seite verlassen, das Ergebnis kommt trotzdem an.',
+              style: HavenText.caption.copyWith(color: hv.tx2),
             ),
           ],
         ),
@@ -754,6 +912,8 @@ class MeshInfoPanel extends ConsumerWidget {
                 if (parentName != null) _Row('Elternknoten', value: parentName),
                 if (node.kind != ZbNodeKind.endDevice)
                   _Row('Geräte daran', value: kids == 0 ? 'keine' : '$kids'),
+                if (map.neighborCount(ieee) > 0)
+                  _Row('Nachbarn', value: '${map.neighborCount(ieee)}'),
                 if (parent != null)
                   _Row(
                     'Weg zum Koordinator',

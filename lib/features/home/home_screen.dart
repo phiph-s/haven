@@ -15,6 +15,7 @@ import '../../core/widgets/screen_header.dart';
 import '../../core/widgets/haptics.dart';
 import '../../core/widgets/section_header.dart';
 import '../../core/widgets/skeleton.dart';
+import '../../data/models/room.dart';
 import '../../data/models/snapshot.dart';
 import '../../data/models/widget_config.dart';
 import '../updates/app_update_provider.dart';
@@ -76,7 +77,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   Widget build(BuildContext context) {
     final hv = context.hv;
     final house = ref.watch(houseViewProvider);
-    final rooms = ref.watch(roomsProvider);
+    final rooms = ref.watch(orderedRoomsProvider);
     final snap = ref.watch(snapshotProvider);
     final repo = ref.read(repositoryProvider);
     final widgets = ref.watch(widgetsProvider);
@@ -149,7 +150,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                 : Icons.edit_outlined,
                             label: _editing
                                 ? 'Bearbeiten beenden'
-                                : 'Widgets bearbeiten',
+                                : 'Übersicht bearbeiten',
                             active: _editing,
                             onTap: () => setState(() => _editing = !_editing),
                           ),
@@ -198,6 +199,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                 snap.status != ConnectionStatus.connected) {
                               return _RoomSkeleton(half: half);
                             }
+                            if (_editing) return _RoomOrderList(rooms: rooms);
                             return Wrap(
                               spacing: 12,
                               runSpacing: 12,
@@ -228,7 +230,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                           0,
                         ),
                         child: Text(
-                          'Tippen schaltet. Halten oder Pfeil öffnet den Raum.',
+                          _editing
+                              ? 'Halten und ziehen sortiert die Räume, auf allen Geräten.'
+                              : 'Tippen schaltet. Halten oder Pfeil öffnet den Raum.',
                           style: HavenText.caption.copyWith(color: hv.tx3),
                         ),
                       ),
@@ -458,6 +462,104 @@ class _WidgetGrid extends StatelessWidget {
           ],
         );
       },
+    );
+  }
+}
+
+/// Bearbeiten: Räume als Liste, per langem Drücken (oder am Griff sofort)
+/// sortierbar. Die Reihenfolge liegt im geteilten Übersichts-Dokument.
+class _RoomOrderList extends ConsumerWidget {
+  const _RoomOrderList({required this.rooms});
+  final List<Room> rooms;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return ReorderableListView(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      buildDefaultDragHandles: false,
+      onReorderStart: (_) => Haptics.tick(),
+      onReorderItem: (from, to) {
+        final ids = [for (final r in rooms) r.id];
+        final id = ids.removeAt(from);
+        ids.insert(to, id);
+        HapticFeedback.selectionClick();
+        ref.read(homeLayoutProvider.notifier).setRoomOrder(ids);
+      },
+      proxyDecorator: (child, _, a) => AnimatedBuilder(
+        animation: a,
+        builder: (context, child) => Transform.scale(
+          scale: 1 + 0.03 * Curves.easeOut.transform(a.value),
+          child: child,
+        ),
+        child: Material(color: const Color(0x00000000), child: child),
+      ),
+      children: [
+        for (var i = 0; i < rooms.length; i++)
+          ReorderableDelayedDragStartListener(
+            key: ValueKey('room-${rooms[i].id}'),
+            index: i,
+            child: _RoomOrderRow(room: rooms[i], index: i),
+          ),
+      ],
+    );
+  }
+}
+
+class _RoomOrderRow extends ConsumerWidget {
+  const _RoomOrderRow({required this.room, required this.index});
+  final Room room;
+  final int index;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final hv = context.hv;
+    final view = ref.watch(roomViewProvider(room.id));
+    final palette = view?.palette(dark: hv.isDark);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Semantics(
+        label:
+            '${room.name}, Position ${index + 1}. Halten und ziehen zum Sortieren.',
+        child: HavenCard(
+          padding: const EdgeInsets.fromLTRB(16, 0, 4, 0),
+          radius: HavenRadii.m,
+          child: SizedBox(
+            height: 56,
+            child: Row(
+              children: [
+                Container(
+                  width: 14,
+                  height: 14,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: palette != null && palette.isOn
+                        ? palette.primary
+                        : hv.s3,
+                  ),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Text(
+                    room.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: HavenText.label.copyWith(color: hv.tx, fontSize: 15),
+                  ),
+                ),
+                ReorderableDragStartListener(
+                  index: index,
+                  child: SizedBox(
+                    width: HavenSpace.touch,
+                    height: HavenSpace.touch,
+                    child: Icon(Icons.drag_handle_rounded, color: hv.tx3),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

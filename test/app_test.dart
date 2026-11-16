@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:haven/app.dart';
 import 'package:haven/core/state/providers.dart';
+import 'package:haven/core/widgets/haven_sheet.dart';
 import 'package:haven/dev/fake_repository.dart';
 import 'package:haven/data/storage/settings_store.dart';
 import 'package:material_ui/material_ui.dart';
@@ -106,22 +107,110 @@ void main() {
       expect(find.text('Szene Neon Tokyo'), findsOneWidget);
       expect(find.textContaining('90', findRichText: true), findsWidgets);
 
-      await tester.drag(find.byType(Scrollable).first, const Offset(0, -3000));
+      final roomList = find
+          .ancestor(of: find.text('Szenen'), matching: find.byType(Scrollable))
+          .first;
+      await tester.drag(roomList, const Offset(0, -3000));
       await tester.pumpAndSettle();
       // Drehregler gehören in die Geräteansicht, nicht in den Raum.
       expect(find.text('Bedienelemente'), findsNothing);
       expect(find.text('Drehregler'), findsNothing);
       expect(find.text('Drehknopf Salon 1'), findsNothing);
 
-      // Zurück
-      await tester.drag(find.byType(Scrollable).first, const Offset(0, 3000));
+      // Nach oben scrollen und im selben Zug weiterziehen: Am oberen Ende
+      // übernimmt das Sheet und schließt.
+      await tester.drag(roomList, const Offset(0, 3000));
       await tester.pumpAndSettle();
-      await tester.tap(find.bySemanticsLabel('Zurück'));
-      await tester.pumpAndSettle();
+      expect(find.text('Szenen'), findsNothing);
       expect(find.text('Strom jetzt'), findsOneWidget);
+
+      // Wieder öffnen, Knopf schließt.
+      await tester.tap(find.bySemanticsLabel('Salon öffnen'));
+      await tester.pumpAndSettle();
+      expect(find.text('Szenen'), findsOneWidget);
+      await tester.tap(find.byIcon(Icons.keyboard_arrow_down_rounded));
+      await tester.pumpAndSettle();
+      expect(find.text('Szenen'), findsNothing);
       sem.dispose();
     },
   );
+
+  testWidgets('Raum-Sheet: kurz ziehen federt zurück, weit ziehen schließt', (
+    tester,
+  ) async {
+    _phone(tester);
+    await tester.runAsync(() async => tester.pumpWidget(await _app()));
+    await tester.pumpAndSettle();
+    await tester.longPress(find.text('Salon'));
+    await tester.pumpAndSettle();
+    final grab = find.byType(SheetGrabber);
+    expect(grab, findsOneWidget);
+    final top = tester.getTopLeft(grab).dy;
+
+    // Langsam ein Stück: zurück auf ganz offen.
+    await tester.timedDrag(
+      grab,
+      const Offset(0, 200),
+      const Duration(milliseconds: 800),
+    );
+    await tester.pumpAndSettle();
+    expect(tester.getTopLeft(grab).dy, moreOrLessEquals(top, epsilon: 0.5));
+
+    // Halb gezogen (während des Ziehens) folgt das Sheet dem Finger.
+    final g = await tester.startGesture(tester.getCenter(grab));
+    await g.moveBy(const Offset(0, 30));
+    await g.moveBy(const Offset(0, 300));
+    await tester.pump();
+    expect(tester.getTopLeft(grab).dy, greaterThan(top + 250));
+    // Langsam über die Hälfte: schließt.
+    await g.moveBy(const Offset(0, 300));
+    await tester.pump(const Duration(milliseconds: 600));
+    await g.up();
+    await tester.pumpAndSettle();
+    expect(find.text('Szenen'), findsNothing);
+
+    // Schneller Wisch nach unten schließt auch nach kurzem Weg.
+    await tester.longPress(find.text('Salon'));
+    await tester.pumpAndSettle();
+    await tester.fling(find.byType(SheetGrabber), const Offset(0, 160), 1800);
+    await tester.pumpAndSettle();
+    expect(find.text('Szenen'), findsNothing);
+  });
+
+  testWidgets('Raum-Sheet: Android-Zurück schließt', (tester) async {
+    _phone(tester);
+    await tester.runAsync(() async => tester.pumpWidget(await _app()));
+    await tester.pumpAndSettle();
+    await tester.longPress(find.text('Ruheraum'));
+    await tester.pumpAndSettle();
+    expect(find.text('Szenen'), findsOneWidget);
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+    expect(find.text('Szenen'), findsNothing);
+    expect(find.text('Strom jetzt'), findsOneWidget);
+  });
+
+  testWidgets('Raum aus der Karte öffnet als Sheet', (tester) async {
+    _phone(tester);
+    await tester.runAsync(
+      () async => tester.pumpWidget(await _app(location: '/room/kochbereich')),
+    );
+    await tester.pumpAndSettle();
+    // Alte Adresse leitet um, dahinter liegt Zuhause.
+    expect(find.byType(SheetGrabber), findsOneWidget);
+    expect(find.text('Szenen'), findsOneWidget);
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+    expect(find.text('Strom jetzt'), findsOneWidget);
+  });
+
+  test('Loslassen: Regel für Schließen', () {
+    expect(sheetShouldClose(0.9, 1200), isTrue);
+    expect(sheetShouldClose(0.9, 200), isFalse);
+    expect(sheetShouldClose(0.4, 0), isTrue);
+    expect(sheetShouldClose(0.4, -900), isFalse);
+    expect(sheetShouldClose(0.6, 100), isFalse);
+  });
 
   testWidgets('Raum öffnet auch per langem Drücken', (tester) async {
     _phone(tester);
@@ -185,7 +274,7 @@ void main() {
     final sem = tester.ensureSemantics();
     await tester.runAsync(() async => tester.pumpWidget(await _app()));
     await tester.pumpAndSettle();
-    await tester.tap(find.bySemanticsLabel('Widgets bearbeiten'));
+    await tester.tap(find.bySemanticsLabel('Übersicht bearbeiten'));
     await tester.pumpAndSettle();
     expect(find.text('Widget hinzufügen'), findsOneWidget);
     expect(find.byIcon(Icons.remove_rounded), findsNWidgets(3));
