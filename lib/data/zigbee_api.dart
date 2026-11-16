@@ -71,4 +71,16 @@ abstract interface class ZigbeeApi {
   /// `bridge/request/networkmap` (type raw, routes false) und Zeitstempel.
   /// Mit [refresh] misst Z2M neu (belastet das Netz, bis zu eine Minute).
   Future<ZbNetworkMap> zigbeeNetworkMap({bool refresh = false});
+
+  /// Die Integration kann im Hintergrund messen (`features` aus `haven/info`
+  /// enthält `networkmap_background`, ab 0.5.1). Sonst blockiert
+  /// `zigbeeNetworkMap(refresh: true)` bis zu 120 s.
+  bool get zigbeeBackgroundMeasure;
+
+  /// `haven/zigbee/networkmap` `{refresh: true, background: true}`. Kehrt
+  /// sofort zurück, die Messung läuft in der Integration weiter.
+  Future<ZbMeasureStart> zigbeeStartNetworkMeasure();
+
+  /// Ende einer Hintergrundmessung (HA-Ereignis `haven_networkmap_updated`).
+  Stream<ZbMeasureResult> get zigbeeMeasureResults;
 }

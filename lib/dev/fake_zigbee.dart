@@ -68,6 +68,9 @@ class FakeZigbee {
   late List<ZbGroup> _groups;
   final Map<String, Map<String, dynamic>> _states = {};
   final _events = StreamController<ZbEvent>.broadcast();
+  final _measureResults = StreamController<ZbMeasureResult>.broadcast();
+  bool _measuring = false;
+  DateTime? _measureStarted;
   final List<Timer> _timers = [];
   bool _permit = false;
 
@@ -151,6 +154,25 @@ class FakeZigbee {
       _measuredAt = DateTime.now();
     }
     return _buildMap();
+  }
+
+  Stream<ZbMeasureResult> get measureResults => _measureResults.stream;
+
+  /// Wie die Integration ab 0.5.1: sofortige Antwort, Ergebnis später.
+  Future<ZbMeasureStart> startMeasure() async {
+    if (_measuring) {
+      return ZbMeasureStart(alreadyRunning: true, startedAt: _measureStarted);
+    }
+    _measuring = true;
+    _measureStarted = DateTime.now();
+    Future<void>.delayed(const Duration(milliseconds: 1600), () {
+      _measuring = false;
+      _measuredAt = DateTime.now();
+      if (!_measureResults.isClosed) {
+        _measureResults.add(const ZbMeasureResult(ok: true));
+      }
+    });
+    return ZbMeasureStart(alreadyRunning: false, startedAt: _measureStarted);
   }
 
   Future<Map<String, Map<String, dynamic>>> states() async => {
@@ -300,6 +322,7 @@ class FakeZigbee {
   Future<void> dispose() async {
     cancelTimers();
     await _events.close();
+    await _measureResults.close();
   }
 }
 

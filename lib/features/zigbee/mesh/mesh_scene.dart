@@ -21,6 +21,7 @@ class MeshNodeInfo {
     this.roomName,
     this.lightId,
     this.available = true,
+    this.failed = false,
   });
 
   final String ieee;
@@ -32,6 +33,9 @@ class MeshNodeInfo {
   final String? lightId;
   final bool available;
 
+  /// Z2M hat bei der Messung nichts von dem Knoten gelesen (`failed`).
+  final bool failed;
+
   @override
   bool operator ==(Object other) =>
       other is MeshNodeInfo &&
@@ -40,11 +44,12 @@ class MeshNodeInfo {
       other.kind == kind &&
       other.roomName == roomName &&
       other.lightId == lightId &&
-      other.available == available;
+      other.available == available &&
+      other.failed == failed;
 
   @override
   int get hashCode =>
-      Object.hash(ieee, name, kind, roomName, lightId, available);
+      Object.hash(ieee, name, kind, roomName, lightId, available, failed);
 }
 
 /// Grundriss mit Knotenpositionen für den Graphen.
@@ -159,6 +164,7 @@ MeshScene buildMeshScene({
           .map((e) => e.entityId)
           .firstOrNull,
       available: v?.available ?? true,
+      failed: n.failed,
     );
     if (n.isCoordinator) continue;
     final ents = <String>[

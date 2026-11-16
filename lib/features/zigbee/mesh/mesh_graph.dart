@@ -122,6 +122,27 @@ class MeshGraph extends StatelessWidget {
 /// Ein Knoten: Router rund mit Ring, Endgerät als kleines abgerundetes
 /// Quadrat, Koordinator als großer Akzentknoten. Lampen tragen ihre
 /// Lichtfarbe.
+/// Kleines Warnzeichen am Knoten: Z2M hat ihn bei der Messung nicht erreicht.
+class _FailedBadge extends StatelessWidget {
+  const _FailedBadge({required this.color, required this.mini});
+  final Color color;
+  final bool mini;
+
+  @override
+  Widget build(BuildContext context) {
+    final d = mini ? 6.0 : 10.0;
+    return Container(
+      width: d,
+      height: d,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: color,
+        border: Border.all(color: context.hv.bg, width: mini ? 0.5 : 1.5),
+      ),
+    );
+  }
+}
+
 class MeshNodeDot extends ConsumerWidget {
   const MeshNodeDot({
     super.key,
@@ -198,6 +219,11 @@ class MeshNodeDot extends ConsumerWidget {
                   ),
                 ),
               child!,
+              if (info.failed)
+                Transform.translate(
+                  offset: Offset(r * 0.85, -r * 0.85),
+                  child: _FailedBadge(color: hv.warn, mini: mini),
+                ),
             ],
           ),
         );

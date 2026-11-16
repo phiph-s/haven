@@ -125,8 +125,8 @@ class HaZigbee {
   Future<void> permitJoin(int seconds, String? via) =>
       _send('haven/zigbee/permit_join', {'time': seconds, 'device': via});
 
-  /// Wartezeit für `refresh: true`. Die Integration antwortet erst nach der
-  /// Messung (Z2M braucht bei 40 Geräten 60 bis 90 s, die Integration
+  /// Wartezeit für `refresh: true`. Nur für Integrationen vor 0.5.1: Sie antworten erst
+  /// nach der Messung (Z2M braucht bei 40 Geräten rund 80 s, die Integration
   /// wartet höchstens 90 s), deshalb nicht der normale Timeout von 15 s.
   static const networkMapRefreshTimeout = Duration(seconds: 120);
 
@@ -136,6 +136,14 @@ class HaZigbee {
     await _send('haven/zigbee/networkmap', {
       'refresh': refresh,
     }, refresh ? networkMapRefreshTimeout : null),
+  );
+
+  /// Startet die Messung in der Integration (ab 0.5.1), Antwort sofort.
+  Future<ZbMeasureStart> startMeasure() async => ZbMeasureStart.fromJson(
+    await _send('haven/zigbee/networkmap', {
+      'refresh': true,
+      'background': true,
+    }),
   );
 
   Future<void> dispose() async {

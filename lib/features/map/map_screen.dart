@@ -246,6 +246,7 @@ class _MapBodyState extends ConsumerState<_MapBody> {
   // Bewegung: Zeitstrahl und Takt fürs Abklingen.
   late double _minutes = widget.startMinutes ?? 0;
   Timer? _clock;
+  Timer? _measureClock;
   Map<String, List<StateChange>> _history = const {};
   DateTime _historyAt = DateTime.fromMillisecondsSinceEpoch(0);
   bool _loadingHistory = false;
@@ -254,6 +255,7 @@ class _MapBodyState extends ConsumerState<_MapBody> {
   void dispose() {
     _infoTimer?.cancel();
     _clock?.cancel();
+    _measureClock?.cancel();
     _heat.dispose();
     _mesh.dispose();
     super.dispose();
@@ -417,6 +419,16 @@ class _MapBodyState extends ConsumerState<_MapBody> {
     final hv = context.hv;
     final plan = widget.plan;
     final layer = ref.watch(mapLayerProvider);
+    ref.listen(zigbeeMeshProvider.select((d) => d.noticeId), (_, _) {
+      // Das Vollbild meldet selbst, solange es oben liegt.
+      final n = ref.read(zigbeeMeshProvider).notice;
+      if (n != null &&
+          mounted &&
+          layer == MapLayer.network &&
+          (ModalRoute.of(context)?.isCurrent ?? true)) {
+        _say(n);
+      }
+    });
     final readings = ref.watch(mapReadingsProvider(plan));
     _ensureClock(layer == MapLayer.presence);
 
@@ -870,6 +882,29 @@ class _MapBodyState extends ConsumerState<_MapBody> {
 
   // ---- Funknetz -------------------------------------------------------------
 
+  /// Lässt die Uhr der Messung in der Karte weiterlaufen.
+  void _tickMeasure() {
+    if (_measureClock != null) return;
+    _measureClock = Timer.periodic(const Duration(seconds: 1), (t) {
+      if (!mounted || !ref.read(zigbeeMeshProvider).refreshing) {
+        t.cancel();
+        _measureClock = null;
+        return;
+      }
+      if (ref.read(mapLayerProvider) == MapLayer.network) setState(() {});
+    });
+  }
+
+  String _measureText(MeshData data) {
+    _tickMeasure();
+    final s = data.refreshStarted;
+    final since = s == null
+        ? ''
+        : ' seit ${meshElapsedLabel(DateTime.now().difference(s))}';
+    return 'Messung läuft$since … das kann mehrere Minuten dauern. '
+        'Du kannst weiter zwischen den Ebenen wechseln.';
+  }
+
   _LayerView _networkView(HavenFloorPlan plan) {
     final hv = context.hv;
     final data = ref.watch(zigbeeMeshProvider);
@@ -880,7 +915,9 @@ class _MapBodyState extends ConsumerState<_MapBody> {
         plan: plan,
         gap: 2,
         card: _NetworkCard(
-          text: data.loaded
+          text: data.refreshing
+              ? _measureText(data)
+              : data.loaded
               ? (data.error ??
                     'Noch keine Netzkarte. Miss das Netz im Vollbild.')
               : 'Netzkarte lädt',
@@ -924,9 +961,14 @@ class _MapBodyState extends ConsumerState<_MapBody> {
         if (_meshSel != null) setState(() => _meshSel = null);
       },
       card: _NetworkCard(
-        text: sel == null
-            ? '${map.nodes.length - 1} Geräte. Tippe ein Gerät für seinen Weg '
-                  'zum Koordinator.'
+        text: data.refreshing
+            ? _measureText(data)
+            : data.error != null && sel == null
+            ? '${data.error!}${map.measuredAt == null ? '' : ' ${meshStandLabel(map.measuredAt!)}.'}'
+            : sel == null
+            ? '${map.nodes.length - 1} Geräte'
+                  '${map.failedCount == 0 ? '' : ', ${map.failedCount} nicht erreichbar'}. '
+                  'Tippe ein Gerät für seinen Weg zum Koordinator.'
             : '${sel.name}${sel.roomName == null ? '' : ' · ${sel.roomName}'}'
                   '${lqi == null ? '' : ' · LQI $lqi'}',
         legend: true,

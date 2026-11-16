@@ -750,6 +750,12 @@ class FakeRepository extends BaseRepository {
   @override
   Future<ZbNetworkMap> zigbeeNetworkMap({bool refresh = false}) =>
       _zb.networkMap(refresh: refresh);
+  @override
+  bool get zigbeeBackgroundMeasure => true;
+  @override
+  Future<ZbMeasureStart> zigbeeStartNetworkMeasure() => _zb.startMeasure();
+  @override
+  Stream<ZbMeasureResult> get zigbeeMeasureResults => _zb.measureResults;
 
   // ---- Haven-Automationen (Entwicklungsdaten, siehe fake_automations.dart) --
   @override

@@ -127,6 +127,15 @@ class HaRepository extends BaseRepository {
           // die App nur beim Verbinden und Aktualisieren ab.
           debugPrint('Abo $dataUpdatedEvent: $e');
         }
+        try {
+          await client.subscribe({
+            'type': 'subscribe_events',
+            'event_type': networkMapEvent,
+          }, _onNetworkMapUpdated);
+        } catch (e) {
+          // Ohne Abo fragt die App alle 15 s nach.
+          debugPrint('Abo $networkMapEvent: $e');
+        }
         for (final t in registryEvents) {
           try {
             await client.subscribe({
@@ -187,6 +196,20 @@ class HaRepository extends BaseRepository {
 
   /// HA-Ereignis der Integration nach jedem `set` (ab 0.3.0).
   static const dataUpdatedEvent = 'haven_data_updated';
+
+  /// Ende einer Hintergrund-Netzmessung (ab Integration 0.5.1).
+  static const networkMapEvent = 'haven_networkmap_updated';
+
+  final _measureResults = StreamController<ZbMeasureResult>.broadcast();
+
+  void _onNetworkMapUpdated(dynamic event) {
+    final data = (event as Map?)?['data'];
+    if (data is Map && !_measureResults.isClosed) {
+      _measureResults.add(
+        ZbMeasureResult.fromJson(Map<String, dynamic>.from(data)),
+      );
+    }
+  }
 
   void _onDataUpdated(dynamic event) {
     final data = (event as Map?)?['data'] as Map?;
@@ -799,6 +822,16 @@ class HaRepository extends BaseRepository {
   Future<ZbNetworkMap> zigbeeNetworkMap({bool refresh = false}) =>
       _zb.networkMap(refresh);
 
+  @override
+  bool get zigbeeBackgroundMeasure =>
+      _features.contains('networkmap_background');
+
+  @override
+  Future<ZbMeasureStart> zigbeeStartNetworkMeasure() => _zb.startMeasure();
+
+  @override
+  Stream<ZbMeasureResult> get zigbeeMeasureResults => _measureResults.stream;
+
   // ---- Haven-Automationen (haven/automations/*) ---------------------------
   @override
   Future<HavenAutomations> havenAutomations() => _auto.list();
@@ -818,6 +851,7 @@ class HaRepository extends BaseRepository {
   @override
   Future<void> dispose() async {
     await _zb.dispose();
+    await _measureResults.close();
     await _auto.dispose();
     _flush?.cancel();
     _roomsDebounce?.cancel();

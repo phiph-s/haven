@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -118,7 +119,12 @@ class _ZigbeeMeshScreenState extends ConsumerState<ZigbeeMeshScreen> {
     _cancelled = false;
     final err = await ref.read(zigbeeMeshProvider.notifier).refresh();
     if (!mounted || _cancelled) return;
-    zbToast(context, err ?? 'Netz neu gemessen', error: err != null);
+    // Im Hintergrund meldet das Ende die Messung selbst (notice).
+    if (err != null) {
+      zbToast(context, err, error: true);
+    } else if (ref.read(zigbeeMeshProvider).legacy) {
+      zbToast(context, 'Netz neu gemessen');
+    }
   }
 
   void _cancelMeasure() {
@@ -173,6 +179,10 @@ class _ZigbeeMeshScreenState extends ConsumerState<ZigbeeMeshScreen> {
       zigbeeMeshProvider.select((d) => d.map),
       (_, m) => _recompute(m),
     );
+    ref.listen(zigbeeMeshProvider.select((d) => d.noticeId), (_, _) {
+      final n = ref.read(zigbeeMeshProvider).notice;
+      if (n != null && mounted) zbToast(context, n);
+    });
     final map = data.map;
     if (map != null && _state.value.filter != _filter) _recompute(map);
     if (map != null && !_state.value.hasSelection && _selected != null) {
@@ -206,6 +216,13 @@ class _ZigbeeMeshScreenState extends ConsumerState<ZigbeeMeshScreen> {
                 canPlace: !scene.autoLayout && scene.coordinatorIeee != null,
                 onPlace: _togglePlacing,
               ),
+              if (data.error != null && !data.refreshing)
+                _Hint(
+                  icon: Icons.error_outline_rounded,
+                  text: map.measuredAt == null
+                      ? data.error!
+                      : '${data.error!} ${meshStandLabel(map.measuredAt!)}.',
+                ),
               if (scene.autoLayout && !_placing)
                 _Hint(
                   icon: Icons.edit_outlined,
@@ -230,7 +247,8 @@ class _ZigbeeMeshScreenState extends ConsumerState<ZigbeeMeshScreen> {
                         child: data.refreshing
                             ? MeasureProgress(
                                 started: data.refreshStarted,
-                                onCancel: _cancelMeasure,
+                                legacy: data.legacy,
+                                onCancel: data.legacy ? _cancelMeasure : null,
                               )
                             : const SizedBox.shrink(),
                       ),
@@ -652,7 +670,8 @@ class _Empty extends StatelessWidget {
           padding: const EdgeInsets.all(20),
           child: MeasureProgress(
             started: data.refreshStarted,
-            onCancel: onCancel,
+            legacy: data.legacy,
+            onCancel: data.legacy ? onCancel : null,
           ),
         ),
       );
@@ -708,44 +727,60 @@ class _Empty extends StatelessWidget {
   }
 }
 
-/// Wartezustand während „Netz neu messen“: Fortschritt nach Zeit (die
-/// Integration meldet keinen echten), Text und Abbrechen.
+/// Wartezustand während „Netz neu messen“: laufende Uhr, unbestimmter
+/// Fortschritt (die Integration meldet keinen echten) und Hinweis. Mit
+/// [onCancel] (nur bei älterer Integration) zusätzlich „Abbrechen“.
 class MeasureProgress extends StatefulWidget {
-  const MeasureProgress({super.key, this.started, required this.onCancel});
+  const MeasureProgress({
+    super.key,
+    this.started,
+    this.onCancel,
+    this.legacy = false,
+  });
   final DateTime? started;
-  final VoidCallback onCancel;
+  final VoidCallback? onCancel;
 
-  /// Geschätzter Anteil nach [elapsed]: schnell bis etwa 60 %, dann
-  /// langsamer, nie ganz voll.
-  static double estimate(Duration elapsed) {
-    final t = elapsed.inMilliseconds / 1000;
-    return (1 - math.exp(-t / 28)).clamp(0.0, 0.95);
-  }
+  /// Integration vor 0.5.1: Hinweis zum Aktualisieren.
+  final bool legacy;
 
   @override
   State<MeasureProgress> createState() => _MeasureProgressState();
 }
 
-class _MeasureProgressState extends State<MeasureProgress>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _tick = AnimationController(
-    vsync: this,
-    duration: const Duration(seconds: 1),
-  )..repeat();
-  late final DateTime _start = widget.started ?? DateTime.now();
+class _MeasureProgressState extends State<MeasureProgress> {
+  Timer? _tick;
+  late DateTime _start = widget.started ?? DateTime.now();
+
+  @override
+  void initState() {
+    super.initState();
+    _tick = Timer.periodic(
+      const Duration(seconds: 1),
+      (_) => mounted ? setState(() {}) : null,
+    );
+  }
+
+  @override
+  void didUpdateWidget(MeasureProgress old) {
+    super.didUpdateWidget(old);
+    if (widget.started != null && widget.started != old.started) {
+      _start = widget.started!;
+    }
+  }
 
   @override
   void dispose() {
-    _tick.dispose();
+    _tick?.cancel();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     final hv = context.hv;
+    final elapsed = meshElapsedLabel(DateTime.now().difference(_start));
     return Semantics(
       liveRegion: true,
-      label: 'Messung läuft',
+      label: 'Messung läuft seit $elapsed',
       child: Container(
         padding: const EdgeInsets.fromLTRB(16, 14, 8, 12),
         decoration: BoxDecoration(
@@ -764,12 +799,14 @@ class _MeasureProgressState extends State<MeasureProgress>
                 const SizedBox(width: 10),
                 Expanded(
                   child: Text(
-                    'Messung läuft, das kann bis zu einer Minute dauern',
+                    'Messung läuft seit $elapsed … das kann mehrere Minuten dauern, wenn Geräte nicht erreichbar sind.',
                     style: HavenText.body.copyWith(color: hv.tx, fontSize: 14),
                   ),
                 ),
-                const SizedBox(width: 6),
-                TextLink('Abbrechen', onTap: widget.onCancel),
+                if (widget.onCancel != null) ...[
+                  const SizedBox(width: 6),
+                  TextLink('Abbrechen', onTap: widget.onCancel!),
+                ],
                 const SizedBox(width: 8),
               ],
             ),
@@ -780,28 +817,23 @@ class _MeasureProgressState extends State<MeasureProgress>
                 borderRadius: BorderRadius.circular(3),
                 child: SizedBox(
                   height: 6,
-                  child: ColoredBox(
-                    color: hv.s3,
-                    child: AnimatedBuilder(
-                      animation: _tick,
-                      builder: (context, _) => Align(
-                        alignment: Alignment.centerLeft,
-                        child: FractionallySizedBox(
-                          widthFactor: MeasureProgress.estimate(
-                            DateTime.now().difference(_start),
-                          ),
-                          child: ColoredBox(color: hv.acc),
-                        ),
-                      ),
-                    ),
+                  child: LinearProgressIndicator(
+                    backgroundColor: hv.s3,
+                    color: hv.acc,
+                    minHeight: 6,
                   ),
                 ),
               ),
             ),
             const SizedBox(height: 6),
-            Text(
-              'Zigbee2MQTT fragt jedes Gerät nach seinen Nachbarn. Du kannst die Seite verlassen, das Ergebnis kommt trotzdem an.',
-              style: HavenText.caption.copyWith(color: hv.tx2),
+            Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: Text(
+                widget.legacy
+                    ? '$meshLegacyHint. Du kannst die Seite verlassen, das Ergebnis kommt trotzdem an.'
+                    : 'Zigbee2MQTT fragt jedes Gerät nach seinen Nachbarn. Du kannst die App weiter benutzen und die Seite verlassen.',
+                style: HavenText.caption.copyWith(color: hv.tx2),
+              ),
             ),
           ],
         ),
@@ -873,7 +905,7 @@ class MeshInfoPanel extends ConsumerWidget {
                       style: HavenText.headline.copyWith(color: hv.tx),
                     ),
                     Text(
-                      [type, ?roomName].join(' · '),
+                      [type, ?roomName, if (info.failed) 'bei der Messung nicht erreichbar'].join(' · '),
                       style: HavenText.caption.copyWith(color: hv.tx2),
                     ),
                   ],

@@ -12,7 +12,6 @@ import 'package:haven/data/haven_repository.dart';
 import 'package:haven/data/models/zigbee_network.dart';
 import 'package:haven/features/zigbee/mesh/mesh_providers.dart';
 import 'package:haven/features/zigbee/mesh/mesh_scene.dart';
-import 'package:haven/features/zigbee/mesh/mesh_screen.dart';
 
 import '../../support/fake_ha.dart';
 
@@ -26,6 +25,10 @@ Map<String, dynamic> _raw() =>
 class _SlowRepo extends FakeRepository {
   _SlowRepo() : super(simulate: false);
   Completer<ZbNetworkMap>? pending;
+
+  /// Ältere Integration: blockierende Messung.
+  @override
+  bool get zigbeeBackgroundMeasure => false;
 
   @override
   Future<ZbNetworkMap> zigbeeNetworkMap({bool refresh = false}) {
@@ -208,15 +211,6 @@ void main() {
     for (final c in ['timeout', 'bridge_offline', 'unauthorized', 'busy']) {
       expect(t(c), isNot(contains('!')));
     }
-  });
-
-  test('Fortschritt: steigt, wird nie ganz voll', () {
-    final a = MeasureProgress.estimate(const Duration(seconds: 5));
-    final b = MeasureProgress.estimate(const Duration(seconds: 30));
-    final c = MeasureProgress.estimate(const Duration(seconds: 300));
-    expect(a, lessThan(b));
-    expect(b, lessThan(c));
-    expect(c, lessThanOrEqualTo(0.95));
   });
 
   test(

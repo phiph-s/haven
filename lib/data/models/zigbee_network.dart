@@ -10,8 +10,13 @@ import 'package:flutter/foundation.dart';
 /// ```
 /// haven/zigbee/networkmap {refresh: bool}
 ///  → {"networkmap": {"nodes": [...], "links": [...]},   // Z2M "value"
-///     "timestamp": "2026-11-15T10:00:00Z" | Sekunden | Millisekunden}
+///     "timestamp": "2026-11-15T10:00:00Z" | Sekunden | Millisekunden,
+///     "running": bool, "started_at": "...", "last_error": "..."}  // ab 0.5.1
+/// haven/zigbee/networkmap {refresh: true, background: true}   // ab 0.5.1
+///  → {"status": "started" | "running", "started_at": "..."}
 /// ```
+/// Ende der Hintergrundmessung: HA-Ereignis `haven_networkmap_updated` mit
+/// `{ok: true, timestamp}` oder `{ok: false, error}`.
 /// `nodes`/`links` dürfen auch direkt auf oberster Ebene oder unter `value`,
 /// `data`, `map` stehen. Knoten: `ieeeAddr`, `friendlyName`, `type`,
 /// `networkAddress`. Verbindungen: `source`/`target` (`ieeeAddr`),
@@ -59,6 +64,7 @@ class ZbMeshNode {
     this.kind = ZbNodeKind.endDevice,
     this.networkAddress,
     this.lqi,
+    this.failed = false,
   });
 
   factory ZbMeshNode.fromJson(Map<String, dynamic> j) {
@@ -69,6 +75,11 @@ class ZbMeshNode {
       kind: ZbNodeKind.parse(j['type']),
       networkAddress: _int(j['networkAddress'] ?? j['network_address']),
       lqi: _int(j['lqi']),
+      failed: switch (j['failed']) {
+        final List l => l.isNotEmpty,
+        final bool b => b,
+        _ => false,
+      },
     );
   }
 
@@ -81,6 +92,10 @@ class ZbMeshNode {
   /// der Knoten keine Verbindung hat.
   final int? lqi;
 
+  /// Z2M konnte bei der Messung nicht alles von diesem Knoten lesen (`failed`),
+  /// er war vermutlich nicht erreichbar.
+  final bool failed;
+
   bool get isCoordinator => kind == ZbNodeKind.coordinator;
   bool get isRouter => kind == ZbNodeKind.router;
 
@@ -90,6 +105,7 @@ class ZbMeshNode {
     kind: kind,
     networkAddress: networkAddress,
     lqi: v,
+    failed: failed,
   );
 }
 
@@ -207,6 +223,66 @@ class _Pair {
   String other(String v) => v == x ? y : x;
 }
 
+/// Stand der Messung in der Integration (ab 0.5.1), aus der Abfrage ohne
+/// `refresh`.
+@immutable
+class ZbMeasureStatus {
+  const ZbMeasureStatus({
+    this.running = false,
+    this.startedAt,
+    this.lastError,
+  });
+
+  factory ZbMeasureStatus.fromJson(Map<String, dynamic> j) {
+    final err = j['last_error']?.toString().trim();
+    return ZbMeasureStatus(
+      running: j['running'] == true,
+      startedAt: ZbNetworkMap.parseTime(j['started_at']),
+      lastError: err == null || err.isEmpty ? null : err,
+    );
+  }
+
+  static const idle = ZbMeasureStatus();
+
+  final bool running;
+  final DateTime? startedAt;
+  final String? lastError;
+}
+
+/// Antwort auf `refresh: true, background: true`.
+@immutable
+class ZbMeasureStart {
+  const ZbMeasureStart({required this.alreadyRunning, this.startedAt});
+
+  factory ZbMeasureStart.fromJson(Map<String, dynamic> j) => ZbMeasureStart(
+    alreadyRunning: j['status'] == 'running',
+    startedAt: ZbNetworkMap.parseTime(j['started_at']),
+  );
+
+  final bool alreadyRunning;
+  final DateTime? startedAt;
+}
+
+/// Ereignis `haven_networkmap_updated`.
+@immutable
+class ZbMeasureResult {
+  const ZbMeasureResult({required this.ok, this.error});
+
+  factory ZbMeasureResult.fromJson(Map<String, dynamic> j) {
+    final ok = j['ok'] == true;
+    final err = j['error']?.toString().trim();
+    return ZbMeasureResult(
+      ok: ok,
+      error: ok
+          ? null
+          : (err == null || err.isEmpty ? 'Unbekannter Fehler' : err),
+    );
+  }
+
+  final bool ok;
+  final String? error;
+}
+
 /// Netzkarte mit Knoten, Verbindungen und Zeitstempel der Messung.
 ///
 /// Z2M-Rohformat: Jeder Router und der Koordinator melden ihre Neighbor-Table.
@@ -228,6 +304,7 @@ class ZbNetworkMap {
     required List<ZbMeshNode> nodes,
     required this.links,
     this.measuredAt,
+    this.status = ZbMeasureStatus.idle,
   }) {
     final byIeee = {for (final n in nodes) n.ieee: n};
     final coordinator = nodes.where((n) => n.isCoordinator).firstOrNull?.ieee;
@@ -390,26 +467,27 @@ class ZbNetworkMap {
         for (final l in (body['links'] as List? ?? const []))
           if (l is Map) ZbMeshLink.fromJson(Map<String, dynamic>.from(l)),
       ],
-      measuredAt: _time(
+      measuredAt: parseTime(
         j['timestamp'] ??
             j['measured_at'] ??
             j['last_measured'] ??
             j['updated_at'] ??
             body['timestamp'],
       ),
+      status: ZbMeasureStatus.fromJson(j),
     );
   }
 
   static final empty = ZbNetworkMap(nodes: const [], links: const []);
 
-  static DateTime? _time(Object? v) {
+  static DateTime? parseTime(Object? v) {
     if (v is num) {
       final ms = v > 100000000000 ? v.toInt() : (v * 1000).toInt();
       return DateTime.fromMillisecondsSinceEpoch(ms);
     }
     if (v is String) {
       return DateTime.tryParse(v) ??
-          (num.tryParse(v) == null ? null : _time(num.parse(v)));
+          (num.tryParse(v) == null ? null : parseTime(num.parse(v)));
     }
     return null;
   }
@@ -417,6 +495,12 @@ class ZbNetworkMap {
   late final List<ZbMeshNode> nodes;
   final List<ZbMeshLink> links;
   final DateTime? measuredAt;
+
+  /// Läuft gerade eine Messung, und wie ging die letzte aus (ab 0.5.1).
+  final ZbMeasureStatus status;
+
+  /// Knoten, bei denen Z2M `failed` meldet.
+  int get failedCount => nodes.where((n) => n.failed).length;
 
   late final String? _coordinator;
   late final Map<String, ZbMeshEdge> _parent;
