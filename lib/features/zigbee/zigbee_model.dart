@@ -1,6 +1,8 @@
 import '../../data/models/entity_state.dart';
 import '../../data/models/room.dart';
 import '../../data/models/zigbee.dart';
+import '../../data/models/zigbee_network.dart' show ZbMeshNode;
+import 'ghost_rules.dart';
 
 /// Schwellen für „Braucht dich“.
 const int kLowBattery = 30;
@@ -44,6 +46,10 @@ class ZbDeviceView {
     this.battery,
     this.lqi,
     this.available = true,
+    this.lastSeen,
+    this.lastSeenSource,
+    this.networkMeasuredAt,
+    this.availability,
   });
 
   /// Baut die Sicht aus Gerät, Z2M-Werten, allen HA-Entities und den Räumen.
@@ -53,6 +59,8 @@ class ZbDeviceView {
     Map<String, dynamic>? state,
     Map<String, EntityState> allEntities = const {},
     List<Room> rooms = const [],
+    ZbMeshNode? meshNode,
+    DateTime? meshMeasuredAt,
   }) {
     final mine = matchEntities(device, allEntities);
     final v = ZbDeviceView(device: device, values: state ?? const {});
@@ -63,9 +71,13 @@ class ZbDeviceView {
     );
     final bat = withEnt.number('battery');
     final lqi = withEnt.number('linkquality');
+    final availability = switch (v.values['availability']) {
+      final String s when s == 'online' || s == 'offline' => s,
+      false => 'offline',
+      _ => device.availability,
+    };
     final offline =
-        v.values['availability'] == 'offline' ||
-        v.values['availability'] == false ||
+        availability == 'offline' ||
         (mine.isNotEmpty && mine.every((e) => e.state == 'unavailable'));
     String? roomId;
     String? roomName;
@@ -81,6 +93,18 @@ class ZbDeviceView {
       roomId ??= area;
       roomName ??= area;
     }
+    // Zuletzt gesehen: Z2M-Zustand (live), dann die Integration, dann die
+    // Netzkarte der App (ältere Integration ohne `ghost_detection`).
+    var seen = ZbDevice.parseLastSeen(v.values['last_seen']);
+    String? source = seen == null ? null : 'z2m';
+    if (seen == null && device.lastSeen != null) {
+      seen = device.lastSeen;
+      source = device.lastSeenSource;
+    }
+    if (seen == null && meshNode?.lastSeen != null) {
+      seen = meshNode!.lastSeen;
+      source = 'networkmap';
+    }
     return ZbDeviceView(
       device: device,
       values: state ?? const {},
@@ -90,6 +114,10 @@ class ZbDeviceView {
       battery: bat?.round(),
       lqi: lqi?.round(),
       available: !offline,
+      lastSeen: seen,
+      lastSeenSource: source,
+      networkMeasuredAt: source == 'networkmap' ? meshMeasuredAt : null,
+      availability: availability,
     );
   }
 
@@ -105,6 +133,15 @@ class ZbDeviceView {
   final int? battery;
   final int? lqi;
   final bool available;
+
+  /// Zuletzt gesehen und woher: `z2m` (Z2M-Option) oder `networkmap`
+  /// (Messung vom [networkMeasuredAt]). `null`: keine Quelle.
+  final DateTime? lastSeen;
+  final String? lastSeenSource;
+  final DateTime? networkMeasuredAt;
+
+  /// Z2M-Verfügbarkeit: `online`, `offline` oder `null`.
+  final String? availability;
 
   String get ieee => device.ieee;
   String get name => device.friendlyName;
@@ -155,11 +192,15 @@ class ZbDeviceView {
     return e.state;
   }
 
-  /// Seit wann es keine Meldung gab, aus `last_seen`.
-  DateTime? get lastSeen {
-    final s = values['last_seen'];
-    return s is String ? DateTime.tryParse(s) : null;
-  }
+  /// Geister-Verdacht nach [evaluateGhost], `null` ohne Verdacht.
+  GhostInfo? ghost(DateTime now) => device.isCoordinator || device.disabled
+      ? null
+      : evaluateGhost(
+          isBattery: device.isBattery,
+          lastSeen: lastSeen,
+          availability: availability,
+          now: now,
+        );
 
   ZbDeviceView withDevice(ZbDevice d) => ZbDeviceView(
     device: d,
@@ -170,6 +211,10 @@ class ZbDeviceView {
     battery: battery,
     lqi: lqi,
     available: available,
+    lastSeen: lastSeen,
+    lastSeenSource: lastSeenSource,
+    networkMeasuredAt: networkMeasuredAt,
+    availability: availability,
   );
 
   /// Entities, die zu [device] gehören: erst die Liste der Integration, sonst
@@ -234,43 +279,63 @@ enum ZbFilter {
 }
 
 /// Wofür ein Gerät „Braucht dich“ steht.
-enum ZbNeedKind { offline, lowBattery, weakSignal, noRoom }
+enum ZbNeedKind { ghost, offline, lowBattery, weakSignal, noRoom }
 
 class ZbNeed {
-  const ZbNeed(this.kind, this.view, this.detail);
+  const ZbNeed(this.kind, this.view, this.detail, [this.ghost]);
   final ZbNeedKind kind;
   final ZbDeviceView view;
   final String detail;
+
+  /// Bei [ZbNeedKind.ghost]: der Verdacht mit Text und Aktionen.
+  final GhostInfo? ghost;
 }
 
-/// Berechnet „Braucht dich“ aus den Daten. Reihenfolge: nicht erreichbar,
-/// Batterie, Signal, Raum. Jedes Gerät steht höchstens einmal da, mit dem
-/// wichtigsten Grund vorn und den übrigen im Text.
+/// Berechnet „Braucht dich“ aus den Daten. Reihenfolge: Geister, nicht
+/// erreichbar, Batterie, Signal, Raum. [ignored] (IEEE → Stempel, siehe
+/// [ghostStamp]) blendet Geister bis zur nächsten Meldung aus.
+/// Jedes Gerät steht höchstens einmal da, mit dem wichtigsten Grund vorn und
+/// den übrigen im Text.
 /// [roomsKnown] `false`: Die Integration liefert keine Räume, dann gäbe es
 /// sonst für jedes Gerät den Hinweis „Kein Raum“.
 List<ZbNeed> computeNeeds(
   Iterable<ZbDeviceView> views, {
   bool roomsKnown = true,
+  DateTime? now,
+  Map<String, String> ignored = const {},
 }) {
   final out = <ZbNeed>[];
+  final t = now ?? DateTime.now();
   final list = [
     for (final v in views)
       if (!v.device.isCoordinator && !v.device.disabled) v,
   ];
+  final ghosts = <String>{};
   for (final v in list) {
-    if (!v.available) {
+    final g = v.ghost(t);
+    if (g == null) continue;
+    ghosts.add(v.ieee);
+    if (isGhostIgnored(ignored, v.ieee, v.lastSeen)) continue;
+    out.add(ZbNeed(ZbNeedKind.ghost, v, g.text, g));
+  }
+  for (final v in list) {
+    if (!v.available && !ghosts.contains(v.ieee)) {
       out.add(ZbNeed(ZbNeedKind.offline, v, 'Nicht erreichbar'));
     }
   }
   for (final v in list) {
     final b = v.battery;
-    if (v.available && v.device.isBattery && b != null && b < kLowBattery) {
+    if (v.available &&
+        !ghosts.contains(v.ieee) &&
+        v.device.isBattery &&
+        b != null &&
+        b < kLowBattery) {
       out.add(ZbNeed(ZbNeedKind.lowBattery, v, 'Batterie bei $b %'));
     }
   }
   for (final v in list) {
     final q = v.lqi;
-    if (v.available && q != null && q < kWeakLqi) {
+    if (v.available && !ghosts.contains(v.ieee) && q != null && q < kWeakLqi) {
       out.add(ZbNeed(ZbNeedKind.weakSignal, v, 'Schwaches Signal ($q)'));
     }
   }

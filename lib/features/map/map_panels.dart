@@ -97,11 +97,20 @@ const int _kDayMinutes = 24 * 60;
 
 /// Alles, was zu einem Gerät gehört: Entities desselben Geräts nach Klasse.
 class _Facts {
-  _Facts(this.entityId, this.entities, this.zb, this.fallbackName);
+  _Facts(
+    this.entityId,
+    this.entities,
+    this.zb,
+    this.fallbackName, [
+    this.zbSeen,
+  ]);
   final String entityId;
   final List<EntityState> entities;
   final ZbDevice? zb;
   final String fallbackName;
+
+  /// „Zuletzt gesehen“ des Zigbee-Geräts (Z2M bzw. Netzmessung), wenn bekannt.
+  final DateTime? zbSeen;
 
   EntityState? sensor(String deviceClass) {
     for (final e in entities) {
@@ -134,8 +143,10 @@ class _Facts {
     return e!.unit == 'mV' ? n / 1000 : n;
   }
 
-  /// Letzte Meldung eines Geräts: der jüngste Wechsel seiner Entities.
+  /// Letzte Meldung eines Geräts: `last_seen` von Zigbee2MQTT bzw. der
+  /// Netzmessung, sonst der jüngste Wechsel seiner Entities.
   DateTime? get lastSeen {
+    if (zbSeen != null) return zbSeen;
     DateTime? best;
     for (final e in entities) {
       final t = e.lastChanged;
@@ -156,11 +167,16 @@ _Facts _factsOf(WidgetRef ref, String entityId) {
       if (s.entity(id) != null) s.entity(id)!,
   ];
   final main = s.entity(entityId);
+  final zb = zbDeviceForEntity(devices, entityId);
+  final seen = zb == null
+      ? null
+      : ref.watch(zigbeeViewProvider(zb.ieee).select((v) => v?.lastSeen));
   return _Facts(
     entityId,
     entities,
-    zbDeviceForEntity(devices, entityId),
+    zb,
     shortDeviceName(main?.name ?? entityId),
+    seen,
   );
 }
 

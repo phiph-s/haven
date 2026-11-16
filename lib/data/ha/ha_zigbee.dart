@@ -102,6 +102,11 @@ class HaZigbee {
     }
   }
 
+  Future<bool> enableLastSeen() async {
+    final r = await _send('haven/zigbee/enable_last_seen');
+    return r['restart_required'] == true;
+  }
+
   Future<void> set(String ieee, Map<String, dynamic> values) =>
       _send('haven/zigbee/set', {'ieee': ieee, 'values': values});
 

@@ -76,6 +76,12 @@ class FakeZigbee {
 
   Stream<ZbEvent> get events => _events.stream;
 
+  /// Geräte, die sich lange nicht gemeldet haben (Geister-Erkennung).
+  static const kFakeSilent = {
+    'Lampe Ruhebett': Duration(days: 180),
+    'Sensor Ruheraum': Duration(days: 5),
+  };
+
   static const _weak = {'Lüfter Waschraum': 58, 'Sensor Terrasse': 71};
 
   Map<String, dynamic> _initialState(ZbDevice d) {
@@ -86,6 +92,11 @@ class FakeZigbee {
           .subtract(Duration(minutes: 1 + h % 40))
           .toIso8601String(),
     };
+    // Geister: eine Netzlampe seit 180 Tagen still, ein Batteriemelder seit 5.
+    final quiet = kFakeSilent[d.friendlyName];
+    if (quiet != null) {
+      s['last_seen'] = DateTime.now().subtract(quiet).toIso8601String();
+    }
     if (d.friendlyName == 'Sensor Terrasse') s['battery'] = 18;
     if (d.friendlyName == 'Kontaktsensor Schrank') {
       s['availability'] = 'offline';
@@ -130,7 +141,16 @@ class FakeZigbee {
 
   Future<List<ZbGroup>> groups() async => _groups;
 
+  Future<bool> enableLastSeen() async {
+    _lastSeenEnabled = true;
+    return false;
+  }
+
+  bool _lastSeenEnabled = true;
+
   Future<ZbBridgeInfo> info() async => ZbBridgeInfo(
+    lastSeenEnabled: _lastSeenEnabled,
+    availabilityEnabled: false,
     version: '2.14.3',
     channel: 25,
     coordinatorType: 'ZStack3x0',

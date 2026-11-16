@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:material_ui/material_ui.dart';
@@ -15,8 +17,11 @@ import '../../core/widgets/press_scale.dart';
 import '../../core/widgets/screen_header.dart';
 import '../../core/widgets/section_header.dart';
 import 'widgets/device_icon.dart';
+import 'mesh/mesh_providers.dart' show zigbeeMeshProvider;
+import 'mesh/mesh_screen.dart' show zigbeeMeshPath;
 import 'widgets/mesh_card.dart';
 import 'widgets/zb_common.dart';
+import 'ghost_rules.dart';
 import 'zigbee_actions.dart';
 import 'zigbee_device_screen.dart';
 import 'zigbee_selection.dart';
@@ -166,6 +171,10 @@ class _ZigbeeScreenState extends ConsumerState<ZigbeeScreen> {
                     message: z.error!,
                     onRetry: () => ref.read(zigbeeProvider.notifier).reload(),
                   ),
+                ],
+                if (ref.watch(ghostHintProvider)) ...[
+                  const SizedBox(height: 14),
+                  const _GhostHintCard(),
                 ],
                 const SizedBox(height: 22),
                 _NeedsSection(
@@ -361,7 +370,8 @@ class _NeedsSection extends ConsumerWidget {
             ),
           )
         else ...[
-          for (final n in shown) _NeedRow(need: n),
+          for (final n in shown)
+            n.kind == ZbNeedKind.ghost ? _GhostRow(need: n) : _NeedRow(need: n),
           if (needs.length > _collapsed)
             Align(
               alignment: Alignment.centerLeft,
@@ -376,6 +386,240 @@ class _NeedsSection extends ConsumerWidget {
   }
 }
 
+/// Einmalige Karte, wenn es keine Quelle für „zuletzt gesehen“ gibt.
+class _GhostHintCard extends ConsumerWidget {
+  const _GhostHintCard();
+
+  Future<void> _enable(BuildContext context, WidgetRef ref) async {
+    final ok = await confirmSheet(
+      context,
+      title: '„Zuletzt gesehen“ einschalten?',
+      text:
+          'Haven schaltet dafür die Option „last_seen“ in Zigbee2MQTT ein. '
+          'Zigbee2MQTT merkt sich dann bei jeder Meldung, wann ein Gerät '
+          'zuletzt gesendet hat. Das ändert die Einstellungen von '
+          'Zigbee2MQTT und geht nur mit einem Administrator-Konto.',
+      action: 'Einschalten',
+    );
+    if (!ok || !context.mounted) return;
+    try {
+      final restart = await ref.read(repositoryProvider).zigbeeEnableLastSeen();
+      await ref.read(ghostHintDismissedProvider.notifier).dismiss();
+      unawaited(ref.read(zigbeeProvider.notifier).reload());
+      if (context.mounted) {
+        zbToast(
+          context,
+          restart ? 'Eingeschaltet. Starte Zigbee2MQTT neu, damit es greift.' : 'Eingeschaltet. Die Zeiten füllen sich mit den nächsten Meldungen.',
+        );
+      }
+    } catch (e) {
+      if (context.mounted) zbToast(context, '$e', error: true);
+    }
+  }
+
+  Future<void> _measure(BuildContext context, WidgetRef ref) async {
+    unawaited(ref.read(zigbeeMeshProvider.notifier).refresh());
+    context.push(zigbeeMeshPath);
+  }
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final hv = context.hv;
+    return HavenCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(Icons.info_outline_rounded, color: hv.acc),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  'Damit Haven Geräte findet, die nicht mehr antworten: '
+                  '„Zuletzt gesehen“ in Zigbee2MQTT einschalten.',
+                  style: HavenText.body.copyWith(color: hv.tx, fontSize: 14),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: HavenButton(
+                  label: 'Einschalten',
+                  primary: true,
+                  onTap: () => _enable(context, ref),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: HavenButton(
+                  label: 'Netz messen',
+                  onTap: () => _measure(context, ref),
+                ),
+              ),
+            ],
+          ),
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextLink(
+              'Nicht mehr zeigen',
+              onTap: () =>
+                  ref.read(ghostHintDismissedProvider.notifier).dismiss(),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Ein Geister-Gerät in „Braucht dich“: Bild, Name, Raum, zuletzt gesehen,
+/// dazu „Entfernen“ und „Ignorieren“.
+class _GhostRow extends ConsumerWidget {
+  const _GhostRow({required this.need});
+  final ZbNeed need;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final hv = context.hv;
+    final v = need.view;
+    final g = need.ghost!;
+    final image = v.device.image;
+    final icon = ZbDeviceIcon(type: v.type, size: 40);
+    final sub = [?v.roomName, ghostSeenOn(g.lastSeen)].join(' · ');
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: PressScale(
+        onTap: () => openZigbeeDevice(context, v.ieee),
+        child: Container(
+          key: ValueKey('ghost-${v.ieee}'),
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: hv.s1,
+            borderRadius: BorderRadius.circular(HavenRadii.m),
+            border: Border.all(color: hv.warn.withValues(alpha: 0.5)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  SizedBox(
+                    width: 44,
+                    height: 44,
+                    child: Opacity(
+                      opacity: 0.6,
+                      child: image == null || image.isEmpty
+                          ? icon
+                          : Image.network(
+                              image,
+                              fit: BoxFit.contain,
+                              errorBuilder: (_, _, _) => icon,
+                              loadingBuilder: (_, child, p) =>
+                                  p == null ? child : icon,
+                            ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          v.name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: HavenText.label.copyWith(
+                            color: hv.tx,
+                            fontSize: 14.5,
+                          ),
+                        ),
+                        Text(
+                          g.text,
+                          style: HavenText.caption.copyWith(color: hv.warn),
+                        ),
+                        Text(
+                          sub,
+                          style: HavenText.caption.copyWith(color: hv.tx2),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  if (g.canRemove)
+                    _GhostAction(
+                      label: g.kind == GhostKind.silent
+                          ? 'Entfernen?'
+                          : 'Entfernen',
+                      destructive: true,
+                      onTap: () => removeGhost(context, ref, v),
+                    ),
+                  _GhostAction(
+                    label: 'Ignorieren',
+                    onTap: () => ref
+                        .read(ghostIgnoredProvider.notifier)
+                        .ignore(v.ieee, v.lastSeen),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _GhostAction extends StatelessWidget {
+  const _GhostAction({
+    required this.label,
+    required this.onTap,
+    this.destructive = false,
+  });
+  final String label;
+  final VoidCallback onTap;
+  final bool destructive;
+
+  @override
+  Widget build(BuildContext context) {
+    final hv = context.hv;
+    return PressScale(
+      onTap: onTap,
+      child: Container(
+        constraints: const BoxConstraints(
+          minHeight: HavenSpace.touch - 8,
+          minWidth: 92,
+        ),
+        alignment: Alignment.center,
+        padding: const EdgeInsets.symmetric(horizontal: 14),
+        decoration: BoxDecoration(
+          color: hv.s2,
+          borderRadius: BorderRadius.circular(HavenRadii.pill),
+          border: Border.all(
+            color: destructive ? hv.bad.withValues(alpha: 0.6) : hv.ln2,
+          ),
+        ),
+        child: Text(
+          label,
+          style: HavenText.label.copyWith(
+            color: destructive ? hv.bad : hv.tx,
+            fontSize: 13,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _NeedRow extends ConsumerWidget {
   const _NeedRow({required this.need});
   final ZbNeed need;
@@ -385,6 +629,7 @@ class _NeedRow extends ConsumerWidget {
     final hv = context.hv;
     final v = need.view;
     final (IconData icon, Color color, String action) = switch (need.kind) {
+      ZbNeedKind.ghost => (Icons.link_off_rounded, hv.warn, 'Prüfen'),
       ZbNeedKind.offline => (Icons.link_off_rounded, hv.bad, 'Prüfen'),
       ZbNeedKind.lowBattery => (
         Icons.battery_alert_rounded,

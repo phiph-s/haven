@@ -905,7 +905,12 @@ class MeshInfoPanel extends ConsumerWidget {
                       style: HavenText.headline.copyWith(color: hv.tx),
                     ),
                     Text(
-                      [type, ?roomName, if (info.failed) 'bei der Messung nicht erreichbar'].join(' · '),
+                      [
+                        type,
+                        ?roomName,
+                        if (info.ghost) 'lange nicht gesehen',
+                        if (info.failed) 'bei der Messung nicht erreichbar',
+                      ].join(' · '),
                       style: HavenText.caption.copyWith(color: hv.tx2),
                     ),
                   ],

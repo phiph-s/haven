@@ -245,6 +245,9 @@ class ZbDevice {
     this.haEntities = const [],
     this.areaId,
     this.hasAreaInfo = false,
+    this.lastSeen,
+    this.lastSeenSource,
+    this.availability,
   });
 
   factory ZbDevice.fromJson(Map<String, dynamic> j) {
@@ -272,7 +275,26 @@ class ZbDevice {
       haEntities: [for (final e in (j['ha_entities'] as List? ?? [])) '$e'],
       areaId: _s(j['area_id']),
       hasAreaInfo: j.containsKey('area_id'),
+      lastSeen: parseLastSeen(j['last_seen']),
+      lastSeenSource: _s(j['last_seen_source']),
+      availability: _s(j['availability']),
     );
+  }
+
+  /// `last_seen` als ISO-Text oder Zahl (ms, zur Not s), sonst `null`.
+  static DateTime? parseLastSeen(dynamic v) {
+    if (v == null || v is bool) return null;
+    if (v is String) {
+      final t = v.trim();
+      final n = num.tryParse(t);
+      if (n != null) return parseLastSeen(n);
+      return DateTime.tryParse(t)?.toLocal();
+    }
+    if (v is num && v > 0) {
+      final ms = v >= 1000000000000 ? v.toInt() : (v * 1000).toInt();
+      return DateTime.fromMillisecondsSinceEpoch(ms);
+    }
+    return null;
   }
 
   final String ieee;
@@ -301,6 +323,15 @@ class ZbDevice {
   /// Die Integration liefert überhaupt Raumangaben (auch `null` = kein Raum).
   final bool hasAreaInfo;
 
+  /// Zuletzt gesehen laut Integration (ab 0.5.2, `ghost_detection`).
+  final DateTime? lastSeen;
+
+  /// Woher [lastSeen] stammt: `z2m` (Option `last_seen`) oder `networkmap`.
+  final String? lastSeenSource;
+
+  /// Verfügbarkeit laut Z2M: `online`, `offline` oder `null`.
+  final String? availability;
+
   bool get isRouter => type == 'Router';
   bool get isCoordinator => type == 'Coordinator';
   bool get isBattery =>
@@ -317,6 +348,9 @@ class ZbDevice {
     bool clearArea = false,
     bool? hasAreaInfo,
     ZbClassified? classified,
+    DateTime? lastSeen,
+    String? lastSeenSource,
+    String? availability,
   }) => ZbDevice(
     ieee: ieee,
     friendlyName: friendlyName ?? this.friendlyName,
@@ -335,6 +369,9 @@ class ZbDevice {
     haEntities: haEntities,
     areaId: clearArea ? null : (areaId ?? this.areaId),
     hasAreaInfo: hasAreaInfo ?? this.hasAreaInfo,
+    lastSeen: lastSeen ?? this.lastSeen,
+    lastSeenSource: lastSeenSource ?? this.lastSeenSource,
+    availability: availability ?? this.availability,
   );
 }
 
@@ -370,6 +407,8 @@ class ZbBridgeInfo {
     this.online = true,
     this.permitJoin = false,
     this.deviceCount,
+    this.lastSeenEnabled,
+    this.availabilityEnabled,
   });
 
   factory ZbBridgeInfo.fromJson(Map<String, dynamic> j) => ZbBridgeInfo(
@@ -379,6 +418,12 @@ class ZbBridgeInfo {
     online: j['bridge_state'] == null || j['bridge_state'] == 'online',
     permitJoin: j['permit_join'] == true,
     deviceCount: _n(j['device_count'])?.toInt(),
+    lastSeenEnabled: j['last_seen_enabled'] is bool
+        ? j['last_seen_enabled'] as bool
+        : null,
+    availabilityEnabled: j['availability_enabled'] is bool
+        ? j['availability_enabled'] as bool
+        : null,
   );
 
   static const empty = ZbBridgeInfo();
@@ -391,6 +436,12 @@ class ZbBridgeInfo {
   final bool online;
   final bool permitJoin;
   final int? deviceCount;
+
+  /// Z2M-Option `advanced.last_seen` an (ab Integration 0.5.2), sonst `null`.
+  final bool? lastSeenEnabled;
+
+  /// Z2M-Verfügbarkeit an (ab Integration 0.5.2), sonst `null`.
+  final bool? availabilityEnabled;
 }
 
 /// Ereignis aus `haven/subscribe_zigbee` bzw. des `FakeRepository`.

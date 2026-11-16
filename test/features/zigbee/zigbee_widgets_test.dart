@@ -17,6 +17,17 @@ class _FailingFake extends FakeRepository {
       throw Exception('Zigbee2MQTT antwortet nicht.');
 }
 
+/// Merkt sich, mit welchem `force` entfernt wurde.
+class _RemoveSpy extends FakeRepository {
+  _RemoveSpy() : super(simulate: false);
+  final removed = <(String, bool)>[];
+  @override
+  Future<void> zigbeeRemove(String ieee, {bool force = false}) {
+    removed.add((ieee, force));
+    return super.zigbeeRemove(ieee, force: force);
+  }
+}
+
 String _ieeeOf(String model) =>
     ((kFakeZigbee['devices'] as List).firstWhere(
           (d) => d['model'] == model,
@@ -27,14 +38,17 @@ Future<Widget> _app(
   String location, {
   bool failing = false,
   ThemeMode? mode,
+  FakeRepository? spy,
 }) async {
   SharedPreferences.setMockInitialValues({
     if (mode != null) 'theme_mode': mode.name,
   });
   final store = SettingsStore(await SharedPreferences.getInstance());
-  final repo = failing
-      ? _FailingFake(simulate: false)
-      : FakeRepository(simulate: false);
+  final repo =
+      spy ??
+      (failing
+          ? _FailingFake(simulate: false)
+          : FakeRepository(simulate: false));
   await repo.start();
   return ProviderScope(
     overrides: [
@@ -56,11 +70,12 @@ Future<void> _open(
   WidgetTester tester,
   String location, {
   bool failing = false,
+  FakeRepository? spy,
 }) async {
   _phone(tester);
   late Widget app;
   await tester.runAsync(
-    () async => app = await _app(location, failing: failing),
+    () async => app = await _app(location, failing: failing, spy: spy),
   );
   await tester.pumpWidget(app);
   // Endlosanimationen: nicht settlen, sondern Zeit vorspulen.
@@ -190,6 +205,61 @@ void main() {
     expect(find.textContaining('Kochbereich'), findsWidgets);
     expect(find.text('Temperatur'), findsOneWidget);
     expect(find.text('21,3'), findsOneWidget);
+    await _close(tester);
+  });
+
+  testWidgets('Braucht dich zeigt Geister oben, Entfernen fragt nach', (
+    tester,
+  ) async {
+    await _open(tester, '/zigbee');
+    // Lampe Ruhebett (180 Tage) und Sensor Ruheraum (5 Tage).
+    expect(find.text('Seit 180 Tagen nicht erreichbar'), findsOneWidget);
+    expect(
+      find.text('Seit 5 Tagen keine Meldung, Batterie prüfen'),
+      findsOneWidget,
+    );
+    expect(find.textContaining('zuletzt gesehen am'), findsWidgets);
+    // Geister stehen vor allen anderen Hinweisen.
+    final ghostY = tester.getTopLeft(find.text('Lampe Ruhebett').first).dy;
+    final otherY = tester.getTopLeft(find.text('Sensor Terrasse').first).dy;
+    expect(ghostY, lessThan(otherY));
+    // Batterie unter 21 Tagen: nur „Ignorieren“, Netzgerät: „Entfernen“.
+    expect(find.text('Entfernen'), findsOneWidget);
+    expect(find.text('Entfernen?'), findsNothing);
+
+    await tester.tap(find.text('Entfernen'));
+    for (var i = 0; i < 6; i++) {
+      await tester.pump(const Duration(milliseconds: 250));
+    }
+    expect(find.text('Lampe Ruhebett entfernen?'), findsOneWidget);
+    expect(find.textContaining('aus Zigbee2MQTT, aus allen Gruppen'), findsOne);
+    await tester.tap(find.text('Abbrechen'));
+    for (var i = 0; i < 6; i++) {
+      await tester.pump(const Duration(milliseconds: 250));
+    }
+    expect(find.text('Seit 180 Tagen nicht erreichbar'), findsOneWidget);
+
+    // Ignorieren blendet den Geist aus.
+    await tester.tap(find.text('Ignorieren').first);
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.text('Seit 180 Tagen nicht erreichbar'), findsNothing);
+    await _close(tester);
+  });
+
+  testWidgets('Entfernen eines Geistes sendet force: true', (tester) async {
+    final spy = _RemoveSpy();
+    await _open(tester, '/zigbee', spy: spy);
+    await tester.tap(find.text('Entfernen'));
+    for (var i = 0; i < 6; i++) {
+      await tester.pump(const Duration(milliseconds: 250));
+    }
+    await tester.tap(find.text('Entfernen').last);
+    for (var i = 0; i < 6; i++) {
+      await tester.pump(const Duration(milliseconds: 250));
+    }
+    expect(spy.removed, hasLength(1));
+    expect(spy.removed.single.$2, isTrue);
+    expect(find.text('Seit 180 Tagen nicht erreichbar'), findsNothing);
     await _close(tester);
   });
 }

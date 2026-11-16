@@ -28,6 +28,14 @@ abstract interface class ZigbeeApi {
   /// Befehl, kommt eine leere Map und die App liest Entity-Zustände.
   Future<Map<String, Map<String, dynamic>>> zigbeeStates();
 
+  /// Die Integration liefert `last_seen` und `availability` (`features` aus
+  /// `haven/info` enthält `ghost_detection`, ab 0.5.2).
+  bool get zigbeeGhostDetection;
+
+  /// `haven/zigbee/enable_last_seen` (nur Admin): schaltet die Z2M-Option
+  /// `advanced.last_seen` ein. Gibt zurück, ob Z2M einen Neustart braucht.
+  Future<bool> zigbeeEnableLastSeen();
+
   /// Setzt Z2M-Werte. TODO Integration: `haven/zigbee/set`
   /// `{"ieee": "0x..", "values": {"sensitivity": "high"}}`
   /// (Publish auf `<base>/<name>/set`).

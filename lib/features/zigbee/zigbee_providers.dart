@@ -4,6 +4,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/state/providers.dart';
 import '../../data/models/zigbee.dart';
+import '../../data/models/zigbee_network.dart' show ZbMeshNode;
+import 'ghost_rules.dart';
+import 'mesh/mesh_providers.dart';
 import 'zigbee_model.dart';
 
 /// Stand der Zigbee-Daten: Geräte, Gruppen, Bridge-Info und Z2M-Werte.
@@ -97,6 +100,15 @@ class ZigbeeNotifier extends Notifier<ZigbeeData> {
       case 'groups':
         final g = await _safe<List<ZbGroup>?>(repo.zigbeeGroups(), null);
         if (g != null) state = state.copyWith(groups: g);
+      case 'availability':
+        final ieee = '${e.data['ieee']}';
+        final a = e.data['availability']?.toString();
+        state = state.copyWith(
+          devices: [
+            for (final d in state.devices)
+              d.ieee == ieee ? d.copyWith(availability: a) : d,
+          ],
+        );
       case 'info' || 'state' when e.data['ieee'] == null:
         final i = await _safe<ZbBridgeInfo?>(repo.zigbeeInfo(), null);
         if (i != null) state = state.copyWith(info: i);
@@ -157,8 +169,8 @@ class ZigbeeNotifier extends Notifier<ZigbeeData> {
     await _refreshDevices();
   });
 
-  Future<String?> remove(String ieee) => _guard(() async {
-    await ref.read(repositoryProvider).zigbeeRemove(ieee);
+  Future<String?> remove(String ieee, {bool force = false}) => _guard(() async {
+    await ref.read(repositoryProvider).zigbeeRemove(ieee, force: force);
     await _refreshDevices();
   });
 
@@ -179,6 +191,15 @@ final zigbeeProvider = NotifierProvider<ZigbeeNotifier, ZigbeeData>(
 final zigbeeViewsProvider = Provider<List<ZbDeviceView>>((ref) {
   final z = ref.watch(zigbeeProvider);
   final snap = ref.watch(snapshotProvider);
+  // Ältere Integration ohne `ghost_detection`: „zuletzt gesehen“ aus der
+  // Netzkarte, sofern die App eine geladen hat.
+  final legacy = !ref.watch(
+    repositoryProvider.select((r) => r.zigbeeGhostDetection),
+  );
+  final map = legacy
+      ? ref.watch(zigbeeMeshProvider.select((m) => m.map))
+      : null;
+  final nodes = {for (final n in map?.nodes ?? const <ZbMeshNode>[]) n.ieee: n};
   final list = [
     for (final d in z.devices)
       ZbDeviceView.build(
@@ -186,6 +207,8 @@ final zigbeeViewsProvider = Provider<List<ZbDeviceView>>((ref) {
         state: z.states[d.ieee],
         allEntities: snap.entities,
         rooms: snap.rooms,
+        meshNode: nodes[d.ieee],
+        meshMeasuredAt: map?.measuredAt,
       ),
   ];
   list.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
@@ -214,9 +237,58 @@ final zigbeeDetailProvider = FutureProvider.family<ZbDevice?, String>((
   }
 });
 
+/// Ignorierte Geister: IEEE → `last_seen`-Stempel, lokal gemerkt.
+class GhostIgnoredNotifier extends Notifier<Map<String, String>> {
+  @override
+  Map<String, String> build() => ref.read(settingsStoreProvider).ghostIgnored;
+
+  /// Blendet das Gerät bis zur nächsten Meldung aus.
+  Future<void> ignore(String ieee, DateTime? lastSeen) async {
+    state = {...state, ieee: ghostStamp(lastSeen)};
+    await ref.read(settingsStoreProvider).setGhostIgnored(state);
+  }
+}
+
+final ghostIgnoredProvider =
+    NotifierProvider<GhostIgnoredNotifier, Map<String, String>>(
+      GhostIgnoredNotifier.new,
+    );
+
+/// Die einmalige Hinweiskarte wurde weggewischt.
+class GhostHintDismissedNotifier extends Notifier<bool> {
+  @override
+  bool build() => ref.read(settingsStoreProvider).ghostHintDismissed;
+
+  Future<void> dismiss() async {
+    state = true;
+    await ref.read(settingsStoreProvider).setGhostHintDismissed(true);
+  }
+}
+
+final ghostHintDismissedProvider =
+    NotifierProvider<GhostHintDismissedNotifier, bool>(
+      GhostHintDismissedNotifier.new,
+    );
+
+/// Soll die Hinweiskarte „Zuletzt gesehen einschalten“ stehen? Nur mit einer
+/// Integration ab 0.5.2, ohne jede Quelle (Option aus, keine Netzkarte mit
+/// `lastSeen`) und solange sie nicht weggewischt wurde.
+final ghostHintProvider = Provider<bool>((ref) {
+  if (ref.watch(ghostHintDismissedProvider)) return false;
+  if (!ref.watch(repositoryProvider.select((r) => r.zigbeeGhostDetection))) {
+    return false;
+  }
+  final z = ref.watch(zigbeeProvider);
+  if (!z.loaded || z.devices.isEmpty || z.info.lastSeenEnabled != false) {
+    return false;
+  }
+  return ref.watch(zigbeeViewsProvider).every((v) => v.lastSeen == null);
+});
+
 /// „Braucht dich“, berechnet aus den Geräten.
 final zigbeeNeedsProvider = Provider<List<ZbNeed>>((ref) {
   final views = ref.watch(zigbeeViewsProvider);
+  final ignored = ref.watch(ghostIgnoredProvider);
   final roomsKnown = views.any((v) => v.device.hasAreaInfo);
-  return computeNeeds(views, roomsKnown: roomsKnown);
+  return computeNeeds(views, roomsKnown: roomsKnown, ignored: ignored);
 });

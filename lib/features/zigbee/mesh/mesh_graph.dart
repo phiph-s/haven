@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:material_ui/material_ui.dart';
@@ -196,6 +198,7 @@ class MeshNodeDot extends ConsumerWidget {
       child: child,
       builder: (context, st, child) {
         double o = info.available ? 1 : 0.5;
+        if (info.ghost) o = 0.4;
         if (st.hasSelection) {
           o = st.pathNodes.contains(info.ieee) ? 1 : 0.25;
         } else if (!st.nodeActive(info.ieee, map, {info.ieee: info})) {
@@ -219,6 +222,15 @@ class MeshNodeDot extends ConsumerWidget {
                   ),
                 ),
               child!,
+              if (info.ghost)
+                CustomPaint(
+                  size: Size.square(r * 2 + 4),
+                  painter: _DashedRing(
+                    color: hv.warn,
+                    round: info.kind != ZbNodeKind.endDevice,
+                    width: mini ? 1 : 1.8,
+                  ),
+                ),
               if (info.failed)
                 Transform.translate(
                   offset: Offset(r * 0.85, -r * 0.85),
@@ -255,7 +267,11 @@ class MeshNodeDot extends ConsumerWidget {
   );
 
   Widget _router(HavenColors hv, double r, Color? lamp) {
-    final ring = info.available ? (lamp == null ? hv.tx2 : hv.tx) : hv.bad;
+    final ring = info.ghost
+        ? const Color(0x00000000)
+        : info.available
+        ? (lamp == null ? hv.tx2 : hv.tx)
+        : hv.bad;
     return Container(
       width: r * 2,
       height: r * 2,
@@ -281,9 +297,55 @@ class MeshNodeDot extends ConsumerWidget {
       borderRadius: BorderRadius.circular(mini ? 1.6 : 5),
       color: lamp ?? hv.s3,
       border: Border.all(
-        color: info.available ? hv.tx3 : hv.bad,
+        color: info.ghost
+            ? const Color(0x00000000)
+            : info.available
+            ? hv.tx3
+            : hv.bad,
         width: mini ? 0.8 : 1.6,
       ),
     ),
   );
+}
+
+/// Gestrichelter Rand für Geister-Geräte.
+class _DashedRing extends CustomPainter {
+  const _DashedRing({
+    required this.color,
+    required this.round,
+    required this.width,
+  });
+  final Color color;
+  final bool round;
+  final double width;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final rect = (Offset.zero & size).deflate(width);
+    final path = Path()
+      ..addRRect(
+        round
+            ? RRect.fromRectAndRadius(
+                rect,
+                Radius.circular(rect.shortestSide / 2),
+              )
+            : RRect.fromRectAndRadius(rect, const Radius.circular(5)),
+      );
+    final paint = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = width;
+    for (final m in path.computeMetrics()) {
+      var d = 0.0;
+      final dash = width * 3, gap = width * 2.2;
+      while (d < m.length) {
+        canvas.drawPath(m.extractPath(d, math.min(d + dash, m.length)), paint);
+        d += dash + gap;
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(_DashedRing old) =>
+      old.color != color || old.round != round || old.width != width;
 }

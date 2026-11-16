@@ -14,6 +14,7 @@ import 'widgets/device_icon.dart';
 import 'widgets/device_main.dart';
 import 'widgets/device_settings.dart';
 import 'widgets/zb_common.dart';
+import 'ghost_rules.dart';
 import 'zigbee_actions.dart';
 import 'zigbee_model.dart';
 import 'zigbee_providers.dart';
@@ -409,7 +410,40 @@ class _Diagnostics extends StatelessWidget {
       );
     }
     if (v.lastSeen != null) {
-      rows.add(_kv('Zuletzt gesehen', agoLabel(v.lastSeen!)));
+      final source = lastSeenSourceLabel(v);
+      final ghost = v.ghost(DateTime.now());
+      rows.add(
+        _DiagRow(
+          label: 'Zuletzt gesehen',
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Text(
+                agoLabel(v.lastSeen!),
+                textAlign: TextAlign.end,
+                style: HavenText.label.copyWith(
+                  color: ghost == null ? hv.tx : hv.warn,
+                  fontSize: 14,
+                ),
+              ),
+              if (source != null)
+                Text(
+                  source,
+                  textAlign: TextAlign.end,
+                  style: HavenText.caption.copyWith(color: hv.tx2),
+                ),
+              if (ghost != null)
+                Text(
+                  ghost.kind == GhostKind.silent
+                      ? 'Meldet sich nicht mehr, Batterie prüfen'
+                      : 'Antwortet nicht mehr',
+                  textAlign: TextAlign.end,
+                  style: HavenText.caption.copyWith(color: hv.warn),
+                ),
+            ],
+          ),
+        ),
+      );
     }
     rows.add(
       _kv('Modell', v.device.modelLine.isEmpty ? '–' : v.device.modelLine),

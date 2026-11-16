@@ -639,6 +639,7 @@ class FakeRepository extends BaseRepository {
           'domain': 'haven',
           'version': '0.2.0',
           'api_version': 1,
+          'features': ['ghost_detection'],
           'loaded': true,
           'z2m': {
             'bridge_state': 'online',
@@ -790,6 +791,10 @@ class FakeRepository extends BaseRepository {
       _zb.networkMap(refresh: refresh);
   @override
   bool get zigbeeBackgroundMeasure => true;
+  @override
+  bool get zigbeeGhostDetection => true;
+  @override
+  Future<bool> zigbeeEnableLastSeen() => _zb.enableLastSeen();
   @override
   Future<ZbMeasureStart> zigbeeStartNetworkMeasure() => _zb.startMeasure();
   @override

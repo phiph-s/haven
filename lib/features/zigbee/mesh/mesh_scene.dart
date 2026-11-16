@@ -22,6 +22,7 @@ class MeshNodeInfo {
     this.lightId,
     this.available = true,
     this.failed = false,
+    this.ghost = false,
   });
 
   final String ieee;
@@ -36,6 +37,9 @@ class MeshNodeInfo {
   /// Z2M hat bei der Messung nichts von dem Knoten gelesen (`failed`).
   final bool failed;
 
+  /// Geister-Verdacht (lange nicht gesehen), siehe `ghost_rules.dart`.
+  final bool ghost;
+
   @override
   bool operator ==(Object other) =>
       other is MeshNodeInfo &&
@@ -45,11 +49,20 @@ class MeshNodeInfo {
       other.roomName == roomName &&
       other.lightId == lightId &&
       other.available == available &&
-      other.failed == failed;
+      other.failed == failed &&
+      other.ghost == ghost;
 
   @override
-  int get hashCode =>
-      Object.hash(ieee, name, kind, roomName, lightId, available, failed);
+  int get hashCode => Object.hash(
+    ieee,
+    name,
+    kind,
+    roomName,
+    lightId,
+    available,
+    failed,
+    ghost,
+  );
 }
 
 /// Grundriss mit Knotenpositionen für den Graphen.
@@ -115,7 +128,9 @@ MeshScene buildMeshScene({
   required ZbNetworkMap map,
   required List<ZbDeviceView> views,
   HavenFloorPlan? plan,
+  DateTime? now,
 }) {
+  final t = now ?? DateTime.now();
   final byIeee = {for (final v in views) v.ieee: v};
   final auto = plan == null || plan.rooms.isEmpty;
 
@@ -165,6 +180,7 @@ MeshScene buildMeshScene({
           .firstOrNull,
       available: v?.available ?? true,
       failed: n.failed,
+      ghost: v?.ghost(t) != null,
     );
     if (n.isCoordinator) continue;
     final ents = <String>[

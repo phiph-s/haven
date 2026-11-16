@@ -222,3 +222,48 @@ Future<bool> confirmSheet(
   );
   return r ?? false;
 }
+
+/// Fragt nach und entfernt ein Geister-Gerät mit `force: true` (Z2M wartet
+/// nicht auf das Gerät). Gibt `true` zurück, wenn es entfernt wurde.
+Future<bool> removeGhost(
+  BuildContext context,
+  WidgetRef ref,
+  ZbDeviceView view,
+) async {
+  final ok = await confirmSheet(
+    context,
+    title: '${view.name} entfernen?',
+    text:
+        'Das Gerät verschwindet aus Zigbee2MQTT, aus allen Gruppen und aus '
+        'Home Assistant. Wenn es doch noch existiert, lässt es sich neu '
+        'anlernen.',
+    action: 'Entfernen',
+    destructive: true,
+  );
+  if (!ok || !context.mounted) return false;
+  final err = await ref
+      .read(zigbeeProvider.notifier)
+      .remove(view.ieee, force: true);
+  if (!context.mounted) return false;
+  if (err != null) {
+    zbToast(context, err, error: true);
+    return false;
+  }
+  zbToast(context, '${view.name} wurde entfernt');
+  return true;
+}
+
+/// Text zur Quelle von „zuletzt gesehen“ („laut Zigbee2MQTT“, „laut
+/// Netzmessung vom 12.11.“), `null` ohne Quelle.
+String? lastSeenSourceLabel(ZbDeviceView v) {
+  switch (v.lastSeenSource) {
+    case 'z2m':
+      return 'laut Zigbee2MQTT';
+    case 'networkmap':
+      final t = v.networkMeasuredAt?.toLocal();
+      if (t == null) return 'laut Netzmessung';
+      String two(int x) => x.toString().padLeft(2, '0');
+      return 'laut Netzmessung vom ${two(t.day)}.${two(t.month)}.';
+  }
+  return null;
+}

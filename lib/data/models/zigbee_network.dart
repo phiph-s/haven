@@ -65,6 +65,7 @@ class ZbMeshNode {
     this.networkAddress,
     this.lqi,
     this.failed = false,
+    this.lastSeen,
   });
 
   factory ZbMeshNode.fromJson(Map<String, dynamic> j) {
@@ -80,12 +81,16 @@ class ZbMeshNode {
         final bool b => b,
         _ => false,
       },
+      lastSeen: ZbNetworkMap.parseTime(j['lastSeen'] ?? j['last_seen']),
     );
   }
 
   final String ieee;
   final String name;
   final ZbNodeKind kind;
+
+  /// `lastSeen` der Netzkarte (Z2M, ms), `null` wenn Z2M nichts meldet.
+  final DateTime? lastSeen;
   final int? networkAddress;
 
   /// Signal zum Elternknoten (0 bis 255), `null` beim Koordinator oder wenn
@@ -106,6 +111,7 @@ class ZbMeshNode {
     networkAddress: networkAddress,
     lqi: v,
     failed: failed,
+    lastSeen: lastSeen,
   );
 }
 
@@ -227,11 +233,7 @@ class _Pair {
 /// `refresh`.
 @immutable
 class ZbMeasureStatus {
-  const ZbMeasureStatus({
-    this.running = false,
-    this.startedAt,
-    this.lastError,
-  });
+  const ZbMeasureStatus({this.running = false, this.startedAt, this.lastError});
 
   factory ZbMeasureStatus.fromJson(Map<String, dynamic> j) {
     final err = j['last_error']?.toString().trim();

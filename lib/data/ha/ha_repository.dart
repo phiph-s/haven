@@ -823,6 +823,12 @@ class HaRepository extends BaseRepository {
       _zb.networkMap(refresh);
 
   @override
+  bool get zigbeeGhostDetection => _features.contains('ghost_detection');
+
+  @override
+  Future<bool> zigbeeEnableLastSeen() => _zb.enableLastSeen();
+
+  @override
   bool get zigbeeBackgroundMeasure =>
       _features.contains('networkmap_background');
 

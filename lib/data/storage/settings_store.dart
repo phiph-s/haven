@@ -38,6 +38,8 @@ class SettingsStore implements LocalPrefs {
   static const _kUpdateRelease = 'update_latest_release';
   static const _kRoomOrder = 'home_room_order';
   static const _kMapLayer = 'map_layer';
+  static const _kGhostIgnored = 'ghost_ignored';
+  static const _kGhostHint = 'ghost_hint_dismissed';
 
   @override
   Set<String> get excludedLights =>
@@ -108,6 +110,26 @@ class SettingsStore implements LocalPrefs {
   /// Gewählte Kartenart (`MapLayer.name`), lokal gemerkt.
   String? get mapLayer => _p.getString(_kMapLayer);
   Future<void> setMapLayer(String name) => _p.setString(_kMapLayer, name);
+
+  /// Ignorierte Geister-Geräte: IEEE → `last_seen`-Stempel (siehe
+  /// `ghostStamp`), gelten bis zur nächsten Meldung.
+  Map<String, String> get ghostIgnored {
+    final raw = _p.getStringList(_kGhostIgnored) ?? const [];
+    return {
+      for (final e in raw)
+        if (e.contains('|'))
+          e.substring(0, e.indexOf('|')): e.substring(e.indexOf('|') + 1),
+    };
+  }
+
+  Future<void> setGhostIgnored(Map<String, String> v) => _p.setStringList(
+    _kGhostIgnored,
+    [for (final e in v.entries) '${e.key}|${e.value}'],
+  );
+
+  /// Die einmalige Hinweiskarte „Zuletzt gesehen einschalten“ wurde weggewischt.
+  bool get ghostHintDismissed => _p.getBool(_kGhostHint) ?? false;
+  Future<void> setGhostHintDismissed(bool v) => _p.setBool(_kGhostHint, v);
 
   // ---- Abgleich mit HA (sync/app_data.dart) ------------------------------
 
