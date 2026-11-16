@@ -27,6 +27,7 @@ import 'zigbee_device_screen.dart';
 import 'zigbee_selection.dart';
 import 'zigbee_model.dart';
 import 'zigbee_providers.dart';
+import '../../core/widgets/horizontal_scroller.dart';
 
 String zigbeeDevicePath(String ieee) => '/zigbee/device/$ieee';
 const zigbeePairPath = '/zigbee/pair';
@@ -733,24 +734,27 @@ class _FilterChips extends StatelessWidget {
   Widget build(BuildContext context) {
     return SizedBox(
       height: HavenSpace.touch,
-      child: ListView(
-        scrollDirection: Axis.horizontal,
-        clipBehavior: Clip.none,
-        children: [
-          _Chip(
-            label: 'Alle',
-            count: views.length,
-            on: selected == null,
-            onTap: () => onSelect(null),
-          ),
-          for (final f in ZbFilter.values)
+      child: HorizontalScroller(
+        builder: (context, controller) => ListView(
+          controller: controller,
+          scrollDirection: Axis.horizontal,
+          clipBehavior: Clip.none,
+          children: [
             _Chip(
-              label: f.label,
-              count: views.where(f.matches).length,
-              on: selected == f,
-              onTap: () => onSelect(selected == f ? null : f),
+              label: 'Alle',
+              count: views.length,
+              on: selected == null,
+              onTap: () => onSelect(null),
             ),
-        ],
+            for (final f in ZbFilter.values)
+              _Chip(
+                label: f.label,
+                count: views.where(f.matches).length,
+                on: selected == f,
+                onTap: () => onSelect(selected == f ? null : f),
+              ),
+          ],
+        ),
       ),
     );
   }

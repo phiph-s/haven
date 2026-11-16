@@ -23,6 +23,7 @@ import '../zigbee_screen.dart' show zigbeeDevicePath;
 import 'mesh_graph.dart';
 import 'mesh_providers.dart';
 import 'mesh_scene.dart';
+import '../../../core/widgets/horizontal_scroller.dart';
 
 const String zigbeeMeshPath = '/zigbee/mesh';
 
@@ -496,24 +497,27 @@ class _Controls extends StatelessWidget {
       children: [
         SizedBox(
           height: 52,
-          child: ListView(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-            children: [
-              for (final f in MeshFilter.values)
-                _Chip(
-                  label: f.label,
-                  selected: filter == f && !placing,
-                  onTap: () => onFilter(f),
-                ),
-              if (canPlace)
-                _Chip(
-                  label: placing ? 'Fertig' : 'Koordinator platzieren',
-                  icon: placing ? Icons.check_rounded : Icons.hub_rounded,
-                  selected: placing,
-                  onTap: onPlace,
-                ),
-            ],
+          child: HorizontalScroller(
+            builder: (context, controller) => ListView(
+              controller: controller,
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+              children: [
+                for (final f in MeshFilter.values)
+                  _Chip(
+                    label: f.label,
+                    selected: filter == f && !placing,
+                    onTap: () => onFilter(f),
+                  ),
+                if (canPlace)
+                  _Chip(
+                    label: placing ? 'Fertig' : 'Koordinator platzieren',
+                    icon: placing ? Icons.check_rounded : Icons.hub_rounded,
+                    selected: placing,
+                    onTap: onPlace,
+                  ),
+              ],
+            ),
           ),
         ),
         Padding(

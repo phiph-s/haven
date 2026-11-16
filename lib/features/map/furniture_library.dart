@@ -5,6 +5,7 @@ import '../../core/theme/tokens.dart';
 import '../../core/widgets/haptics.dart';
 import '../../data/models/floor_plan.dart';
 import 'furniture_painter.dart';
+import '../../core/widgets/horizontal_scroller.dart';
 
 /// Möbel-Bibliothek des Editors: Kategorien und Elemente als Skizze.
 ///
@@ -93,32 +94,39 @@ class _FurnitureLibraryState extends State<FurnitureLibrary> {
       children: [
         SizedBox(
           height: 40,
-          child: ListView(
-            scrollDirection: Axis.horizontal,
-            children: [
-              for (final cat in FurnitureCategory.values)
-                Padding(
-                  padding: const EdgeInsets.only(right: 6),
-                  child: _CategoryChip(
-                    label: cat.label,
-                    selected: cat == _cat,
-                    onTap: () {
-                      Haptics.tick();
-                      setState(() => _cat = cat);
-                    },
+          child: HorizontalScroller(
+            builder: (context, controller) => ListView(
+              controller: controller,
+              scrollDirection: Axis.horizontal,
+              children: [
+                for (final cat in FurnitureCategory.values)
+                  Padding(
+                    padding: const EdgeInsets.only(right: 6),
+                    child: _CategoryChip(
+                      label: cat.label,
+                      selected: cat == _cat,
+                      onTap: () {
+                        Haptics.tick();
+                        setState(() => _cat = cat);
+                      },
+                    ),
                   ),
-                ),
-            ],
+              ],
+            ),
           ),
         ),
         const SizedBox(height: 8),
         Expanded(
-          child: ListView.separated(
-            key: ValueKey(_cat),
-            scrollDirection: Axis.horizontal,
-            itemCount: items.length,
-            separatorBuilder: (_, _) => const SizedBox(width: 8),
-            itemBuilder: (context, i) => _tile(items[i]),
+          child: HorizontalScroller(
+            mouseDrag: false,
+            builder: (context, controller) => ListView.separated(
+              controller: controller,
+              key: ValueKey(_cat),
+              scrollDirection: Axis.horizontal,
+              itemCount: items.length,
+              separatorBuilder: (_, _) => const SizedBox(width: 8),
+              itemBuilder: (context, i) => _tile(items[i]),
+            ),
           ),
         ),
       ],

@@ -24,6 +24,7 @@ import '../updates/app_update_widgets.dart';
 import 'weather_text.dart';
 import 'widgets/home_widgets.dart';
 import 'widgets/room_tile.dart';
+import '../../core/widgets/horizontal_scroller.dart';
 
 /// Zuhause: Raumkacheln, darunter konfigurierbare Widgets.
 class HomeScreen extends ConsumerStatefulWidget {
@@ -132,18 +133,21 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           );
           final quickChips = SizedBox(
             height: 56,
-            child: ListView.separated(
-              scrollDirection: Axis.horizontal,
-              padding: EdgeInsets.symmetric(horizontal: pad, vertical: 10),
-              itemCount: quick.length,
-              separatorBuilder: (_, _) => const SizedBox(width: 8),
-              itemBuilder: (context, i) => _QuickChip(
-                label: quick[i].$1,
-                icon: quick[i].$2,
-                onTap: () {
-                  HapticFeedback.selectionClick();
-                  quick[i].$3();
-                },
+            child: HorizontalScroller(
+              builder: (context, controller) => ListView.separated(
+                controller: controller,
+                scrollDirection: Axis.horizontal,
+                padding: EdgeInsets.symmetric(horizontal: pad, vertical: 10),
+                itemCount: quick.length,
+                separatorBuilder: (_, _) => const SizedBox(width: 8),
+                itemBuilder: (context, i) => _QuickChip(
+                  label: quick[i].$1,
+                  icon: quick[i].$2,
+                  onTap: () {
+                    HapticFeedback.selectionClick();
+                    quick[i].$3();
+                  },
+                ),
               ),
             ),
           );
