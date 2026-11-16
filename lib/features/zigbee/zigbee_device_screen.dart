@@ -17,15 +17,29 @@ import 'widgets/zb_common.dart';
 import 'zigbee_actions.dart';
 import 'zigbee_model.dart';
 import 'zigbee_providers.dart';
+import 'zigbee_selection.dart';
+import '../automations/knob_widgets.dart' show KnobAutomationLink;
 
 /// Gerät-Detail im Vollbild: Kopf, Hauptfunktion, Einstellungen, Diagnose,
 /// Rohdaten und Aktionen.
 class ZigbeeDeviceScreen extends ConsumerWidget {
-  const ZigbeeDeviceScreen({super.key, required this.ieee});
+  const ZigbeeDeviceScreen({
+    super.key,
+    required this.ieee,
+    this.embedded = false,
+  });
   final String ieee;
 
-  void _back(BuildContext context) =>
-      context.canPop() ? context.pop() : context.go('/zigbee');
+  /// Desktop: rechte Spalte im Master-Detail statt eigener Seite.
+  final bool embedded;
+
+  void _back(BuildContext context, WidgetRef ref) {
+    if (embedded) {
+      ref.read(zigbeeSelectionProvider.notifier).select(null);
+      return;
+    }
+    context.canPop() ? context.pop() : context.go('/zigbee');
+  }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -81,7 +95,7 @@ class ZigbeeDeviceScreen extends ConsumerWidget {
       body = _Body(view: view, classified: cls);
     }
     return Scaffold(
-      backgroundColor: hv.bg,
+      backgroundColor: embedded ? const Color(0x00000000) : hv.bg,
       body: SafeArea(
         bottom: false,
         child: Column(
@@ -91,9 +105,11 @@ class ZigbeeDeviceScreen extends ConsumerWidget {
               child: Row(
                 children: [
                   RoundIconButton(
-                    icon: Icons.arrow_back_rounded,
-                    label: 'Zurück',
-                    onTap: () => _back(context),
+                    icon: embedded
+                        ? Icons.close_rounded
+                        : Icons.arrow_back_rounded,
+                    label: embedded ? 'Schließen' : 'Zurück',
+                    onTap: () => _back(context, ref),
                   ),
                   const Spacer(),
                   if (view != null &&
@@ -150,6 +166,8 @@ class _Body extends ConsumerWidget {
         EntryAnimation(index: 0, child: _Hero(view: view)),
         const SizedBox(height: 14),
         EntryAnimation(index: 1, child: ZbMainFunction(view: view)),
+        // Drehregler/Taster: welche Haven-Automation sie steuert
+        KnobAutomationLink(ieee: view.ieee),
         if (hasSettings) ...[
           const SizedBox(height: 26),
           const SectionHeader('Einstellungen'),
@@ -677,6 +695,12 @@ class _Actions extends ConsumerWidget {
       return;
     }
     zbToast(context, '${view.name} wurde entfernt');
+    // Desktop (Master-Detail): nur die Auswahl aufheben.
+    final sel = ref.read(zigbeeSelectionProvider.notifier);
+    if (ref.read(zigbeeSelectionProvider) == view.ieee) {
+      sel.select(null);
+      return;
+    }
     if (context.canPop()) {
       context.pop();
     } else {

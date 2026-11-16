@@ -248,7 +248,7 @@ void main() {
     expect(find.text('Funknetz'), findsOneWidget);
     await tester.tap(find.text('Abläufe'));
     await tester.pumpAndSettle();
-    expect(find.text('Neuer Ablauf'), findsWidgets);
+    expect(find.text('Neue Automation'), findsWidgets);
   });
 
   testWidgets('Ohne Verbindung startet die App direkt mit dem Verbinden', (

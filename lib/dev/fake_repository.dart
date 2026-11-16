@@ -6,12 +6,14 @@ import '../data/base_repository.dart';
 import '../data/haven_repository.dart';
 import '../data/models/entity_state.dart';
 import '../data/models/floor_plan.dart';
+import '../data/models/haven_automation.dart';
 import '../data/models/room.dart';
 import '../data/models/snapshot.dart';
 import '../data/models/state_history.dart';
 import '../data/models/zigbee.dart';
 import '../data/models/zigbee_network.dart';
 import '../data/storage/settings_store.dart';
+import 'fake_automations.dart';
 import 'fake_data.dart';
 import 'fake_floor_plan.dart';
 import 'fake_rooms.dart';
@@ -57,6 +59,12 @@ class FakeRepository extends BaseRepository {
   final bool simulate;
   final Random _rng;
   final FakeZigbee _zb;
+  late final FakeAutomations _auto = FakeAutomations(
+    repo: this,
+    zigbee: _zb,
+    inventory: inventory,
+    simulate: simulate,
+  );
   final LocalPrefs _local;
   Set<String> _excluded = const {};
 
@@ -743,8 +751,29 @@ class FakeRepository extends BaseRepository {
   Future<ZbNetworkMap> zigbeeNetworkMap({bool refresh = false}) =>
       _zb.networkMap(refresh: refresh);
 
+  // ---- Haven-Automationen (Entwicklungsdaten, siehe fake_automations.dart) --
+  @override
+  Future<HavenAutomations> havenAutomations() => _auto.list();
+  @override
+  Future<HavenAutomation> saveHavenAutomation(HavenAutomation automation) =>
+      _auto.save(automation);
+  @override
+  Future<void> deleteHavenAutomation(String id) => _auto.delete(id);
+  @override
+  Future<void> testHavenAutomation(String id, String action) =>
+      _auto.test(id, action);
+  @override
+  Stream<AutomationTrigger> get automationTriggers => _auto.triggers;
+  @override
+  Stream<void> get automationsChanged => _auto.changed;
+
+  /// Simulierte Geste an einem Drehregler oder Taster (Tests, Live-Test).
+  Future<void> simulateGesture(String ieee, String action) =>
+      _auto.gesture(ieee, action);
+
   @override
   Future<void> dispose() async {
+    await _auto.dispose();
     await _zb.dispose();
     _timer?.cancel();
     for (final t in _installs.values) {

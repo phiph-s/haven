@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:material_ui/material_ui.dart';
 
+import '../../../core/adaptive/context_menu.dart';
+import '../../../core/adaptive/hover.dart';
 import '../../../core/state/providers.dart';
 import '../../../core/theme/tokens.dart';
 import '../../../core/widgets/animated_palette.dart';
@@ -48,99 +50,125 @@ class RoomTile extends ConsumerWidget {
           ? '${view.name}, $status. Lang drücken öffnet.'
           : '${view.name}, $status. Tippen schaltet, lang drücken öffnet.',
       onLongPress: open,
-      child: PressScale(
-        onTap: () {
-          if (view.lamps.isEmpty) return;
-          HapticFeedback.selectionClick();
-          repo.toggleRoom(roomId);
-        },
-        onLongPress: open,
-        child: SizedBox(
-          height: wide ? 150 : 132,
-          child: Stack(
-            children: [
-              Positioned.fill(child: TileSurface(palette: palette)),
-              Padding(
-                padding: const EdgeInsets.all(14),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        _IconDot(palette: palette),
-                        Flexible(
-                          child: FittedBox(
-                            fit: BoxFit.scaleDown,
-                            alignment: Alignment.centerRight,
-                            child: _Climate(view: view),
-                          ),
-                        ),
-                      ],
-                    ),
-                    Padding(
-                      padding: const EdgeInsets.only(right: 34),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+      // Desktop: Rechtsklick öffnet ein Menü (Raum öffnen, Licht).
+      child: GestureDetector(
+        onSecondaryTapUp: (d) =>
+            showHavenContextMenu(context, d.globalPosition, [
+              HavenMenuItem(
+                label: 'Raum öffnen',
+                icon: Icons.open_in_new_rounded,
+                onSelected: open,
+              ),
+              if (view.lamps.isNotEmpty)
+                HavenMenuItem(
+                  label: view.anyOn ? 'Licht aus' : 'Licht an',
+                  icon: view.anyOn
+                      ? Icons.lightbulb_outline_rounded
+                      : Icons.lightbulb_rounded,
+                  onSelected: () => repo.toggleRoom(roomId),
+                ),
+            ]),
+        child: PressScale(
+          hoverScale: 1.015,
+          onTap: () {
+            if (view.lamps.isEmpty) return;
+            HapticFeedback.selectionClick();
+            repo.toggleRoom(roomId);
+          },
+          onLongPress: open,
+          child: SizedBox(
+            height: wide ? 150 : 132,
+            child: Stack(
+              children: [
+                Positioned.fill(child: TileSurface(palette: palette)),
+                Padding(
+                  padding: const EdgeInsets.all(14),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          Text(
-                            view.name,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: HavenText.headline.copyWith(
-                              color: hv.tx,
-                              fontSize: 17,
-                            ),
-                          ),
-                          Text(
-                            status,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: HavenText.caption.copyWith(
-                              color: hv.tx2,
-                              fontSize: 12.5,
+                          _IconDot(palette: palette),
+                          Flexible(
+                            child: FittedBox(
+                              fit: BoxFit.scaleDown,
+                              alignment: Alignment.centerRight,
+                              child: _Climate(view: view),
                             ),
                           ),
                         ],
                       ),
-                    ),
-                  ],
+                      Padding(
+                        padding: const EdgeInsets.only(right: 34),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              view.name,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: HavenText.headline.copyWith(
+                                color: hv.tx,
+                                fontSize: 17,
+                              ),
+                            ),
+                            Text(
+                              status,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: HavenText.caption.copyWith(
+                                color: hv.tx2,
+                                fontSize: 12.5,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-              Positioned(
-                right: 0,
-                bottom: 0,
-                child: Semantics(
-                  container: true,
-                  button: true,
-                  label: '${view.name} öffnen',
-                  child: GestureDetector(
-                    behavior: HitTestBehavior.opaque,
-                    onTap: open,
-                    child: SizedBox(
-                      width: HavenSpace.touch,
-                      height: HavenSpace.touch,
-                      child: Center(
-                        child: Container(
-                          width: 28,
-                          height: 28,
-                          decoration: BoxDecoration(
-                            color: hv.s2,
-                            shape: BoxShape.circle,
-                          ),
-                          child: Icon(
-                            Icons.chevron_right_rounded,
-                            size: 20,
-                            color: hv.tx2,
+                Positioned(
+                  right: 0,
+                  bottom: 0,
+                  child: Semantics(
+                    container: true,
+                    button: true,
+                    label: '${view.name} öffnen',
+                    child: DesktopTooltip(
+                      message: '${view.name} öffnen',
+                      child: MouseRegion(
+                        cursor: SystemMouseCursors.click,
+                        child: GestureDetector(
+                          behavior: HitTestBehavior.opaque,
+                          onTap: open,
+                          child: SizedBox(
+                            width: HavenSpace.touch,
+                            height: HavenSpace.touch,
+                            child: Center(
+                              child: Container(
+                                width: 28,
+                                height: 28,
+                                decoration: BoxDecoration(
+                                  color: hv.s2,
+                                  shape: BoxShape.circle,
+                                ),
+                                child: Icon(
+                                  Icons.chevron_right_rounded,
+                                  size: 20,
+                                  color: hv.tx2,
+                                ),
+                              ),
+                            ),
                           ),
                         ),
                       ),
                     ),
                   ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),

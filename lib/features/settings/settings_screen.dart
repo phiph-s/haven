@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../../core/router/router.dart';
+import '../../core/panel/panel_host.dart';
 import '../../core/state/providers.dart';
 import '../../core/theme/tokens.dart';
 import '../../core/widgets/haven_button.dart';
@@ -93,6 +94,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     final session = ref.watch(sessionProvider);
     final snap = ref.watch(snapshotProvider);
     final isFake = session.mode == SessionMode.fake;
+    // Im HA-Panel: Anmeldung über HA, kein APK-Update.
+    final inPanel = ref.watch(panelModeProvider);
     final url = ref.watch(settingsStoreProvider).haUrl;
     final app = ref.watch(appUpdateProvider);
     final haUpdates = ref.watch(haUpdatesProvider);
@@ -184,14 +187,16 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     SettingsRow(
                       icon: Icons.link_rounded,
                       title: 'Adresse',
-                      subtitle: url ?? 'Nicht gesetzt',
+                      subtitle: inPanel
+                          ? 'In Home Assistant angemeldet'
+                          : (url ?? 'Nicht gesetzt'),
                     ),
                 ],
               ),
             ),
             const SizedBox(height: 12),
             pad(
-              isFake
+              isFake || inPanel
                   ? const SizedBox.shrink()
                   : Row(
                       children: [
@@ -274,34 +279,36 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             pad(
               SettingsGroup(
                 children: [
-                  SettingsRow(
-                    icon: Icons.system_update_alt_rounded,
-                    title: 'Haven-App',
-                    subtitle: app.available
-                        ? 'Version ${app.current}, ${app.release!.version} verfügbar'
-                        : (app.lastChecked == null
-                              ? 'Version ${app.current}'
-                              : 'Version ${app.current}, aktuell'),
-                    iconColor: app.available ? hv.acc : null,
-                  ),
-                  SettingsRow(
-                    icon: Icons.refresh_rounded,
-                    title: 'Nach Updates suchen',
-                    subtitle: app.phase == AppUpdatePhase.checking
-                        ? 'Sucht'
-                        : (app.error ??
-                              (app.lastChecked == null
-                                  ? 'Noch nicht geprüft'
-                                  : 'Zuletzt geprüft um ${_hhmm(app.lastChecked!)}')),
-                    onTap: () async {
-                      await ref.read(appUpdateProvider.notifier).check();
-                      if (!context.mounted) return;
-                      final s = ref.read(appUpdateProvider);
-                      if (s.error == null && !s.available) {
-                        showHavenToast(context, 'Haven ist aktuell');
-                      }
-                    },
-                  ),
+                  if (!inPanel) ...[
+                    SettingsRow(
+                      icon: Icons.system_update_alt_rounded,
+                      title: 'Haven-App',
+                      subtitle: app.available
+                          ? 'Version ${app.current}, ${app.release!.version} verfügbar'
+                          : (app.lastChecked == null
+                                ? 'Version ${app.current}'
+                                : 'Version ${app.current}, aktuell'),
+                      iconColor: app.available ? hv.acc : null,
+                    ),
+                    SettingsRow(
+                      icon: Icons.refresh_rounded,
+                      title: 'Nach Updates suchen',
+                      subtitle: app.phase == AppUpdatePhase.checking
+                          ? 'Sucht'
+                          : (app.error ??
+                                (app.lastChecked == null
+                                    ? 'Noch nicht geprüft'
+                                    : 'Zuletzt geprüft um ${_hhmm(app.lastChecked!)}')),
+                      onTap: () async {
+                        await ref.read(appUpdateProvider.notifier).check();
+                        if (!context.mounted) return;
+                        final s = ref.read(appUpdateProvider);
+                        if (s.error == null && !s.available) {
+                          showHavenToast(context, 'Haven ist aktuell');
+                        }
+                      },
+                    ),
+                  ],
                   SettingsRow(
                     icon: Icons.upgrade_rounded,
                     title: 'Updates in Home Assistant',
@@ -316,7 +323,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 ],
               ),
             ),
-            pad(const AppUpdatePanel()),
+            if (!inPanel) pad(const AppUpdatePanel()),
             section('Über Haven'),
             pad(
               SettingsGroup(

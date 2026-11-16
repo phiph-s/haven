@@ -26,8 +26,16 @@ import 'widgets/scene_card.dart';
 /// Taster stehen nicht hier, sondern in der Geräteansicht (dort steht,
 /// welchen Raum sie steuern).
 class RoomScreen extends ConsumerStatefulWidget {
-  const RoomScreen({super.key, required this.roomId, this.autoSheet = false});
+  const RoomScreen({
+    super.key,
+    required this.roomId,
+    this.autoSheet = false,
+    this.panel = false,
+  });
   final String roomId;
+
+  /// Desktop: Seitenpanel (alle Ecken rund, kein Griff, Schließen mit X).
+  final bool panel;
 
   /// Öffnet das Sheet "Farbe für alle" beim Start (Screenshots).
   final bool autoSheet;
@@ -72,7 +80,9 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
       );
     }
     final palette = view.palette(dark: hv.isDark);
-    const radius = BorderRadius.vertical(top: Radius.circular(HavenRadii.xl));
+    final radius = widget.panel
+        ? BorderRadius.circular(HavenRadii.l)
+        : const BorderRadius.vertical(top: Radius.circular(HavenRadii.xl));
     return AccentScope(
       palette: palette,
       child: DecoratedBox(
@@ -97,15 +107,24 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
                 child: DecoratedBox(
                   decoration: BoxDecoration(
                     borderRadius: radius,
-                    border: Border(top: BorderSide(color: hv.ln2)),
+                    border: widget.panel
+                        ? Border.all(color: hv.ln2)
+                        : Border(top: BorderSide(color: hv.ln2)),
                   ),
                 ),
               ),
               Column(
                 children: [
-                  const SheetGrabber(),
+                  if (widget.panel)
+                    const SizedBox(height: 14)
+                  else
+                    const SheetGrabber(),
                   Expanded(
-                    child: _RoomBody(view: view, palette: palette),
+                    child: _RoomBody(
+                      view: view,
+                      palette: palette,
+                      panel: widget.panel,
+                    ),
                   ),
                 ],
               ),
@@ -118,9 +137,14 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
 }
 
 class _RoomBody extends ConsumerWidget {
-  const _RoomBody({required this.view, required this.palette});
+  const _RoomBody({
+    required this.view,
+    required this.palette,
+    this.panel = false,
+  });
   final RoomView view;
   final RoomPalette palette;
+  final bool panel;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -165,7 +189,9 @@ class _RoomBody extends ConsumerWidget {
           child: Row(
             children: [
               RoundIconButton(
-                icon: Icons.keyboard_arrow_down_rounded,
+                icon: panel
+                    ? Icons.close_rounded
+                    : Icons.keyboard_arrow_down_rounded,
                 label: 'Schließen',
                 onTap: () => sheet != null ? sheet.close() : context.pop(),
               ),

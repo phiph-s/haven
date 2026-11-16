@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../core/panel/panel_host.dart';
 import '../../core/state/providers.dart';
 import 'app_installer.dart';
 import 'app_release.dart';
@@ -123,6 +124,8 @@ class AppUpdateController extends Notifier<AppUpdateState> {
 
   /// Beim Start: nur prüfen, wenn die letzte Prüfung lange genug her ist.
   Future<void> checkIfDue() async {
+    // Im HA-Panel gibt es kein APK zu aktualisieren.
+    if (ref.read(panelModeProvider)) return;
     if (state.busy || state.phase == AppUpdatePhase.checking) return;
     if (!isCheckDue(state.lastChecked, DateTime.now())) return;
     await check(manual: false);
@@ -130,6 +133,7 @@ class AppUpdateController extends Notifier<AppUpdateState> {
 
   /// Fragt GitHub. Bei [manual] landen Fehler im Zustand, sonst bleibt es still.
   Future<void> check({bool manual = true}) async {
+    if (ref.read(panelModeProvider)) return;
     if (state.phase == AppUpdatePhase.checking || state.busy) return;
     state = state.copyWith(phase: AppUpdatePhase.checking, clearError: true);
     try {

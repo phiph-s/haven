@@ -1,497 +1,374 @@
-import 'dart:async';
-
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../../core/theme/tokens.dart';
+import '../../core/widgets/entry_animation.dart';
 import '../../core/widgets/haptics.dart';
 import '../../core/widgets/haven_button.dart';
 import '../../core/widgets/haven_switch.dart';
 import '../../core/widgets/press_scale.dart';
 import '../../core/widgets/screen_header.dart';
-import '../../core/widgets/segmented.dart';
-import '../ha_web/ha_web_screen.dart';
+import '../../core/widgets/section_header.dart';
+import '../../core/widgets/skeleton.dart';
+import '../../data/models/haven_automation.dart';
 import '../settings/settings_widgets.dart';
 import 'automation_logic.dart';
 import 'automations_provider.dart';
+import 'haven_automations_provider.dart';
+import 'knob_logic.dart';
+import 'knob_widgets.dart';
 
-enum _Filter { all, on, off }
+/// Pfad der Liste der Home-Assistant-Automationen.
+const haAutomationsPath = '/automations/home-assistant';
 
-IconData _iconFor(String kind) => switch (kind) {
-  'motion' => Icons.sensors_rounded,
-  'knob' => Icons.radio_button_checked_rounded,
-  'fan' => Icons.air_rounded,
-  'humidity' => Icons.water_drop_outlined,
-  'sun' => Icons.wb_sunny_outlined,
-  'restart' => Icons.restart_alt_rounded,
-  'screen' => Icons.tv_rounded,
-  'warning' => Icons.warning_amber_rounded,
-  _ => Icons.auto_awesome_outlined,
-};
-
-/// Abläufe: Automationen auflisten, schalten, auslösen.
-class AutomationsScreen extends ConsumerStatefulWidget {
+/// Abläufe: oben die Haven-Automationen (laufen in der Integration), darunter
+/// der Weg zu den Home-Assistant-Automationen.
+class AutomationsScreen extends ConsumerWidget {
   const AutomationsScreen({super.key});
 
   @override
-  ConsumerState<AutomationsScreen> createState() => _AutomationsScreenState();
-}
-
-class _AutomationsScreenState extends ConsumerState<AutomationsScreen> {
-  _Filter _filter = _Filter.all;
-  String _query = '';
-
-  void _open(String path, String title) =>
-      context.push(haWebLocation(path, title: title));
-
-  Future<void> _run(AutomationItem a) async {
-    Haptics.tap();
-    await ref.read(automationActionsProvider).run(a.entityId);
-    if (mounted) showHavenToast(context, '${a.name} ausgeführt');
-  }
-
-  void _showActions(AutomationItem a) {
-    showHavenSheet<void>(
-      context,
-      builder: (ctx) => _ActionSheet(
-        item: a,
-        onRun: () {
-          Navigator.of(ctx).pop();
-          _run(a);
-        },
-        onEdit: () {
-          Navigator.of(ctx).pop();
-          _open(a.editPath, a.name);
-        },
-        onTrace: () {
-          Navigator.of(ctx).pop();
-          _open(a.tracePath, 'Verlauf');
-        },
-      ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final hv = context.hv;
-    final list = ref.watch(automationsProvider);
-    final active = list.items.where((a) => a.on).length;
-    final q = foldText(_query.trim());
-    final shown = [
-      for (final a in list.items)
-        if (switch (_filter) {
-              _Filter.all => true,
-              _Filter.on => a.on,
-              _Filter.off => !a.on,
-            } &&
-            (q.isEmpty ||
-                foldText(a.name).contains(q) ||
-                foldText(a.room ?? 'allgemein').contains(q)))
-          a,
-    ];
-    final groups = groupByRoom(shown, roomOrder: list.roomNames);
-    final now = DateTime.now();
+    final haven = ref.watch(havenAutomationsProvider);
+    final ha = ref.watch(automationsProvider);
+    final data = haven.value;
+    final items = data?.automations ?? const <HavenAutomation>[];
+    final haActive = ha.items.where((a) => a.on).length;
+    final active = items.where((a) => a.enabled).length;
 
-    // Flache Liste: Kopf (String) oder Ablauf.
-    final entries = <Object>[
-      for (final g in groups) ...[g.$1, ...g.$2],
-    ];
+    final subtitle = data == null
+        ? 'Haven und Home Assistant'
+        : items.isEmpty
+        ? 'Noch keine Haven-Automation'
+        : '$active von ${items.length} Haven-Automationen aktiv';
 
-    return ListView.builder(
+    return ListView(
       padding: const EdgeInsets.only(bottom: HavenSpace.navClearance),
-      itemCount: entries.length + 2,
-      itemBuilder: (context, i) {
-        if (i == 0) {
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        ScreenHeader(
+          title: 'Abläufe',
+          subtitle: subtitle,
+          actions: const [SettingsButton()],
+        ),
+        const SizedBox(height: 18),
+        const SectionHeader(
+          'Haven-Automationen',
+          padding: EdgeInsets.symmetric(horizontal: HavenSpace.page),
+        ),
+        const SizedBox(height: 4),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: HavenSpace.page),
+          child: Text(
+            'Laufen direkt in Haven, schnell und ohne HA-Automation.',
+            style: HavenText.body.copyWith(color: hv.tx2, fontSize: 14),
+          ),
+        ),
+        const SizedBox(height: 12),
+        if (haven.isLoading && data == null)
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: HavenSpace.page),
+            child: SkeletonScope(
+              label: 'Automationen laden',
+              child: Skeleton(
+                width: double.infinity,
+                height: 92,
+                radius: HavenRadii.l,
+              ),
+            ),
+          )
+        else if (data != null && !data.supported)
+          const _Notice(
+            icon: Icons.system_update_alt_rounded,
+            text:
+                'Deine Haven-Integration in Home Assistant kann noch keine '
+                'Automationen. Aktualisiere sie auf die neueste Version.',
+          )
+        else if (haven.hasError && data == null)
+          _Notice(
+            icon: Icons.cloud_off_rounded,
+            text: 'Automationen nicht erreichbar: ${haven.error}',
+          )
+        else if (items.isEmpty)
+          const _EmptyHaven()
+        else
+          for (final (i, a) in items.indexed)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(
+                HavenSpace.page,
+                0,
+                HavenSpace.page,
+                10,
+              ),
+              child: EntryAnimation(
+                index: i,
+                child: HavenAutomationCard(
+                  key: ValueKey(a.id),
+                  automation: a,
+                  roomName: data?.rooms[a.roomAreaId]?.name,
+                ),
+              ),
+            ),
+        if (data == null || data.supported)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(
+              HavenSpace.page,
+              6,
+              HavenSpace.page,
+              0,
+            ),
+            child: HavenButton(
+              label: 'Neue Automation',
+              icon: Icons.add_rounded,
+              primary: true,
+              onTap: () => context.push(knobEditorPath()),
+            ),
+          ),
+        const SizedBox(height: 30),
+        const SectionHeader(
+          'Home Assistant',
+          padding: EdgeInsets.symmetric(horizontal: HavenSpace.page),
+        ),
+        const SizedBox(height: 12),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: HavenSpace.page),
+          child: SettingsGroup(
             children: [
-              ScreenHeader(
-                title: 'Abläufe',
-                subtitle: list.items.isEmpty
-                    ? 'Noch keine Abläufe'
-                    : '$active von ${list.items.length} aktiv',
-                actions: const [SettingsButton()],
-              ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(20, 16, 20, 12),
-                child: HavenButton(
-                  label: 'Neuer Ablauf',
-                  icon: Icons.add_rounded,
-                  primary: true,
-                  onTap: () =>
-                      _open('/config/automation/edit/new', 'Neuer Ablauf'),
-                ),
-              ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
-                child: _SearchField(
-                  onChanged: (v) => setState(() => _query = v),
-                ),
-              ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(20, 0, 20, 6),
-                child: HavenSegmented<_Filter>(
-                  options: const [
-                    (_Filter.all, 'Alle'),
-                    (_Filter.on, 'Aktiv'),
-                    (_Filter.off, 'Aus'),
-                  ],
-                  selected: _filter,
-                  neutral: true,
-                  onChanged: (f) => setState(() => _filter = f),
-                ),
+              SettingsRow(
+                icon: Icons.home_work_outlined,
+                title: 'Home-Assistant-Automationen (${ha.items.length})',
+                subtitle: ha.items.isEmpty
+                    ? 'Keine vorhanden'
+                    : '$haActive aktiv · suchen, schalten, in HA bearbeiten',
+                onTap: () => context.push(haAutomationsPath),
               ),
             ],
-          );
-        }
-        if (i == entries.length + 1) {
-          if (entries.isNotEmpty) return const SizedBox.shrink();
-          return Padding(
-            padding: const EdgeInsets.fromLTRB(32, 48, 32, 0),
-            child: Text(
-              list.items.isEmpty
-                  ? 'Sobald Home Assistant Automationen hat, erscheinen sie hier.'
-                  : 'Nichts gefunden.',
-              textAlign: TextAlign.center,
-              style: HavenText.body.copyWith(color: hv.tx2),
-            ),
-          );
-        }
-        final e = entries[i - 1];
-        if (e is String) {
-          final n = groups.firstWhere((g) => g.$1 == e).$2.length;
-          return Padding(
-            padding: const EdgeInsets.fromLTRB(24, 20, 20, 8),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    e,
-                    style: HavenText.headline.copyWith(color: hv.tx),
-                  ),
-                ),
-                Text('$n', style: HavenText.label.copyWith(color: hv.tx3)),
-              ],
-            ),
-          );
-        }
-        final a = e as AutomationItem;
-        return Padding(
-          padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
-          child: _AutomationRow(
-            key: ValueKey(a.entityId),
-            item: a,
-            subtitle: a.on
-                ? 'zuletzt ${relativeTime(a.lastTriggered, now)}'
-                : 'ausgeschaltet',
-            onToggle: (v) => unawaited(
-              ref.read(automationActionsProvider).setEnabled(a.entityId, v),
-            ),
-            onRun: () => _run(a),
-            onEdit: () => _open(a.editPath, a.name),
-            onMore: () => _showActions(a),
           ),
-        );
-      },
-    );
-  }
-}
-
-class _SearchField extends StatelessWidget {
-  const _SearchField({required this.onChanged});
-  final ValueChanged<String> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    final hv = context.hv;
-    return Container(
-      height: 48,
-      padding: const EdgeInsets.symmetric(horizontal: 14),
-      decoration: BoxDecoration(
-        color: hv.s1,
-        borderRadius: BorderRadius.circular(HavenRadii.m),
-        border: Border.all(color: hv.ln),
-      ),
-      child: Row(
-        children: [
-          Icon(Icons.search_rounded, size: 20, color: hv.tx3),
-          const SizedBox(width: 10),
-          Expanded(
-            child: TextField(
-              onChanged: onChanged,
-              style: HavenText.body.copyWith(color: hv.tx),
-              cursorColor: hv.acc,
-              textInputAction: TextInputAction.search,
-              decoration: InputDecoration.collapsed(
-                hintText: 'Abläufe suchen',
-                hintStyle: HavenText.body.copyWith(color: hv.tx3),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _AutomationRow extends StatelessWidget {
-  const _AutomationRow({
-    super.key,
-    required this.item,
-    required this.subtitle,
-    required this.onToggle,
-    required this.onRun,
-    required this.onEdit,
-    required this.onMore,
-  });
-
-  final AutomationItem item;
-  final String subtitle;
-  final ValueChanged<bool> onToggle;
-  final VoidCallback onRun;
-  final VoidCallback onEdit;
-  final VoidCallback onMore;
-
-  @override
-  Widget build(BuildContext context) {
-    final hv = context.hv;
-    return Dismissible(
-      key: ValueKey('dismiss-${item.entityId}'),
-      // Aktion auslösen, Zeile bleibt: confirmDismiss gibt immer false zurück.
-      confirmDismiss: (dir) async {
-        if (dir == DismissDirection.startToEnd) {
-          onRun();
-        } else {
-          onEdit();
-        }
-        return false;
-      },
-      background: _SwipeBg(
-        color: hv.acc,
-        fg: hv.ai,
-        icon: Icons.play_arrow_rounded,
-        label: 'Jetzt ausführen',
-        alignLeft: true,
-      ),
-      secondaryBackground: _SwipeBg(
-        color: hv.s3,
-        fg: hv.tx,
-        icon: Icons.open_in_new_rounded,
-        label: 'Bearbeiten',
-        alignLeft: false,
-      ),
-      child: AnimatedOpacity(
-        opacity: item.on ? 1 : 0.62,
-        duration: context.motion(HavenMotion.d2),
-        child: PressScale(
-          onTap: onMore,
-          onLongPress: onMore,
-          pressedScale: 0.98,
-          child: Container(
-            constraints: const BoxConstraints(minHeight: 64),
-            padding: const EdgeInsets.fromLTRB(12, 6, 4, 6),
-            decoration: BoxDecoration(
-              color: hv.s1,
-              borderRadius: BorderRadius.circular(HavenRadii.m),
-              border: Border.all(color: hv.ln),
-            ),
-            child: Row(
-              children: [
-                Container(
-                  width: 38,
-                  height: 38,
-                  decoration: BoxDecoration(
-                    color: hv.s2,
-                    borderRadius: BorderRadius.circular(HavenRadii.s),
-                  ),
-                  child: Icon(
-                    _iconFor(automationKind(item.name)),
-                    size: 20,
-                    color: hv.tx2,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        item.name,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: HavenText.label.copyWith(
-                          color: hv.tx,
-                          fontSize: 14.5,
-                        ),
-                      ),
-                      Text(
-                        subtitle,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: HavenText.caption.copyWith(color: hv.tx2),
-                      ),
-                    ],
-                  ),
-                ),
-                _RunButton(onTap: item.available ? onRun : null),
-                HavenSwitch(
-                  value: item.on,
-                  semanticLabel: item.name,
-                  onChanged: item.available ? onToggle : null,
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _SwipeBg extends StatelessWidget {
-  const _SwipeBg({
-    required this.color,
-    required this.fg,
-    required this.icon,
-    required this.label,
-    required this.alignLeft,
-  });
-  final Color color;
-  final Color fg;
-  final IconData icon;
-  final String label;
-  final bool alignLeft;
-
-  @override
-  Widget build(BuildContext context) {
-    final children = [
-      Icon(icon, color: fg, size: 22),
-      const SizedBox(width: 8),
-      Text(label, style: HavenText.label.copyWith(color: fg)),
-    ];
-    return Container(
-      alignment: alignLeft ? Alignment.centerLeft : Alignment.centerRight,
-      padding: const EdgeInsets.symmetric(horizontal: 18),
-      decoration: BoxDecoration(
-        color: color,
-        borderRadius: BorderRadius.circular(HavenRadii.m),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: alignLeft ? children : children.reversed.toList(),
-      ),
-    );
-  }
-}
-
-/// Play-Knopf, zeigt nach dem Auslösen kurz ein Häkchen.
-class _RunButton extends StatefulWidget {
-  const _RunButton({required this.onTap});
-  final VoidCallback? onTap;
-
-  @override
-  State<_RunButton> createState() => _RunButtonState();
-}
-
-class _RunButtonState extends State<_RunButton> {
-  bool _ok = false;
-  Timer? _t;
-
-  @override
-  void dispose() {
-    _t?.cancel();
-    super.dispose();
-  }
-
-  void _tap() {
-    widget.onTap!();
-    setState(() => _ok = true);
-    _t?.cancel();
-    _t = Timer(const Duration(milliseconds: 1600), () {
-      if (mounted) setState(() => _ok = false);
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final hv = context.hv;
-    return Semantics(
-      button: true,
-      label: 'Jetzt ausführen',
-      excludeSemantics: true,
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: widget.onTap == null ? null : _tap,
-        child: SizedBox(
-          width: HavenSpace.touch,
-          height: HavenSpace.touch,
-          child: Center(
-            child: AnimatedContainer(
-              duration: context.motion(HavenMotion.d2),
-              width: 38,
-              height: 38,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: _ok ? hv.ok.withValues(alpha: 0.18) : hv.s2,
-              ),
-              child: Icon(
-                _ok ? Icons.check_rounded : Icons.play_arrow_rounded,
-                size: 22,
-                color: _ok ? hv.ok : hv.tx,
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _ActionSheet extends StatelessWidget {
-  const _ActionSheet({
-    required this.item,
-    required this.onRun,
-    required this.onEdit,
-    required this.onTrace,
-  });
-  final AutomationItem item;
-  final VoidCallback onRun;
-  final VoidCallback onEdit;
-  final VoidCallback onTrace;
-
-  @override
-  Widget build(BuildContext context) {
-    final hv = context.hv;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Text(item.name, style: HavenText.section.copyWith(color: hv.tx)),
-        const SizedBox(height: 2),
-        Text(
-          '${item.on ? 'Aktiv' : 'Ausgeschaltet'} · zuletzt ${relativeTime(item.lastTriggered, DateTime.now())}',
-          style: HavenText.body.copyWith(color: hv.tx2, fontSize: 14),
-        ),
-        const SizedBox(height: 16),
-        HavenButton(
-          label: 'Jetzt ausführen',
-          icon: Icons.play_arrow_rounded,
-          primary: true,
-          onTap: item.available ? onRun : null,
-        ),
-        const SizedBox(height: 10),
-        HavenButton(
-          label: 'In Home Assistant bearbeiten',
-          icon: Icons.open_in_new_rounded,
-          onTap: onEdit,
-        ),
-        const SizedBox(height: 10),
-        HavenButton(
-          label: 'Verlauf',
-          icon: Icons.history_rounded,
-          onTap: onTrace,
         ),
       ],
+    );
+  }
+}
+
+class _Notice extends StatelessWidget {
+  const _Notice({required this.icon, required this.text});
+  final IconData icon;
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    final hv = context.hv;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        HavenSpace.page,
+        0,
+        HavenSpace.page,
+        4,
+      ),
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: hv.s1,
+          borderRadius: BorderRadius.circular(HavenRadii.l),
+          border: Border.all(color: hv.ln),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(icon, color: hv.tx2, size: 22),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                text,
+                style: HavenText.body.copyWith(color: hv.tx2, fontSize: 14),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _EmptyHaven extends StatelessWidget {
+  const _EmptyHaven();
+
+  @override
+  Widget build(BuildContext context) {
+    final hv = context.hv;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        HavenSpace.page,
+        0,
+        HavenSpace.page,
+        4,
+      ),
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(16, 18, 16, 18),
+        decoration: BoxDecoration(
+          color: hv.s1,
+          borderRadius: BorderRadius.circular(HavenRadii.l),
+          border: Border.all(color: hv.ln),
+        ),
+        child: Row(
+          children: [
+            const GestureGlyph(icon: kRotateIcon, size: 52),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Drehregler für einen Raum',
+                    style: HavenText.label.copyWith(color: hv.tx, fontSize: 15),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    'Drehen dimmt, Drücken schaltet, Doppelt wechselt die Szene.',
+                    style: HavenText.body.copyWith(color: hv.tx2, fontSize: 14),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Karte einer Haven-Automation: Raum, Anzahl der Regler, Schalter,
+/// zuletzt ausgelöst, Hinweis auf doppelte HA-Automationen.
+class HavenAutomationCard extends ConsumerWidget {
+  const HavenAutomationCard({
+    super.key,
+    required this.automation,
+    this.roomName,
+  });
+
+  final HavenAutomation automation;
+  final String? roomName;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final hv = context.hv;
+    final a = automation;
+    final knobs = ref.watch(knobDevicesProvider);
+    final types = {for (final k in knobs) k.ieee: k.device.deviceType};
+    final nKnobs = a.devices.where((d) => types[d] != 'remote').length;
+    final nButtons = a.devices.length - nKnobs;
+    final parts = [
+      if (nKnobs > 0) nKnobs == 1 ? '1 Drehregler' : '$nKnobs Drehregler',
+      if (nButtons > 0) nButtons == 1 ? '1 Taster' : '$nButtons Taster',
+    ];
+    final conflicts = a.enabled
+        ? ref.watch(haConflictsProvider(a))
+        : const <HaConflict>[];
+    final fired = a.lastTriggered;
+    final last = fired == null
+        ? 'noch nie ausgelöst'
+        : 'zuletzt ${relativeTime(fired.at, DateTime.now())} · '
+              '${actionLabel(fired.action)}';
+
+    return AnimatedOpacity(
+      opacity: a.enabled ? 1 : 0.62,
+      duration: context.motion(HavenMotion.d2),
+      child: PressScale(
+        pressedScale: 0.98,
+        onTap: () => context.push(knobEditorPath(a.id)),
+        child: Container(
+          padding: const EdgeInsets.fromLTRB(14, 14, 6, 14),
+          decoration: BoxDecoration(
+            color: hv.s1,
+            borderRadius: BorderRadius.circular(HavenRadii.l),
+            border: Border.all(color: hv.ln),
+            boxShadow: hv.shadowSmall,
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  GestureGlyph(
+                    icon: nKnobs == 0
+                        ? Icons.radio_button_checked_rounded
+                        : kRotateIcon,
+                    active: a.enabled,
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          roomName ?? a.roomAreaId,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: HavenText.headline.copyWith(color: hv.tx),
+                        ),
+                        Text(
+                          [a.name, ...parts].join(' · '),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: HavenText.caption.copyWith(color: hv.tx2),
+                        ),
+                      ],
+                    ),
+                  ),
+                  HavenSwitch(
+                    value: a.enabled,
+                    semanticLabel: a.name,
+                    onChanged: (v) async {
+                      Haptics.tap();
+                      try {
+                        await ref
+                            .read(havenAutomationsProvider.notifier)
+                            .setEnabled(a.id!, v);
+                      } catch (e) {
+                        if (context.mounted) showHavenToast(context, '$e');
+                      }
+                    },
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  const SizedBox(width: 56),
+                  Icon(Icons.schedule_rounded, size: 14, color: hv.tx3),
+                  const SizedBox(width: 5),
+                  Expanded(
+                    child: Text(
+                      a.enabled ? last : 'ausgeschaltet',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: HavenText.caption.copyWith(color: hv.tx2),
+                    ),
+                  ),
+                ],
+              ),
+              if (conflicts.isNotEmpty) ...[
+                const SizedBox(height: 6),
+                Row(
+                  children: [
+                    const SizedBox(width: 56),
+                    Icon(Icons.warning_amber_rounded, size: 14, color: hv.warn),
+                    const SizedBox(width: 5),
+                    Expanded(
+                      child: Text(
+                        conflicts.length == 1
+                            ? 'Auch eine HA-Automation steuert diese Regler'
+                            : 'Auch ${conflicts.length} HA-Automationen steuern diese Regler',
+                        style: HavenText.caption.copyWith(color: hv.warn),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

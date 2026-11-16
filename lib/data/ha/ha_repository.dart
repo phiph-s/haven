@@ -9,6 +9,7 @@ import '../light_targets.dart';
 import '../models/device.dart';
 import '../models/entity_state.dart';
 import '../models/floor_plan.dart';
+import '../models/haven_automation.dart';
 import '../models/light_groups.dart';
 import '../models/room.dart';
 import '../models/snapshot.dart';
@@ -18,6 +19,7 @@ import '../models/zigbee_network.dart';
 import '../scene_styles.dart';
 import '../storage/settings_store.dart';
 import '../sync/app_data.dart';
+import 'ha_automations.dart';
 import 'ha_zigbee.dart';
 import 'ha_client.dart';
 
@@ -40,7 +42,10 @@ class HaRepository extends BaseRepository {
     this.failFast = false,
     LocalPrefs? localPrefs,
     this.registryDebounce = const Duration(milliseconds: 400),
-  }) : client = client ?? HaClient(url: url, token: token),
+    Future<String> Function()? tokenProvider,
+  }) : client =
+           client ??
+           HaClient(url: url, token: token, tokenProvider: tokenProvider),
        _local = localPrefs ?? MemoryPrefs();
 
   final HaClient client;
@@ -48,6 +53,7 @@ class HaRepository extends BaseRepository {
   final Duration registryDebounce;
   final LocalPrefs _local;
   late final HaZigbee _zb = HaZigbee(client);
+  late final HaAutomations _auto = HaAutomations(client);
 
   /// HA-Ereignisse, nach denen die Räume neu geladen werden.
   static const registryEvents = [
@@ -140,6 +146,7 @@ class HaRepository extends BaseRepository {
       // Nach jedem Verbinden: geteilte Dokumente abgleichen.
       emitAppData(AppDataKind.floorplan);
       emitAppData(AppDataKind.widgets);
+      _auto.notifyChanged();
     } catch (e) {
       debugPrint('Laden fehlgeschlagen: $e');
     }
@@ -183,6 +190,7 @@ class HaRepository extends BaseRepository {
 
   void _onDataUpdated(dynamic event) {
     final data = (event as Map?)?['data'] as Map?;
+    if (data?['kind'] == 'automations') return _auto.notifyChanged();
     final kind = AppDataKind.parse(data?['kind']);
     if (kind == null) return;
     if (kind == AppDataKind.prefs) {
@@ -791,9 +799,26 @@ class HaRepository extends BaseRepository {
   Future<ZbNetworkMap> zigbeeNetworkMap({bool refresh = false}) =>
       _zb.networkMap(refresh);
 
+  // ---- Haven-Automationen (haven/automations/*) ---------------------------
+  @override
+  Future<HavenAutomations> havenAutomations() => _auto.list();
+  @override
+  Future<HavenAutomation> saveHavenAutomation(HavenAutomation automation) =>
+      _auto.save(automation);
+  @override
+  Future<void> deleteHavenAutomation(String id) => _auto.delete(id);
+  @override
+  Future<void> testHavenAutomation(String id, String action) =>
+      _auto.test(id, action);
+  @override
+  Stream<AutomationTrigger> get automationTriggers => _auto.triggers;
+  @override
+  Stream<void> get automationsChanged => _auto.changed;
+
   @override
   Future<void> dispose() async {
     await _zb.dispose();
+    await _auto.dispose();
     _flush?.cancel();
     _roomsDebounce?.cancel();
     for (final t in _timers.values) {

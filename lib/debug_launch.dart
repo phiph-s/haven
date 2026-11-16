@@ -21,6 +21,14 @@ import 'package:material_ui/material_ui.dart';
 /// `menu=1` klappt die Auswahl der Kartenarten auf, `t=-20` stellt den
 /// Zeitstrahl der Bewegung auf vor 20 min.
 /// `screen=floorplan_editor&drag=<Entity>` zeigt das Ziehen-Label.
+/// `screen=floorplan_editor&preset=furniture` öffnet „Einrichten“,
+/// `fsel=<Möbel-ID>` wählt ein Möbelstück (z. B. `sofa`).
+/// `screen=zigbee&ieee=<IEEE>` wählt am Desktop ein Gerät (Master-Detail).
+/// `screen=map&inspect=<Raum>` wählt am Desktop einen Raum im Inspektor.
+/// `screen=automations_ha` zeigt die HA-Automationen, `screen=automation_new`
+/// den Drehregler-Assistenten (`room=`, `preset=<Schritt 0..6>`),
+/// `screen=automation_edit` eine Beispiel-Automation (`ieee=<ID>`,
+/// `preset=<Schritt>`), beide mit Beispielgesten im Live-Test.
 class LaunchOverrides {
   const LaunchOverrides({
     this.theme,
@@ -34,6 +42,8 @@ class LaunchOverrides {
     this.menu = false,
     this.drag,
     this.time,
+    this.furniture,
+    this.inspect,
   });
 
   factory LaunchOverrides.fromUri(Uri uri) {
@@ -55,6 +65,8 @@ class LaunchOverrides {
       menu: q['menu'] == '1',
       drag: q['drag'],
       time: q['t'],
+      furniture: q['fsel'],
+      inspect: q['inspect'],
     );
   }
 
@@ -86,6 +98,12 @@ class LaunchOverrides {
   /// Zeitstrahl der Bewegung in Minuten (z. B. `-20`).
   final String? time;
 
+  /// Gewähltes Möbelstück im Editor (Screenshot).
+  final String? furniture;
+
+  /// Raum im Inspektor der Desktop-Karte (Screenshot).
+  final String? inspect;
+
   /// Es gibt etwas zu überschreiben.
   bool get active => screen != null || theme != null || preset != null;
 
@@ -95,14 +113,19 @@ class LaunchOverrides {
     'sheet' => '/room/$room?sheet=1',
     'map' => Uri(
       path: '/map',
-      queryParameters: !menu && time == null
+      queryParameters: !menu && time == null && inspect == null
           ? null
-          : {if (menu) 'menu': '1', 't': ?time},
+          : {if (menu) 'menu': '1', 't': ?time, 'inspect': ?inspect},
     ).toString(),
     'floorplan_editor' =>
-      '/map/editor?mode=${preset == 'devices' ? 'devices' : 'rooms'}&sel=$room'
-          '${drag == null ? '' : '&drag=$drag'}',
-    'zigbee' => '/zigbee',
+      '/map/editor?mode=${switch (preset) {
+            'devices' => 'devices',
+            'furniture' => 'furniture',
+            _ => 'rooms',
+          }}&sel=$room'
+          '${drag == null ? '' : '&drag=$drag'}'
+          '${furniture == null ? '' : '&fsel=$furniture'}',
+    'zigbee' => ieee == null ? '/zigbee' : '/zigbee?select=$ieee',
     'zigbee_device' => '/zigbee/device/${ieee ?? '0x00124b0000000009'}',
     'zigbee_pair' => '/zigbee/pair',
     'zigbee_mesh' => Uri(
@@ -112,6 +135,11 @@ class LaunchOverrides {
           : {'select': ?ieee, 'filter': ?filter},
     ).toString(),
     'automations' => '/automations',
+    'automations_ha' => '/automations/home-assistant',
+    'automation_new' =>
+      '/automations/knob/new?room=$room&step=${preset ?? 0}&demo=1',
+    'automation_edit' =>
+      '/automations/knob/${ieee ?? 'demo-salon'}?step=${preset ?? 6}&demo=1',
     'settings' => '/settings',
     'updates' => '/settings/updates',
     'onboarding' => '/onboarding',

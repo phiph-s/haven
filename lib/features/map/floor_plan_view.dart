@@ -6,6 +6,7 @@ import 'package:material_ui/material_ui.dart';
 import '../../core/theme/tokens.dart';
 import '../../data/models/floor_plan.dart';
 import '../../data/models/polygon.dart';
+import 'furniture_painter.dart';
 
 /// Ein Knoten auf dem Grundriss: ein Widget an einem Punkt in Zellen.
 /// [id] ist frei wählbar (Entity-ID, Geräte-ID, `coordinator`) und taucht in
@@ -365,6 +366,9 @@ class FloorPlanView extends StatefulWidget {
     this.minScale = 1,
     this.maxScale = 4,
     this.transformationController,
+    this.showFurniture = true,
+    this.furnitureInk,
+    this.onRoomSecondaryTap,
   });
 
   final HavenFloorPlan plan;
@@ -420,6 +424,17 @@ class FloorPlanView extends StatefulWidget {
   final double minScale;
   final double maxScale;
   final TransformationController? transformationController;
+
+  /// Möbel als Linienzeichnung über den Räumen, unter Licht und Heatmap.
+  final bool showFurniture;
+
+  /// Stifte für die Möbel, sonst dezent ([FurnitureInk.map]).
+  final FurnitureInk? furnitureInk;
+
+  /// Rechtsklick (bzw. zweite Taste) auf einen Raum oder ins Freie
+  /// (`room == null`), mit der globalen Position fürs Kontextmenü.
+  final void Function(FloorRoom? room, Offset globalPosition)?
+  onRoomSecondaryTap;
 
   /// Größe der Zeichenfläche für den gegebenen Rahmen.
   static Size canvasSize({
@@ -714,6 +729,15 @@ class _FloorPlanViewState extends State<FloorPlanView>
                 widget.onOutsideTap?.call();
               }
             },
+            onSecondaryTapUp: widget.onRoomSecondaryTap == null
+                ? null
+                : (d) {
+                    final id = _geometry(size).roomAt(d.localPosition);
+                    widget.onRoomSecondaryTap!(
+                      id == null ? null : widget.plan.room(id),
+                      d.globalPosition,
+                    );
+                  },
             child: RepaintBoundary(
               child: CustomPaint(
                 painter: _LayersPainter(
@@ -728,6 +752,9 @@ class _FloorPlanViewState extends State<FloorPlanView>
                   showGrid: widget.showGrid,
                   showLabels: widget.showLabels,
                   showOutside: widget.showOutside,
+                  furniture: widget.showFurniture
+                      ? (widget.furnitureInk ?? FurnitureInk.map(hv))
+                      : null,
                   labels: _labels,
                   repaint: Listenable.merge([
                     _c,
@@ -894,6 +921,7 @@ class _LayersPainter extends CustomPainter {
     required this.showGrid,
     required this.showLabels,
     required this.showOutside,
+    required this.furniture,
     required this.labels,
     required Listenable repaint,
   }) : super(repaint: repaint);
@@ -909,6 +937,9 @@ class _LayersPainter extends CustomPainter {
   final bool showGrid;
   final bool showLabels;
   final bool showOutside;
+
+  /// Stifte für die Möbel, `null`: keine Möbel.
+  final FurnitureInk? furniture;
   final _LabelCache labels;
 
   @override
@@ -928,6 +959,10 @@ class _LayersPainter extends CustomPainter {
           ..strokeWidth = st?.borderWidth ?? 1
           ..color = st?.border ?? hv.ln2,
       );
+    }
+    final ink = furniture;
+    if (ink != null && plan.furniture.isNotEmpty) {
+      paintPlanFurniture(canvas, plan, geo, ink);
     }
     underlay?.paint(canvas, size, geo);
     if (showLabels) _labelsPaint(canvas, geo);
@@ -1032,4 +1067,23 @@ class _LayersPainter extends CustomPainter {
   // das Elternwidget neu baut. Pro Frame der Animation gilt `repaint`.
   @override
   bool shouldRepaint(_LayersPainter old) => true;
+}
+
+/// Zeichnet alle Möbel des Plans (Teppiche zuerst). Im Abstand-Modus wandern
+/// sie mit dem Raum, in dem ihre Mitte liegt. [skip] lässt eines aus (wird
+/// gerade gezogen und anders gezeichnet).
+void paintPlanFurniture(
+  Canvas canvas,
+  HavenFloorPlan plan,
+  FloorGeometry geo,
+  FurnitureInk ink, {
+  String? skip,
+}) {
+  for (final f in furnitureInPaintOrder(plan.furniture)) {
+    if (f.id == skip) continue;
+    final c = geo.gap == 0
+        ? geo.cellToPx(f.center)
+        : geo.pointToPx(PlanPoint(f.x, f.y, plan.locationOfFurniture(f)));
+    paintFurniture(canvas, f, c, geo.scale, ink);
+  }
 }

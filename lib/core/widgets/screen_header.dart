@@ -1,6 +1,9 @@
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:material_ui/material_ui.dart';
 
+import '../adaptive/breakpoints.dart';
+import '../panel/panel_host.dart';
 import '../theme/tokens.dart';
 import 'haven_card.dart';
 
@@ -75,11 +78,36 @@ class SettingsButton extends StatelessWidget {
   const SettingsButton({super.key});
 
   @override
-  Widget build(BuildContext context) => RoundIconButton(
-    icon: Icons.settings_outlined,
-    label: 'Einstellungen',
-    onTap: () => context.push('/settings'),
-  );
+  Widget build(BuildContext context) {
+    // Am Desktop stehen die Einstellungen in der Seitenleiste.
+    if (context.isDesktopLayout) return const SizedBox.shrink();
+    final settings = RoundIconButton(
+      icon: Icons.settings_outlined,
+      label: 'Einstellungen',
+      onTap: () => context.push('/settings'),
+    );
+    // Im HA-Panel in der Schmalansicht: Knopf für die Seitenleiste von HA,
+    // sonst käme man dort nicht mehr hin.
+    return Consumer(
+      builder: (context, ref, _) {
+        final narrow = ref.watch(
+          panelStateProvider.select((s) => s?.narrow ?? false),
+        );
+        if (!narrow) return settings;
+        return Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            RoundIconButton(
+              icon: Icons.menu_rounded,
+              label: 'Home-Assistant-Menü',
+              onTap: () => ref.read(panelHostProvider)?.toggleMenu(),
+            ),
+            settings,
+          ],
+        );
+      },
+    );
+  }
 }
 
 /// Schön gestaltete Seite für Bereiche, die später gebaut werden.
@@ -103,7 +131,7 @@ class PlaceholderScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final hv = context.hv;
     return ListView(
-      padding: const EdgeInsets.only(bottom: HavenSpace.navClearance),
+      padding: EdgeInsets.only(bottom: context.navClearance),
       children: [
         ScreenHeader(
           title: title,

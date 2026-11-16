@@ -367,4 +367,55 @@ void main() {
       await repo.dispose();
     });
   });
+
+  test(
+    'Token-Quelle (Panel): frisches Token bei jedem Verbindungsaufbau',
+    () async {
+      final channels = <FakeChannel>[];
+      var n = 0;
+      final client = HaClient(
+        url: 'http://ha.local:8123',
+        token: 'alt',
+        tokenProvider: () async => 'frisch${++n}',
+        minBackoff: const Duration(milliseconds: 10),
+        maxBackoff: const Duration(milliseconds: 40),
+        pingInterval: const Duration(minutes: 5),
+        channelFactory: (uri) {
+          final c = FakeChannel();
+          channels.add(c);
+          scheduleMicrotask(c.server.greet);
+          return c;
+        },
+      );
+      await client.start();
+      expect(channels.single.server.received.first['access_token'], 'frisch1');
+      channels.single.server.close();
+      await _until(() => channels.length == 2 && client.isConnected);
+      expect(channels.last.server.received.first['access_token'], 'frisch2');
+      await client.close();
+    },
+  );
+
+  test('Token-Quelle: abgelehntes Token wird zweimal neu geholt', () async {
+    final channels = <FakeChannel>[];
+    final client = HaClient(
+      url: 'http://ha.local:8123',
+      token: 'alt',
+      tokenProvider: () async => 'x',
+      minBackoff: const Duration(milliseconds: 5),
+      maxBackoff: const Duration(milliseconds: 10),
+      pingInterval: const Duration(minutes: 5),
+      channelFactory: (uri) {
+        final c = FakeChannel();
+        c.server.accept = channels.isNotEmpty;
+        channels.add(c);
+        scheduleMicrotask(c.server.greet);
+        return c;
+      },
+    );
+    await client.start();
+    expect(channels.length, 2, reason: 'zweiter Versuch mit neuem Token');
+    expect(client.isConnected, isTrue);
+    await client.close();
+  });
 }

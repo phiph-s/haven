@@ -46,66 +46,115 @@ void main() {
         .setMockMethodCallHandler(SystemChannels.platform, (_) async => null);
   });
 
-  testWidgets('Abläufe rendern mit den Beispieldaten', (tester) async {
-    await _pump(tester, '/automations');
-    expect(find.text('Abläufe'), findsWidgets);
-    expect(find.text('6 von 7 aktiv'), findsOneWidget);
-    expect(find.text('Neuer Ablauf'), findsOneWidget);
-    expect(find.text('Salon'), findsWidgets);
-    expect(find.textContaining('zuletzt vor'), findsWidgets);
-    expect(find.text('Salon Licht bei Bewegung'), findsOneWidget);
+  group('Abläufe-Tab', () {
+    testWidgets('oben Haven-Automationen, darunter HA als Eintrag', (
+      tester,
+    ) async {
+      await _pump(tester, '/automations');
+      expect(find.text('Abläufe'), findsWidgets);
+      expect(find.text('Haven-Automationen'), findsOneWidget);
+      expect(find.text('2 von 2 Haven-Automationen aktiv'), findsOneWidget);
+      // Karten mit Raum, Anzahl, zuletzt ausgelöst
+      expect(find.text('Salon'), findsOneWidget);
+      expect(find.text('Ruheraum'), findsOneWidget);
+      expect(find.textContaining('1 Drehregler'), findsOneWidget);
+      expect(find.textContaining('1 Taster'), findsOneWidget);
+      expect(find.textContaining('zuletzt vor 12 Min'), findsOneWidget);
+      // Taster Ruheraum hängt auch an einer HA-Automation
+      expect(
+        find.text('Auch eine HA-Automation steuert diese Regler'),
+        findsOneWidget,
+      );
+      expect(find.text('Neue Automation'), findsOneWidget);
+      expect(find.text('Home-Assistant-Automationen (7)'), findsOneWidget);
+      // Die HA-Liste steht nicht mehr direkt im Tab
+      expect(find.text('Salon Licht bei Bewegung'), findsNothing);
+    });
+
+    testWidgets('Schalter schaltet eine Haven-Automation aus', (tester) async {
+      await _pump(tester, '/automations');
+      await tester.tap(find.byType(HavenSwitch).first);
+      await tester.pumpAndSettle();
+      expect(find.text('1 von 2 Haven-Automationen aktiv'), findsOneWidget);
+      final all = await _repo.havenAutomations();
+      expect(all.byId('demo-salon')!.enabled, isFalse);
+      expect(find.text('ausgeschaltet'), findsOneWidget);
+    });
+
+    testWidgets('Eintrag öffnet die HA-Liste als Unterseite', (tester) async {
+      await _pump(tester, '/automations');
+      await tester.tap(find.text('Home-Assistant-Automationen (7)'));
+      await tester.pumpAndSettle();
+      expect(find.text('Home Assistant'), findsWidgets);
+      expect(find.text('6 von 7 aktiv'), findsOneWidget);
+      expect(find.text('Salon Licht bei Bewegung'), findsOneWidget);
+      expect(find.text('Neue HA-Automation'), findsOneWidget);
+      await tester.tap(find.byIcon(Icons.arrow_back_rounded));
+      await tester.pumpAndSettle();
+      expect(find.text('Haven-Automationen'), findsOneWidget);
+    });
   });
 
-  testWidgets('Suche filtert', (tester) async {
-    await _pump(tester, '/automations');
-    await tester.enterText(find.byType(TextField), 'Feuchte');
-    await tester.pumpAndSettle();
-    expect(find.text('Lüfter bei hoher Feuchte'), findsOneWidget);
-    expect(find.text('Salon Licht bei Bewegung'), findsNothing);
-    await tester.enterText(find.byType(TextField), 'zzzz');
-    await tester.pumpAndSettle();
-    expect(find.text('Nichts gefunden.'), findsOneWidget);
-  });
+  group('HA-Automationen (Unterseite)', () {
+    testWidgets('rendern mit den Beispieldaten', (tester) async {
+      await _pump(tester, '/automations/home-assistant');
+      expect(find.text('6 von 7 aktiv'), findsOneWidget);
+      expect(find.text('Salon'), findsWidgets);
+      expect(find.textContaining('zuletzt vor'), findsWidgets);
+      expect(find.text('Salon Licht bei Bewegung'), findsOneWidget);
+    });
 
-  testWidgets('Schalter legt Ablauf um und dämpft ihn', (tester) async {
-    await _pump(tester, '/automations');
-    const id = 'automation.lufter_bei_hoher_feuchte';
-    await tester.enterText(find.byType(TextField), 'hoher Feuchte');
-    await tester.pumpAndSettle();
-    expect(_repo.snapshot.entity(id)!.isOn, isTrue);
-    final sw = find.descendant(
-      of: find.ancestor(
-        of: find.text('Lüfter bei hoher Feuchte'),
-        matching: find.byType(Dismissible),
-      ),
-      matching: find.byType(HavenSwitch),
-    );
-    await tester.ensureVisible(sw.first);
-    await tester.tap(sw.first, warnIfMissed: false);
-    await tester.pump(const Duration(milliseconds: 100));
-    expect(_repo.snapshot.entity(id)!.isOn, isFalse);
-    await tester.pump(const Duration(seconds: 3));
-    await tester.enterText(find.byType(TextField), '');
-    await tester.pumpAndSettle();
-    expect(find.text('5 von 7 aktiv'), findsOneWidget);
-  });
+    testWidgets('Suche filtert', (tester) async {
+      await _pump(tester, '/automations/home-assistant');
+      await tester.enterText(find.byType(TextField), 'Feuchte');
+      await tester.pumpAndSettle();
+      expect(find.text('Lüfter bei hoher Feuchte'), findsOneWidget);
+      expect(find.text('Salon Licht bei Bewegung'), findsNothing);
+      await tester.enterText(find.byType(TextField), 'zzzz');
+      await tester.pumpAndSettle();
+      expect(find.text('Nichts gefunden.'), findsOneWidget);
+    });
 
-  testWidgets('Jetzt ausführen setzt last_triggered', (tester) async {
-    await _pump(tester, '/automations');
-    DateTime? newest() => _repo.snapshot.entities.values
-        .where((e) => e.domain == 'automation')
-        .map((e) => DateTime.tryParse('${e.attributes['last_triggered']}'))
-        .whereType<DateTime>()
-        .fold<DateTime?>(null, (m, d) => m == null || d.isAfter(m) ? d : m);
-    await tester.enterText(find.byType(TextField), 'hoher Feuchte');
-    await tester.pumpAndSettle();
-    final before = newest();
-    final run = find.byIcon(Icons.play_arrow_rounded);
-    await tester.ensureVisible(run.first);
-    await tester.tap(run.first, warnIfMissed: false);
-    await tester.pump(const Duration(milliseconds: 100));
-    expect(newest()!.isAfter(before!), isTrue);
-    expect(find.textContaining('ausgeführt'), findsWidgets);
-    await tester.pump(const Duration(seconds: 3));
+    testWidgets('Schalter legt Ablauf um und dämpft ihn', (tester) async {
+      await _pump(tester, '/automations/home-assistant');
+      const id = 'automation.lufter_bei_hoher_feuchte';
+      await tester.enterText(find.byType(TextField), 'hoher Feuchte');
+      await tester.pumpAndSettle();
+      expect(_repo.snapshot.entity(id)!.isOn, isTrue);
+      final sw = find.descendant(
+        of: find.ancestor(
+          of: find.text('Lüfter bei hoher Feuchte'),
+          matching: find.byType(Dismissible),
+        ),
+        matching: find.byType(HavenSwitch),
+      );
+      await tester.ensureVisible(sw.first);
+      await tester.tap(sw.first, warnIfMissed: false);
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(_repo.snapshot.entity(id)!.isOn, isFalse);
+      await tester.pump(const Duration(seconds: 3));
+      await tester.enterText(find.byType(TextField), '');
+      await tester.pumpAndSettle();
+      expect(find.text('5 von 7 aktiv'), findsOneWidget);
+    });
+
+    testWidgets('Jetzt ausführen setzt last_triggered', (tester) async {
+      await _pump(tester, '/automations/home-assistant');
+      DateTime? newest() => _repo.snapshot.entities.values
+          .where((e) => e.domain == 'automation')
+          .map((e) => DateTime.tryParse('${e.attributes['last_triggered']}'))
+          .whereType<DateTime>()
+          .fold<DateTime?>(null, (m, d) => m == null || d.isAfter(m) ? d : m);
+      await tester.enterText(find.byType(TextField), 'hoher Feuchte');
+      await tester.pumpAndSettle();
+      final before = newest();
+      final run = find.byIcon(Icons.play_arrow_rounded);
+      await tester.ensureVisible(run.first);
+      await tester.tap(run.first, warnIfMissed: false);
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(newest()!.isAfter(before!), isTrue);
+      expect(find.textContaining('ausgeführt'), findsWidgets);
+      await tester.pump(const Duration(seconds: 3));
+    });
   });
 }

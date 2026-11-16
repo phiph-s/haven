@@ -1,8 +1,14 @@
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:material_ui/material_ui.dart';
 
+import '../../core/adaptive/breakpoints.dart';
+import '../../core/adaptive/desktop_sidebar.dart';
+import '../../core/adaptive/hover.dart';
+import '../../core/state/providers.dart';
 import '../../core/theme/tokens.dart';
+import '../../core/widgets/accent_scope.dart';
 
 /// Hülle mit schwebender Navigation: Zuhause, Karte, Zigbee, Abläufe.
 class AppShell extends StatelessWidget {
@@ -19,6 +25,8 @@ class AppShell extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final hv = context.hv;
+    // Desktop: Seitenleiste statt schwebender Leiste, sonst unverändert.
+    if (context.isDesktopLayout) return _DesktopShell(shell: shell);
     return Scaffold(
       backgroundColor: hv.bg,
       body: Stack(
@@ -218,6 +226,76 @@ class _NavItem extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+/// Desktop-Hülle: Seitenleiste links (ab [WindowClass.large] mit
+/// Beschriftung), Inhalt rechts. Strg+1 bis 4 wechselt die Bereiche. Die
+/// Seitenleiste trägt die Lichtfarbe der Wohnung.
+class _DesktopShell extends ConsumerWidget {
+  const _DesktopShell({required this.shell});
+  final StatefulNavigationShell shell;
+
+  void _go(int i) {
+    if (i < 0 || i >= AppShell.tabs.length) return;
+    shell.goBranch(i, initialLocation: i == shell.currentIndex);
+  }
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final hv = context.hv;
+    final palette = ref.watch(houseViewProvider).palette(dark: hv.isDark);
+    final ctrl = ctrlLabel(context);
+    final digits = [
+      LogicalKeyboardKey.digit1,
+      LogicalKeyboardKey.digit2,
+      LogicalKeyboardKey.digit3,
+      LogicalKeyboardKey.digit4,
+    ];
+    return CallbackShortcuts(
+      bindings: {
+        for (var i = 0; i < digits.length; i++) ...{
+          SingleActivator(digits[i], control: true): () => _go(i),
+          SingleActivator(digits[i], meta: true): () => _go(i),
+        },
+      },
+      child: Scaffold(
+        backgroundColor: hv.bg,
+        body: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            AccentScope(
+              palette: palette,
+              child: DesktopSidebar(
+                extended: context.windowClass == WindowClass.large,
+                index: shell.currentIndex,
+                onSelect: _go,
+                items: [
+                  for (var i = 0; i < AppShell.tabs.length; i++)
+                    SidebarItem(
+                      icon: AppShell.tabs[i].$1,
+                      selectedIcon: AppShell.tabs[i].$2,
+                      label: AppShell.tabs[i].$3,
+                      shortcut: '$ctrl${i + 1}',
+                    ),
+                ],
+                footer: [
+                  Builder(
+                    builder: (context) => SidebarButton(
+                      icon: Icons.settings_outlined,
+                      label: 'Einstellungen',
+                      extended: context.windowClass == WindowClass.large,
+                      onTap: () => context.push('/settings'),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Expanded(child: shell),
+          ],
+        ),
+      ),
     );
   }
 }

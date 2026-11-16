@@ -2,6 +2,7 @@ import 'package:flutter/physics.dart';
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
+import '../adaptive/breakpoints.dart';
 import '../theme/tokens.dart';
 import 'system_bars.dart';
 
@@ -382,7 +383,13 @@ class _HavenSheetFrameState extends State<_HavenSheetFrame> {
           return Align(
             alignment: Alignment.bottomCenter,
             child: ConstrainedBox(
-              constraints: BoxConstraints(maxHeight: h - top),
+              // Desktop: Sheets bleiben lesbar schmal und mittig.
+              constraints: BoxConstraints(
+                maxHeight: h - top,
+                maxWidth: context.isDesktopLayout
+                    ? DesktopMetrics.readableWidth - 160
+                    : double.infinity,
+              ),
               child: AnimatedBuilder(
                 animation: route.animation!,
                 builder: (context, child) => FractionalTranslation(

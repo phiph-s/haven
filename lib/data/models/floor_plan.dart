@@ -4,8 +4,10 @@ import 'dart:ui' show Offset, Rect, Size;
 
 import 'package:flutter/foundation.dart';
 
+import 'furniture.dart';
 import 'polygon.dart';
 
+export 'furniture.dart';
 export 'polygon.dart' show GridPoint, PointLocation;
 
 /// Aktuelle Schema-Version des Grundrisses. Version 1 (Rechtecke, relative
@@ -398,6 +400,7 @@ class HavenFloorPlan {
     this.outside = const FloorOutside(),
     this.updatedAt,
     this.migratedFrom,
+    this.furniture = const [],
   });
 
   factory HavenFloorPlan.fromJson(Map<String, dynamic> j) {
@@ -420,7 +423,19 @@ class HavenFloorPlan {
       coordinator: c == null ? null : GridPoint.fromJson(c),
       outside: FloorOutside.fromJson(j['outside']),
       updatedAt: (j['updatedAt'] as num?)?.toInt(),
+      furniture: _furnitureFromJson(j['furniture']),
     );
+  }
+
+  /// Möbel sind optional (seit App 0.6). Unbrauchbare Einträge fallen weg,
+  /// doppelte IDs behalten den ersten.
+  static List<FloorFurniture> _furnitureFromJson(Object? raw) {
+    if (raw is! List) return const [];
+    final seen = <String>{};
+    return [
+      for (final f in raw.map(FloorFurniture.tryFromJson))
+        if (f != null && seen.add(f.id)) f,
+    ];
   }
 
   /// Version 1: Räume als Rechtecke, Platzierungen relativ zum Raum.
@@ -506,6 +521,12 @@ class HavenFloorPlan {
   /// Nur im Speicher, zählt nicht für `==`.
   final int? migratedFrom;
 
+  /// Möbel, nur optisch (siehe [FloorFurniture]). Optionales Feld im Schema 2:
+  /// `toJson` schreibt es immer, auch leer. Daran erkennt die Integration
+  /// ältere Clients, die es nicht kennen, und behält beim Speichern die
+  /// vorhandenen Möbel (siehe `ARCHITECTURE.md`, „Möbel“).
+  final List<FloorFurniture> furniture;
+
   Map<String, dynamic> toJson() => {
     'version': kFloorPlanVersion,
     'grid': grid.toJson(),
@@ -517,6 +538,7 @@ class HavenFloorPlan {
     if (coordinator != null) 'coordinator': coordinator!.toJson(),
     'outside': outside.toJson(),
     if (updatedAt != null) 'updatedAt': updatedAt,
+    'furniture': [for (final f in furniture) f.toJson()],
   };
 
   String encode() => jsonEncode(toJson());
@@ -647,6 +669,7 @@ class HavenFloorPlan {
     GridPoint? coordinator,
     bool clearCoordinator = false,
     FloorOutside? outside,
+    List<FloorFurniture>? furniture,
   }) => HavenFloorPlan(
     grid: grid ?? this.grid,
     rooms: rooms ?? this.rooms,
@@ -655,7 +678,41 @@ class HavenFloorPlan {
     outside: outside ?? this.outside,
     updatedAt: updatedAt,
     migratedFrom: migratedFrom,
+    furniture: furniture ?? this.furniture,
   );
+
+  // ---- Möbel ------------------------------------------------------------
+
+  FloorFurniture? furnitureById(String id) {
+    for (final f in furniture) {
+      if (f.id == id) return f;
+    }
+    return null;
+  }
+
+  /// Fügt das Möbelstück an oder ersetzt das mit gleicher ID (Reihenfolge
+  /// bleibt).
+  HavenFloorPlan withFurniture(FloorFurniture f) {
+    final i = furniture.indexWhere((x) => x.id == f.id);
+    final l = [...furniture];
+    if (i < 0) {
+      l.add(f);
+    } else {
+      l[i] = f;
+    }
+    return copyWith(furniture: l);
+  }
+
+  HavenFloorPlan withoutFurniture(String id) => copyWith(
+    furniture: [
+      for (final f in furniture)
+        if (f.id != id) f,
+    ],
+  );
+
+  /// Raum, in dem die Mitte des Möbelstücks liegt, sonst [kOutsideId].
+  String locationOfFurniture(FloorFurniture f) =>
+      roomAt(f.center)?.id ?? kOutsideId;
 
   /// Fügt den Raum an oder ersetzt den mit gleicher ID.
   HavenFloorPlan withRoom(FloorRoom r) {
@@ -689,6 +746,10 @@ class HavenFloorPlan {
           if (locationOf(p) != id) p,
       ],
       coordinator: c != null && locationOfCell(c.x, c.y) == id ? null : c,
+      furniture: [
+        for (final f in furniture)
+          if (!r.contains(f.center)) f,
+      ],
     );
   }
 
@@ -706,6 +767,12 @@ class HavenFloorPlan {
       coordinator: c != null && locationOfCell(c.x, c.y) == id
           ? c.translate(dx, dy)
           : null,
+      furniture: [
+        for (final f in furniture)
+          r.contains(f.center)
+              ? f.moveTo(f.center + Offset(dx.toDouble(), dy.toDouble()))
+              : f,
+      ],
     ).withRoom(r.translate(dx, dy));
   }
 
@@ -1047,6 +1114,7 @@ class HavenFloorPlan {
       other.outside == outside &&
       listEquals(other.rooms, rooms) &&
       listEquals(other.placements, placements) &&
+      listEquals(other.furniture, furniture) &&
       other.coordinator == coordinator;
 
   @override
@@ -1056,5 +1124,6 @@ class HavenFloorPlan {
     Object.hashAll(rooms),
     Object.hashAll(placements),
     coordinator,
+    Object.hashAll(furniture),
   );
 }

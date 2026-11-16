@@ -168,6 +168,11 @@ class FakeZigbee {
   void _emitState(String ieee, Map<String, dynamic> values) =>
       _events.add(ZbEvent('state', {'ieee': ieee, 'values': values}));
 
+  /// Gerätemeldung von außen (simulierte Gesten der Haven-Automationen).
+  void emitDeviceState(String ieee, Map<String, dynamic> values) {
+    if (!_events.isClosed) _emitState(ieee, values);
+  }
+
   Future<void> set(String ieee, Map<String, dynamic> values) async {
     if (!_states.containsKey(ieee)) {
       throw HavenException('Gerät nicht gefunden.', code: 'not_found');

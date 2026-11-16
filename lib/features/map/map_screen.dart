@@ -4,6 +4,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:material_ui/material_ui.dart';
 
+import '../../core/adaptive/breakpoints.dart';
+import '../../core/adaptive/context_menu.dart';
 import '../../core/light/color_math.dart';
 import '../../core/light/room_palette.dart';
 import '../../core/router/router.dart';
@@ -29,6 +31,7 @@ import 'floor_plan_view.dart';
 import 'heatmap.dart';
 import 'map_data.dart';
 import 'map_layer_widgets.dart';
+import 'map_inspector.dart';
 import 'map_layers.dart';
 import 'map_markers.dart';
 import 'map_painters.dart';
@@ -39,11 +42,18 @@ import 'map_routes.dart';
 /// Bewegung, Funknetz, Batterie). Die Lichtfarbe der Wohnung färbt Akzent
 /// und Glow.
 class MapScreen extends ConsumerWidget {
-  const MapScreen({super.key, this.startMenu = false, this.startMinutes});
+  const MapScreen({
+    super.key,
+    this.startMenu = false,
+    this.startMinutes,
+    this.startInspect,
+  });
 
-  /// Nur für Screenshots: Auswahl aufgeklappt, Zeitstrahl verschoben.
+  /// Nur für Screenshots: Auswahl aufgeklappt, Zeitstrahl verschoben,
+  /// Raum im Inspektor (Desktop).
   final bool startMenu;
   final double? startMinutes;
+  final String? startInspect;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -76,6 +86,7 @@ class MapScreen extends ConsumerWidget {
                         plan: p,
                         startMenu: startMenu,
                         startMinutes: startMinutes,
+                        startInspect: startInspect,
                       )
                     : const _EmptyMap(),
               ),
@@ -184,7 +195,7 @@ class _MapHeader extends ConsumerWidget {
             label: 'Grundriss bearbeiten',
             onTap: () => context.push(mapEditorPath),
           ),
-        const SettingsButton(),
+        if (!context.isDesktopLayout) const SettingsButton(),
       ],
     );
   }
@@ -198,10 +209,12 @@ class _MapBody extends ConsumerStatefulWidget {
     required this.plan,
     this.startMenu = false,
     this.startMinutes,
+    this.startInspect,
   });
   final HavenFloorPlan plan;
   final bool startMenu;
   final double? startMinutes;
+  final String? startInspect;
 
   @override
   ConsumerState<_MapBody> createState() => _MapBodyState();
@@ -214,6 +227,9 @@ class _MapBodyState extends ConsumerState<_MapBody> {
   final _mesh = ValueNotifier(const MeshViewState());
   String? _meshSel;
   late bool _menuOpen = widget.startMenu;
+
+  /// Raum im Inspektor (nur Desktop).
+  late String? _inspect = widget.startInspect;
   final _pickerKey = GlobalKey<MapLayerPickerState>();
 
   // Bewegung: Zeitstrahl und Takt fürs Abklingen.
@@ -314,6 +330,12 @@ class _MapBodyState extends ConsumerState<_MapBody> {
   }
 
   void _tapRoom(FloorRoom r) {
+    // Desktop: der Inspektor rechts zeigt den Raum, geöffnet wird von dort.
+    if (context.isDesktopLayout) {
+      Haptics.tick();
+      setState(() => _inspect = _inspect == r.id ? null : r.id);
+      return;
+    }
     final sr = snapshotRoomFor(ref.read(snapshotProvider), r);
     if (sr != null && sr.lightIds.isNotEmpty) {
       Haptics.tick();
@@ -321,6 +343,52 @@ class _MapBodyState extends ConsumerState<_MapBody> {
     } else {
       _say('${r.name} hat noch keine Lichter');
     }
+  }
+
+  /// Rechtsklick auf die Karte (Desktop).
+  void _secondaryRoom(FloorRoom? r, Offset at) {
+    final items = <HavenMenuItem>[];
+    if (r != null) {
+      final sr = snapshotRoomFor(ref.read(snapshotProvider), r);
+      final view = sr == null ? null : ref.read(roomViewProvider(sr.id));
+      setState(() => _inspect = r.id);
+      if (sr != null && sr.lightIds.isNotEmpty) {
+        items.add(
+          HavenMenuItem(
+            label: 'Raum öffnen',
+            icon: Icons.open_in_new_rounded,
+            onSelected: () => context.push(Routes.room(sr.id)),
+          ),
+        );
+      }
+      if (view != null && view.lamps.isNotEmpty) {
+        items.add(
+          HavenMenuItem(
+            label: view.anyOn ? 'Licht aus' : 'Licht an',
+            icon: view.anyOn
+                ? Icons.lightbulb_outline_rounded
+                : Icons.lightbulb_rounded,
+            onSelected: () => ref.read(repositoryProvider).toggleRoom(view.id),
+          ),
+        );
+      }
+      items.add(
+        HavenMenuItem(
+          label: 'Einrichten',
+          icon: Icons.chair_outlined,
+          onSelected: () =>
+              context.push('$mapEditorPath?mode=furniture&sel=${r.id}'),
+        ),
+      );
+    }
+    items.add(
+      HavenMenuItem(
+        label: 'Grundriss bearbeiten',
+        icon: Icons.edit_outlined,
+        onSelected: () => context.push(mapEditorPath),
+      ),
+    );
+    showHavenContextMenu(context, at, items);
   }
 
   void _setLayer(MapLayer l) {
@@ -349,6 +417,8 @@ class _MapBodyState extends ConsumerState<_MapBody> {
       MapLayer.network => _networkView(plan),
       MapLayer.battery => _batteryView(plan, readings),
     };
+
+    if (context.isDesktopLayout) return _desktop(context, plan, layer, v);
 
     return Stack(
       children: [
@@ -453,6 +523,111 @@ class _MapBodyState extends ConsumerState<_MapBody> {
             startOpen: widget.startMenu,
             onChanged: _setLayer,
             onOpenChanged: (o) => setState(() => _menuOpen = o),
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// Desktop: Karte mit viel Fläche (Mausrad zoomt), rechts der Inspektor.
+  Widget _desktop(
+    BuildContext context,
+    HavenFloorPlan plan,
+    MapLayer layer,
+    _LayerView v,
+  ) {
+    final hv = context.hv;
+    final inspect = _inspect != null && plan.room(_inspect!) != null
+        ? _inspect
+        : null;
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Expanded(
+          child: Stack(
+            children: [
+              Positioned.fill(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 4, 8, 20),
+                  child: EntryAnimation(
+                    index: 1,
+                    child: FloorPlanView(
+                      key: const ValueKey('map'),
+                      plan: v.plan,
+                      gap: v.gap,
+                      reserveGap: 2,
+                      fill: true,
+                      maxScale: 6,
+                      nodes: v.nodes,
+                      nodeBuilder: v.nodeBuilder,
+                      underlayPainter: v.underlay,
+                      overlayPainter: v.overlay,
+                      roomStyle: (r) {
+                        final base = v.roomStyle?.call(r);
+                        if (r.id != inspect) return base;
+                        return FloorRoomStyle(
+                          fill: base?.fill,
+                          border: hv.acc,
+                          borderWidth: 2,
+                        );
+                      },
+                      roomSubtitle: v.subtitle,
+                      onNodeTap: v.onNodeTap,
+                      onRoomTap: v.onRoomTap,
+                      onOutsideTap: () {
+                        if (_inspect != null) {
+                          setState(() => _inspect = null);
+                        }
+                        v.onOutsideTap?.call();
+                      },
+                      onRoomSecondaryTap: _secondaryRoom,
+                      showOutside: v.showOutside,
+                    ),
+                  ),
+                ),
+              ),
+              Positioned.fill(
+                child: IgnorePointer(
+                  ignoring: !_menuOpen,
+                  child: AnimatedOpacity(
+                    opacity: _menuOpen ? 1 : 0,
+                    duration: context.motion(HavenMotion.d2),
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: () => _pickerKey.currentState?.close(),
+                      child: ColoredBox(color: hv.bg.withValues(alpha: 0.55)),
+                    ),
+                  ),
+                ),
+              ),
+              Positioned(
+                top: 2,
+                right: 14,
+                child: MapLayerPicker(
+                  key: _pickerKey,
+                  layer: layer,
+                  startOpen: widget.startMenu,
+                  onChanged: _setLayer,
+                  onOpenChanged: (o) => setState(() => _menuOpen = o),
+                ),
+              ),
+            ],
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(8, 0, 20, 20),
+          child: SizedBox(
+            width: DesktopMetrics.sideColumn,
+            child: MapInspector(
+              plan: plan,
+              selected: inspect,
+              onSelect: (id) => setState(() => _inspect = id),
+              layerCard: KeyedSubtree(
+                key: ValueKey('card-${layer.name}'),
+                child: v.card,
+              ),
+              info: _info,
+            ),
           ),
         ),
       ],
@@ -1114,11 +1289,11 @@ class _EmptyMap extends StatelessWidget {
   Widget build(BuildContext context) {
     final hv = context.hv;
     return ListView(
-      padding: const EdgeInsets.fromLTRB(
+      padding: EdgeInsets.fromLTRB(
         HavenSpace.page,
         24,
         HavenSpace.page,
-        HavenSpace.navClearance,
+        context.navClearance,
       ),
       children: [
         EntryAnimation(

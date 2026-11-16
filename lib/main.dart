@@ -2,10 +2,12 @@ import 'dart:async';
 
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_web_plugins/url_strategy.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'app.dart';
+import 'core/panel/panel_host.dart';
 import 'core/state/providers.dart';
 import 'dev/fake_flag.dart';
 import 'dev/fake_repository.dart';
@@ -24,13 +26,28 @@ Future<void> main() async {
     SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]),
   );
 
-  final launch = LaunchOverrides.fromUri(Uri.base);
+  // Als Seitenleisten-Eintrag in Home Assistant (Web, `haven-panel.js`):
+  // Anmeldung, Theme und Adresse kommen aus HA, die URL gehört HA.
+  final panel = detectPanelHost();
+  if (panel != null) setUrlStrategy(null);
+  // Nur Entwicklungsdaten: Panel-Probe in einer HA-Attrappe mit `?screen=`,
+  // dann laufen Fake-Daten im echten Panel-Rahmen (Screenshots).
+  final panelProbe =
+      kHavenFake &&
+      panel != null &&
+      Uri.base.queryParameters.containsKey('screen');
+
+  final launch = panel != null && !panelProbe
+      ? LaunchOverrides.none
+      : LaunchOverrides.fromUri(Uri.base);
   final store = SettingsStore(await SharedPreferences.getInstance());
   final tokens = SecureTokenStore();
   if (launch.theme != null) await store.setThemeMode(launch.theme!);
   if (launch.layer != null) await store.setMapLayer(launch.layer!);
 
-  final session = await _bootstrap(store, tokens, launch);
+  final session = panel != null && !panelProbe
+      ? panelSession(panel, store)
+      : await _bootstrap(store, tokens, launch);
 
   runApp(
     ProviderScope(
@@ -39,6 +56,10 @@ Future<void> main() async {
         tokenStoreProvider.overrideWithValue(tokens),
         initialSessionProvider.overrideWithValue(session),
         appVersionProvider.overrideWithValue(await _appVersion()),
+        if (panel != null) ...[
+          panelHostProvider.overrideWithValue(panel),
+          themeModeProvider.overrideWith(() => PanelThemeModeController(panel)),
+        ],
         // Entwicklungsdaten: erfundene Releases, kein Netz zu GitHub.
         if (kHavenFake && session.mode == SessionMode.fake) ...[
           httpClientProvider.overrideWithValue(buildFakeReleaseClient()),
@@ -83,6 +104,20 @@ Future<Session> _bootstrap(
       return Session(SessionMode.ha, repo);
   }
   return const Session(SessionMode.none);
+}
+
+/// Sitzung im HA-Panel: dieselbe Herkunft wie HA, Token aus `hass.auth`
+/// (vor jedem Verbindungsaufbau frisch geholt). Kein Onboarding.
+Session panelSession(PanelHost panel, SettingsStore store) {
+  final s = panel.state;
+  final repo = HaRepository(
+    url: s.origin ?? Uri.base.origin,
+    token: s.token ?? '',
+    tokenProvider: panel.freshToken,
+    localPrefs: store,
+  );
+  unawaited(repo.start().catchError((Object _) {}));
+  return Session(SessionMode.ha, repo);
 }
 
 /// Version aus `pubspec.yaml` (über das Plattform-Paket).

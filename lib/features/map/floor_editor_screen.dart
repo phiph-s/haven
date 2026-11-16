@@ -3,10 +3,14 @@ import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/gestures.dart' show DragStartBehavior;
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:material_ui/material_ui.dart';
 
+import '../../core/adaptive/breakpoints.dart';
+import '../../core/adaptive/context_menu.dart';
+import '../../core/adaptive/hover.dart';
 import '../../core/state/providers.dart';
 import '../../core/theme/tokens.dart';
 import '../../core/widgets/haptics.dart';
@@ -21,9 +25,29 @@ import 'floor_assign_sheet.dart';
 import 'floor_editor_ops.dart';
 import 'floor_plan_store.dart';
 import 'floor_plan_view.dart';
+import 'furniture_library.dart';
+import 'furniture_ops.dart';
+import 'furniture_painter.dart';
 import 'map_markers.dart';
 
-enum _Mode { rooms, devices }
+enum _Mode { rooms, devices, furniture }
+
+enum _FurnOpKind { move, resize, rotate }
+
+/// Laufende Geste an einem Möbelstück.
+class _FurnOp {
+  _FurnOp(this.kind, this.base, this.item, this.start, {this.handle});
+  final _FurnOpKind kind;
+
+  /// Stand vor der Geste (Rückgängig).
+  final HavenFloorPlan base;
+  final FloorFurniture item;
+
+  /// Zelle bei Gestenbeginn.
+  final Offset start;
+  final FurnitureHandle? handle;
+  bool changed = false;
+}
 
 enum _OpKind { create, move, vertex, edge }
 
@@ -67,12 +91,18 @@ class FloorEditorScreen extends ConsumerStatefulWidget {
   const FloorEditorScreen({
     super.key,
     this.startInDevices = false,
+    this.startInFurniture = false,
     this.startSelected,
+    this.startFurniture,
     this.startDrag,
   });
 
   /// Nur für Screenshots und Tests.
   final bool startInDevices;
+  final bool startInFurniture;
+
+  /// Gewähltes Möbelstück beim Start (Screenshots, Tests).
+  final String? startFurniture;
   final String? startSelected;
 
   /// Zeigt das Ziehen-Label für diese Entity (Screenshot, kein echtes Ziehen).
@@ -85,8 +115,16 @@ class FloorEditorScreen extends ConsumerStatefulWidget {
 class _FloorEditorScreenState extends ConsumerState<FloorEditorScreen> {
   HavenFloorPlan? _plan;
   final List<HavenFloorPlan> _undo = [];
-  late _Mode _mode = widget.startInDevices ? _Mode.devices : _Mode.rooms;
+  late _Mode _mode = widget.startInFurniture
+      ? _Mode.furniture
+      : (widget.startInDevices ? _Mode.devices : _Mode.rooms);
   String? _sel;
+
+  /// Gewähltes Möbelstück (Modus „Einrichten“).
+  late String? _fsel = widget.startFurniture;
+  _FurnOp? _fop;
+  MouseCursor _cursor = MouseCursor.defer;
+  final _focus = FocusNode(debugLabel: 'Grundriss-Editor');
   String? _hover;
   GridPoint? _dragCell;
   _Op? _op;
@@ -108,6 +146,7 @@ class _FloorEditorScreenState extends ConsumerState<FloorEditorScreen> {
   void dispose() {
     _hintTimer?.cancel();
     _dragInfo.dispose();
+    _focus.dispose();
     super.dispose();
   }
 
@@ -137,9 +176,23 @@ class _FloorEditorScreenState extends ConsumerState<FloorEditorScreen> {
     setState(() {
       _plan = prev;
       if (_sel != null && prev.room(_sel!) == null) _sel = null;
+      if (_fsel != null && prev.furnitureById(_fsel!) == null) _fsel = null;
     });
     unawaited(ref.read(floorPlanProvider.notifier).save(prev));
   }
+
+  /// Eine Geste hat den Plan schon live geändert: [before] in den
+  /// Rückgängig-Stapel, aktuellen Stand speichern.
+  void _record(HavenFloorPlan before) {
+    final plan = _plan!;
+    if (before == plan) return;
+    _undo.add(before);
+    if (_undo.length > 40) _undo.removeAt(0);
+    unawaited(ref.read(floorPlanProvider.notifier).save(plan));
+    setState(() {});
+  }
+
+  void _close() => context.canPop() ? context.pop() : context.go('/map');
 
   // ---- Geometrie -------------------------------------------------------
 
@@ -647,6 +700,590 @@ class _FloorEditorScreenState extends ConsumerState<FloorEditorScreen> {
     );
   }
 
+  // ---- Einrichten (Möbel) ----------------------------------------------------
+
+  FloorFurniture? get _selFurniture =>
+      _fsel == null ? null : _plan?.furnitureById(_fsel!);
+
+  Offset _cellOf(Offset px) => _geo!.pxToCell(px);
+
+  /// Treffer-Toleranz in Zellen (etwa 6 px), damit Fenster greifbar sind.
+  double get _furnTolerance => 6 / (_geo?.scale ?? 20);
+
+  /// Griffe sind am Touchscreen größer.
+  double get _handleRadius => context.isDesktopLayout ? 11 : 22;
+
+  bool get _shift => HardwareKeyboard.instance.isShiftPressed;
+
+  List<(FurnitureHandle, Offset)> _handlesOf(FloorFurniture f) =>
+      furnitureHandlePoints(
+        f,
+        _geo!.cellToPx,
+        rotateGap: context.isDesktopLayout ? 24 : 32,
+      );
+
+  FurnitureHandle? _furnHandleAt(Offset px) {
+    final sel = _selFurniture;
+    if (sel == null || _geo == null) return null;
+    return furnitureHandleAt(_handlesOf(sel), px, radius: _handleRadius);
+  }
+
+  void _fPanStart(DragStartDetails d) {
+    final plan = _plan!;
+    final p = d.localPosition;
+    final cell = _cellOf(p);
+    final sel = _selFurniture;
+    final h = _furnHandleAt(p);
+    if (sel != null && h != null) {
+      Haptics.tick();
+      _fop = _FurnOp(
+        h.isRotate ? _FurnOpKind.rotate : _FurnOpKind.resize,
+        plan,
+        sel,
+        cell,
+        handle: h,
+      );
+      setState(() => _cursor = SystemMouseCursors.grabbing);
+      return;
+    }
+    final hit = furnitureAt(plan.furniture, cell, tolerance: _furnTolerance);
+    if (hit != null) {
+      Haptics.tick();
+      _fop = _FurnOp(_FurnOpKind.move, plan, hit, cell);
+      setState(() {
+        _fsel = hit.id;
+        _cursor = SystemMouseCursors.grabbing;
+      });
+      return;
+    }
+    if (_fsel != null) setState(() => _fsel = null);
+  }
+
+  void _fPanUpdate(DragUpdateDetails d) {
+    final op = _fop;
+    if (op == null) return;
+    final cell = _cellOf(d.localPosition);
+    final snap = !_shift;
+    final next = switch (op.kind) {
+      _FurnOpKind.move => moveFurniture(
+        op.item,
+        cell - op.start,
+        op.base.grid,
+        snap: snap,
+      ),
+      _FurnOpKind.resize => resizeFurniture(
+        op.item,
+        op.handle!,
+        cell,
+        snap: snap,
+      ),
+      _FurnOpKind.rotate => rotateFurnitureTo(op.item, cell, snap: snap),
+    };
+    final cur = _plan!.furnitureById(next.id);
+    if (cur == next) return;
+    if (snap) Haptics.tick();
+    op.changed = true;
+    setState(() => _plan = op.base.withFurniture(next));
+  }
+
+  void _fPanEnd([Object? _]) {
+    final op = _fop;
+    _fop = null;
+    if (op == null) return;
+    setState(() => _cursor = MouseCursor.defer);
+    if (op.changed) _record(op.base);
+  }
+
+  void _fTap(TapUpDetails d) {
+    if (_furnHandleAt(d.localPosition) != null) return;
+    final hit = furnitureAt(
+      _plan!.furniture,
+      _cellOf(d.localPosition),
+      tolerance: _furnTolerance,
+    );
+    Haptics.tick();
+    setState(() => _fsel = hit?.id);
+  }
+
+  /// Rechtsklick: auf einem Möbelstück dessen Menü, auf einem Raum (Modus
+  /// Räume) Zuordnen und Löschen.
+  void _secondaryTap(TapUpDetails d) {
+    final plan = _plan!;
+    final ctrl = ctrlLabel(context);
+    if (_mode == _Mode.furniture) {
+      final hit = furnitureAt(
+        plan.furniture,
+        _cellOf(d.localPosition),
+        tolerance: _furnTolerance,
+      );
+      if (hit == null) {
+        setState(() => _fsel = null);
+        return;
+      }
+      setState(() => _fsel = hit.id);
+      unawaited(
+        showHavenContextMenu(context, d.globalPosition, [
+          HavenMenuItem(
+            label: 'Um 90° drehen',
+            icon: Icons.rotate_right_rounded,
+            shortcut: 'R',
+            onSelected: () => _rotateSel(90),
+          ),
+          HavenMenuItem(
+            label: 'Duplizieren',
+            icon: Icons.copy_all_rounded,
+            shortcut: '${ctrl}D',
+            onSelected: _duplicateSel,
+          ),
+          HavenMenuItem(
+            label: 'Löschen',
+            icon: Icons.delete_outline_rounded,
+            shortcut: 'Entf',
+            destructive: true,
+            onSelected: _deleteFurnitureSel,
+          ),
+        ]),
+      );
+      return;
+    }
+    if (_mode == _Mode.rooms) {
+      final id = _geo!.roomAt(d.localPosition);
+      if (id == null) return;
+      setState(() => _sel = id);
+      unawaited(
+        showHavenContextMenu(context, d.globalPosition, [
+          HavenMenuItem(
+            label: 'Bereich zuordnen',
+            icon: Icons.label_outline_rounded,
+            onSelected: () => _assign(id),
+          ),
+          HavenMenuItem(
+            label: 'Raum löschen',
+            icon: Icons.delete_outline_rounded,
+            shortcut: 'Entf',
+            destructive: true,
+            onSelected: _deleteSelected,
+          ),
+        ]),
+      );
+    }
+  }
+
+  /// Mausform je nach Ort: Griffe, Möbel, Räume, leere Fläche.
+  void _hoverAt(Offset p) {
+    if (_geo == null || _fop != null || _op != null) return;
+    MouseCursor c = MouseCursor.defer;
+    switch (_mode) {
+      case _Mode.furniture:
+        final h = _furnHandleAt(p);
+        if (h != null) {
+          c = h.isRotate
+              ? SystemMouseCursors.grab
+              : switch (resizeAxisOf(h, _selFurniture!.rotation)) {
+                  ResizeAxis.horizontal => SystemMouseCursors.resizeLeftRight,
+                  ResizeAxis.vertical => SystemMouseCursors.resizeUpDown,
+                  ResizeAxis.diagonalDown =>
+                    SystemMouseCursors.resizeUpLeftDownRight,
+                  ResizeAxis.diagonalUp =>
+                    SystemMouseCursors.resizeUpRightDownLeft,
+                };
+        } else if (furnitureAt(
+              _plan!.furniture,
+              _cellOf(p),
+              tolerance: _furnTolerance,
+            ) !=
+            null) {
+          c = SystemMouseCursors.move;
+        }
+      case _Mode.rooms:
+        final h = _handle(p);
+        if (h is VertexHandle) {
+          c = SystemMouseCursors.move;
+        } else if (h is EdgeHandle) {
+          c = SystemMouseCursors.click;
+        } else if (_geo!.roomAt(p) != null) {
+          c = SystemMouseCursors.move;
+        } else {
+          c = SystemMouseCursors.precise;
+        }
+      case _Mode.devices:
+    }
+    if (c != _cursor) setState(() => _cursor = c);
+  }
+
+  /// Mitte für neue Möbel: gewählter Raum, sonst die Wohnung.
+  Offset _defaultSpot(HavenFloorPlan plan) {
+    final room = _sel == null ? null : plan.room(_sel!);
+    if (room != null) return room.anchor;
+    if (plan.rooms.isNotEmpty) return plan.houseBounds.center;
+    return plan.grid.rect.center;
+  }
+
+  void _addFurniture(FurnitureType t, {Offset? at}) {
+    final plan = _plan!;
+    var spot = at ?? _defaultSpot(plan);
+    // Mehrfach hinzufügen stapelt nicht genau übereinander.
+    if (at == null) {
+      for (var i = 0; i < 8; i++) {
+        final taken = plan.furniture.any(
+          (f) => f.kind == t.id && (f.center - spot).distance < 0.6,
+        );
+        if (!taken) break;
+        spot += const Offset(1, 1);
+      }
+    }
+    final f = placeFurniture(
+      t,
+      spot,
+      plan.grid,
+      id: newFurnitureId(),
+      snap: !_shift,
+    );
+    _commit(plan, plan.withFurniture(f));
+    setState(() => _fsel = f.id);
+  }
+
+  void _dropFurniture(FurnitureType t, Offset globalCenter) {
+    final local = _toLocal(globalCenter);
+    if (local == null || _geo == null) return;
+    if (local.dx < 0 ||
+        local.dy < 0 ||
+        local.dx > _size.width ||
+        local.dy > _size.height) {
+      return;
+    }
+    Haptics.tap();
+    _addFurniture(t, at: _cellOf(local));
+  }
+
+  void _rotateSel(double deg) {
+    final f = _selFurniture;
+    if (f == null) return;
+    Haptics.tick();
+    final plan = _plan!;
+    _commit(plan, plan.withFurniture(rotateFurnitureBy(f, deg)));
+  }
+
+  void _duplicateSel() {
+    final f = _selFurniture;
+    if (f == null) return;
+    Haptics.tap();
+    final plan = _plan!;
+    final copy = duplicateFurniture(f, plan.grid, id: newFurnitureId());
+    _commit(plan, plan.withFurniture(copy));
+    setState(() => _fsel = copy.id);
+  }
+
+  void _deleteFurnitureSel() {
+    final f = _selFurniture;
+    if (f == null) return;
+    Haptics.tap();
+    final plan = _plan!;
+    _commit(plan, plan.withoutFurniture(f.id));
+    setState(() => _fsel = null);
+    _say('${f.type?.name ?? 'Möbelstück'} entfernt');
+  }
+
+  void _nudgeSel(Offset d) {
+    final f = _selFurniture;
+    if (f == null) return;
+    final plan = _plan!;
+    _commit(
+      plan,
+      plan.withFurniture(moveFurniture(f, d, plan.grid, snap: false)),
+    );
+  }
+
+  /// Tastatur: Esc, Strg/Cmd+Z, Entf, Strg/Cmd+D, R, Pfeile.
+  KeyEventResult _onKey(FocusNode node, KeyEvent e) {
+    if (e is! KeyDownEvent && e is! KeyRepeatEvent) {
+      return KeyEventResult.ignored;
+    }
+    final k = e.logicalKey;
+    final hk = HardwareKeyboard.instance;
+    final ctrl = hk.isControlPressed || hk.isMetaPressed;
+    if (ctrl && k == LogicalKeyboardKey.keyZ) {
+      _undoLast();
+      return KeyEventResult.handled;
+    }
+    if (e is KeyRepeatEvent &&
+        !(k == LogicalKeyboardKey.arrowLeft ||
+            k == LogicalKeyboardKey.arrowRight ||
+            k == LogicalKeyboardKey.arrowUp ||
+            k == LogicalKeyboardKey.arrowDown)) {
+      return KeyEventResult.handled;
+    }
+    if (k == LogicalKeyboardKey.escape) {
+      if (_fsel != null || _sel != null) {
+        setState(() {
+          _fsel = null;
+          _sel = null;
+        });
+      } else {
+        _close();
+      }
+      return KeyEventResult.handled;
+    }
+    final furniture = _mode == _Mode.furniture;
+    if (k == LogicalKeyboardKey.delete || k == LogicalKeyboardKey.backspace) {
+      if (furniture && _fsel != null) {
+        _deleteFurnitureSel();
+      } else if (_mode == _Mode.rooms && _sel != null) {
+        _deleteSelected();
+      }
+      return KeyEventResult.handled;
+    }
+    if (!furniture || _fsel == null) return KeyEventResult.ignored;
+    if (ctrl && k == LogicalKeyboardKey.keyD) {
+      _duplicateSel();
+      return KeyEventResult.handled;
+    }
+    if (!ctrl && k == LogicalKeyboardKey.keyR) {
+      _rotateSel(hk.isShiftPressed ? -kFurnitureRotationStep : 90);
+      return KeyEventResult.handled;
+    }
+    final step = hk.isShiftPressed ? 0.1 : kFurnitureSnap;
+    final d = switch (k) {
+      LogicalKeyboardKey.arrowLeft => Offset(-step, 0),
+      LogicalKeyboardKey.arrowRight => Offset(step, 0),
+      LogicalKeyboardKey.arrowUp => Offset(0, -step),
+      LogicalKeyboardKey.arrowDown => Offset(0, step),
+      _ => null,
+    };
+    if (d == null) return KeyEventResult.ignored;
+    _nudgeSel(d);
+    return KeyEventResult.handled;
+  }
+
+  /// Bibliotheks-Element ziehbar: Vorschau in echter Größe unter dem Zeiger.
+  Widget _furnitureDrag(FurnitureType t, Widget child) {
+    final scale = _geo?.scale ?? 20;
+    final size = Size(t.w * scale, t.h * scale);
+    final hv = context.hv;
+    final feedback = Material(
+      type: MaterialType.transparency,
+      child: SizedBox.fromSize(
+        size: size,
+        child: CustomPaint(
+          painter: _ShapePainter(t.id, FurnitureInk.accent(hv)),
+        ),
+      ),
+    );
+    Offset anchor(Draggable<Object> d, BuildContext c, Offset p) =>
+        Offset(size.width / 2, size.height / 2);
+    void end(DraggableDetails d) =>
+        _dropFurniture(t, d.offset + Offset(size.width / 2, size.height / 2));
+    if (!context.isDesktopLayout) {
+      return LongPressDraggable<String>(
+        data: t.id,
+        delay: const Duration(milliseconds: 150),
+        hapticFeedbackOnStart: true,
+        dragAnchorStrategy: anchor,
+        feedback: feedback,
+        onDragEnd: end,
+        child: child,
+      );
+    }
+    return Draggable<String>(
+      data: t.id,
+      dragAnchorStrategy: anchor,
+      feedback: feedback,
+      onDragEnd: end,
+      child: child,
+    );
+  }
+
+  String _furnInfo(FloorFurniture f) {
+    final r = f.rotation.round();
+    return '${furnitureSizeText(f, _plan!.grid.cellMeters)}'
+        '${r == 0 ? '' : ' · $r°'}';
+  }
+
+  /// Gewähltes Möbelstück: Name, Maße, Drehen, Duplizieren, Löschen.
+  Widget _furnitureSelection(FloorFurniture f, {bool vertical = false}) {
+    final hv = context.hv;
+    final ctrl = ctrlLabel(context);
+    final tools = [
+      _ToolButton(
+        label: 'Um 90° drehen',
+        shortcut: 'R',
+        icon: Icons.rotate_right_rounded,
+        onTap: () => _rotateSel(90),
+      ),
+      const SizedBox(width: 4),
+      _ToolButton(
+        label: 'Duplizieren',
+        shortcut: '${ctrl}D',
+        icon: Icons.copy_all_rounded,
+        onTap: _duplicateSel,
+      ),
+      const SizedBox(width: 4),
+      _ToolButton(
+        label: 'Löschen',
+        shortcut: 'Entf',
+        icon: Icons.delete_outline_rounded,
+        destructive: true,
+        onTap: _deleteFurnitureSel,
+      ),
+    ];
+    final title = Row(
+      children: [
+        FurnitureThumb(kind: f.kind, size: 40),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                f.type?.name ?? 'Möbelstück',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: HavenText.headline.copyWith(color: hv.tx, fontSize: 16),
+              ),
+              Text(
+                _furnInfo(f),
+                style: HavenText.caption.copyWith(color: hv.tx2),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+    if (!vertical) {
+      return Row(
+        key: ValueKey('fsel${f.id}'),
+        children: [
+          Expanded(child: title),
+          ...tools,
+        ],
+      );
+    }
+    return Column(
+      key: ValueKey('fsel${f.id}'),
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        title,
+        const SizedBox(height: 10),
+        Row(children: tools),
+        const SizedBox(height: 8),
+        Text(
+          'Ziehen verschiebt im Halbraster, mit Shift frei. Die Griffe '
+          'ändern die Größe, der runde Griff dreht in 15°-Schritten.',
+          style: HavenText.caption.copyWith(color: hv.tx3),
+        ),
+      ],
+    );
+  }
+
+  /// Handy: Auswahl oder Hinweis oben, darunter die Bibliothek.
+  Widget _furniturePanel(HavenFloorPlan plan) {
+    final hv = context.hv;
+    final sel = _selFurniture;
+    return HavenCard(
+      padding: const EdgeInsets.fromLTRB(14, 10, 10, 12),
+      radius: HavenRadii.m,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          SizedBox(
+            height: 52,
+            child: AnimatedSwitcher(
+              duration: context.motion(HavenMotion.d2),
+              child: sel != null
+                  ? _furnitureSelection(sel)
+                  : Align(
+                      key: ValueKey('fh${_hint ?? ''}'),
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        _hint ??
+                            'Antippen setzt in die Mitte, halten und ziehen '
+                                'legt es genau ab. Möbel sind nur Deko.',
+                        maxLines: 2,
+                        style: HavenText.caption.copyWith(
+                          color: _hint == null ? hv.tx2 : hv.tx,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Expanded(
+            child: FurnitureLibrary(
+              onAdd: _addFurniture,
+              dragWrap: _furnitureDrag,
+              cellMeters: plan.grid.cellMeters,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Desktop: rechte Spalte je Modus.
+  Widget _sidePanel(HavenFloorPlan plan) {
+    final hv = context.hv;
+    switch (_mode) {
+      case _Mode.rooms:
+        return Align(alignment: Alignment.topCenter, child: _roomTools(plan));
+      case _Mode.devices:
+        return _pool(plan);
+      case _Mode.furniture:
+        final sel = _selFurniture;
+        return HavenCard(
+          padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
+          radius: HavenRadii.m,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              AnimatedSize(
+                duration: context.motion(HavenMotion.d2),
+                curve: HavenMotion.out,
+                alignment: Alignment.topCenter,
+                child: sel != null
+                    ? Padding(
+                        padding: const EdgeInsets.only(bottom: 12),
+                        child: _furnitureSelection(sel, vertical: true),
+                      )
+                    : Padding(
+                        padding: const EdgeInsets.only(bottom: 4),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Einrichten',
+                              style: HavenText.headline.copyWith(color: hv.tx),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              _hint ??
+                                  'Möbel in den Grundriss ziehen oder '
+                                      'anklicken. Sie sind nur Deko und '
+                                      'liegen auf der Karte unter dem Licht.',
+                              style: HavenText.caption.copyWith(
+                                color: _hint == null ? hv.tx2 : hv.tx,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+              ),
+              Container(height: 1, color: hv.ln),
+              Expanded(
+                child: FurnitureLibrary(
+                  grid: true,
+                  onAdd: _addFurniture,
+                  dragWrap: _furnitureDrag,
+                  cellMeters: plan.grid.cellMeters,
+                ),
+              ),
+            ],
+          ),
+        );
+    }
+  }
+
   // ---- Aufbau --------------------------------------------------------------
 
   @override
@@ -666,90 +1303,126 @@ class _FloorEditorScreenState extends ConsumerState<FloorEditorScreen> {
     }
     final plan = _plan!;
     final devices = _mode == _Mode.devices;
+    final furniture = _mode == _Mode.furniture;
+    final desktop = context.isDesktopLayout;
+    final ctrl = ctrlLabel(context);
+
+    final header = Padding(
+      padding: const EdgeInsets.fromLTRB(8, 6, 8, 8),
+      child: Row(
+        children: [
+          RoundIconButton(
+            icon: Icons.arrow_back_rounded,
+            label: 'Zurück',
+            onTap: _close,
+          ),
+          Expanded(
+            child: Text(
+              'Grundriss',
+              textAlign: TextAlign.center,
+              style: HavenText.headline.copyWith(color: hv.tx, fontSize: 22),
+            ),
+          ),
+          DesktopTooltip(
+            message: 'Rückgängig',
+            shortcut: '${ctrl}Z',
+            child: Opacity(
+              opacity: _undo.isEmpty ? 0.4 : 1,
+              child: RoundIconButton(
+                icon: Icons.undo_rounded,
+                label: 'Rückgängig',
+                onTap: _undoLast,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+    final modes = Padding(
+      padding: const EdgeInsets.symmetric(horizontal: HavenSpace.page),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 560),
+        child: HavenSegmented<_Mode>(
+          options: const [
+            (_Mode.rooms, 'Räume zeichnen'),
+            (_Mode.devices, 'Geräte setzen'),
+            (_Mode.furniture, 'Einrichten'),
+          ],
+          selected: _mode,
+          onChanged: (m) => setState(() {
+            _mode = m;
+            _hover = null;
+            _dragCell = null;
+            _cursor = MouseCursor.defer;
+            if (m != _Mode.furniture) _fsel = null;
+          }),
+        ),
+      ),
+    );
+    final canvas = Expanded(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(8, 8, 8, 8),
+        child: LayoutBuilder(
+          builder: (context, cons) {
+            final geo = _geometry(Size(cons.maxWidth, cons.maxHeight));
+            return Stack(
+              clipBehavior: Clip.none,
+              children: [
+                Positioned.fill(child: _canvas(context, plan, geo)),
+                if (_previewInfo != null) _previewOverlay(geo, _previewInfo!),
+              ],
+            );
+          },
+        ),
+      ),
+    );
+
+    final Widget body;
+    if (desktop) {
+      body = Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Expanded(child: Column(children: [header, modes, canvas])),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(0, 14, 16, 16),
+            child: SizedBox(
+              width: DesktopMetrics.sideColumn,
+              child: _sidePanel(plan),
+            ),
+          ),
+        ],
+      );
+    } else {
+      body = Column(
+        children: [
+          header,
+          modes,
+          canvas,
+          AnimatedContainer(
+            duration: context.motion(HavenMotion.d2),
+            curve: HavenMotion.out,
+            height: devices ? 300 : (furniture ? 252 : 132),
+            padding: const EdgeInsets.fromLTRB(
+              HavenSpace.page,
+              0,
+              HavenSpace.page,
+              14,
+            ),
+            child: devices
+                ? _pool(plan)
+                : (furniture ? _furniturePanel(plan) : _roomTools(plan)),
+          ),
+        ],
+      );
+    }
 
     return Scaffold(
       backgroundColor: hv.bg,
-      body: SafeArea(
-        child: Column(
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(8, 6, 8, 8),
-              child: Row(
-                children: [
-                  RoundIconButton(
-                    icon: Icons.arrow_back_rounded,
-                    label: 'Zurück',
-                    onTap: () =>
-                        context.canPop() ? context.pop() : context.go('/map'),
-                  ),
-                  Expanded(
-                    child: Text(
-                      'Grundriss',
-                      textAlign: TextAlign.center,
-                      style: HavenText.headline.copyWith(
-                        color: hv.tx,
-                        fontSize: 22,
-                      ),
-                    ),
-                  ),
-                  Opacity(
-                    opacity: _undo.isEmpty ? 0.4 : 1,
-                    child: RoundIconButton(
-                      icon: Icons.undo_rounded,
-                      label: 'Rückgängig',
-                      onTap: _undoLast,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: HavenSpace.page),
-              child: HavenSegmented<_Mode>(
-                options: const [
-                  (_Mode.rooms, 'Räume zeichnen'),
-                  (_Mode.devices, 'Geräte setzen'),
-                ],
-                selected: _mode,
-                onChanged: (m) => setState(() {
-                  _mode = m;
-                  _hover = null;
-                  _dragCell = null;
-                }),
-              ),
-            ),
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(8, 8, 8, 8),
-                child: LayoutBuilder(
-                  builder: (context, cons) {
-                    final geo = _geometry(Size(cons.maxWidth, cons.maxHeight));
-                    return Stack(
-                      clipBehavior: Clip.none,
-                      children: [
-                        Positioned.fill(child: _canvas(context, plan, geo)),
-                        if (_previewInfo != null)
-                          _previewOverlay(geo, _previewInfo!),
-                      ],
-                    );
-                  },
-                ),
-              ),
-            ),
-            AnimatedContainer(
-              duration: context.motion(HavenMotion.d2),
-              curve: HavenMotion.out,
-              height: devices ? 300 : 132,
-              padding: const EdgeInsets.fromLTRB(
-                HavenSpace.page,
-                0,
-                HavenSpace.page,
-                14,
-              ),
-              child: devices ? _pool(plan) : _roomTools(plan),
-            ),
-          ],
-        ),
+      body: Focus(
+        focusNode: _focus,
+        autofocus: true,
+        onKeyEvent: _onKey,
+        child: SafeArea(child: body),
       ),
     );
   }
@@ -805,20 +1478,27 @@ class _FloorEditorScreenState extends ConsumerState<FloorEditorScreen> {
   Widget _canvas(BuildContext context, HavenFloorPlan plan, FloorGeometry geo) {
     final hv = context.hv;
     final rooms = _mode == _Mode.rooms;
-    final nodes = [
-      for (final p in plan.placements)
-        FloorNode(id: p.entityId, point: plan.pointOfCell(p.cell)),
-    ];
+    // Geräte gibt es nur im Modus „Geräte setzen“. Beim Zeichnen der Räume
+    // und beim Einrichten stören sie nur.
+    final nodes = _mode != _Mode.devices
+        ? const <FloorNode>[]
+        : [
+            for (final p in plan.placements)
+              FloorNode(id: p.entityId, point: plan.pointOfCell(p.cell)),
+          ];
 
     // Größe beim Ziehen: aktuelle Zielfläche in Zellen.
     final active = _draft;
     final selected = rooms && _sel != null ? plan.room(_sel!) : null;
+    final furniture = _mode == _Mode.furniture;
+    final fsel = furniture ? _selFurniture : null;
     final view = FloorPlanView(
       plan: plan,
       interactive: false,
       fitGrid: true,
       fill: true,
       showGrid: true,
+      furnitureInk: furniture ? FurnitureInk.editor(hv) : null,
       nodes: nodes,
       nodeBuilder: (context, n) {
         final kind = plan.placementOf(n.id)!.resolvedKind;
@@ -853,26 +1533,67 @@ class _FloorEditorScreenState extends ConsumerState<FloorEditorScreen> {
         invalid: _invalid,
         activeVertex: _activeVertex,
         cellMeters: plan.grid.cellMeters,
-        dragCell: rooms ? null : _dragCell,
-        outsideHover: !rooms && _hover == kOutsideId,
+        dragCell: _mode == _Mode.devices ? _dragCell : null,
+        outsideHover: _mode == _Mode.devices && _hover == kOutsideId,
+        furniture: fsel,
+        handles: fsel == null ? null : _handlesOf(fsel),
+        handleRadius: context.isDesktopLayout ? 5.5 : 7.5,
+        furnitureLabel: fsel != null && _fop != null
+            ? (_fop!.kind == _FurnOpKind.rotate
+                  ? '${fsel.rotation.round()}°'
+                  : furnitureSizeText(fsel, plan.grid.cellMeters))
+            : null,
       ),
     );
 
+    final Widget child;
+    if (rooms) {
+      child = GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        dragStartBehavior: DragStartBehavior.down,
+        onPanStart: _panStart,
+        onPanUpdate: _panUpdate,
+        onPanEnd: _panEnd,
+        onPanCancel: _panEnd,
+        onTapUp: _tap,
+        onLongPressStart: _longPress,
+        onSecondaryTapUp: _secondaryTap,
+        child: IgnorePointer(child: view),
+      );
+    } else if (furniture) {
+      child = GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        dragStartBehavior: DragStartBehavior.down,
+        onPanStart: _fPanStart,
+        onPanUpdate: _fPanUpdate,
+        onPanEnd: _fPanEnd,
+        onPanCancel: _fPanEnd,
+        onTapUp: _fTap,
+        onSecondaryTapUp: _secondaryTap,
+        child: IgnorePointer(child: view),
+      );
+    } else {
+      child = view;
+    }
+
     return KeyedSubtree(
       key: _canvasKey,
-      child: rooms
-          ? GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              dragStartBehavior: DragStartBehavior.down,
-              onPanStart: _panStart,
-              onPanUpdate: _panUpdate,
-              onPanEnd: _panEnd,
-              onPanCancel: _panEnd,
-              onTapUp: _tap,
-              onLongPressStart: _longPress,
-              child: IgnorePointer(child: view),
-            )
-          : view,
+      child: Listener(
+        // Klick in die Fläche holt den Tastaturfokus zurück (Esc, Entf ...).
+        onPointerDown: (_) {
+          if (!_focus.hasFocus) _focus.requestFocus();
+        },
+        child: MouseRegion(
+          cursor: _cursor,
+          onHover: (e) => _hoverAt(e.localPosition),
+          onExit: (_) {
+            if (_cursor != MouseCursor.defer) {
+              setState(() => _cursor = MouseCursor.defer);
+            }
+          },
+          child: child,
+        ),
+      ),
     );
   }
 
@@ -1291,39 +2012,72 @@ class _ToolButton extends StatelessWidget {
     required this.icon,
     required this.onTap,
     this.destructive = false,
+    this.shortcut,
   });
   final String label;
   final IconData icon;
   final VoidCallback onTap;
   final bool destructive;
+  final String? shortcut;
 
   @override
   Widget build(BuildContext context) {
     final hv = context.hv;
-    return Semantics(
-      button: true,
-      label: label,
-      child: PressScale(
-        onTap: onTap,
-        child: SizedBox(
-          width: HavenSpace.touch,
-          height: HavenSpace.touch,
-          child: Center(
-            child: Container(
-              width: 42,
-              height: 42,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: hv.s2,
-                border: Border.all(color: hv.ln2),
+    return DesktopTooltip(
+      message: label,
+      shortcut: shortcut,
+      child: Semantics(
+        button: true,
+        label: label,
+        child: HoverBuilder(
+          builder: (context, hover) => PressScale(
+            onTap: onTap,
+            child: SizedBox(
+              width: HavenSpace.touch,
+              height: HavenSpace.touch,
+              child: Center(
+                child: AnimatedContainer(
+                  duration: context.motion(HavenMotion.d1),
+                  width: 42,
+                  height: 42,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: Color.alphaBlend(hoverOverlay(hv, hover), hv.s2),
+                    border: Border.all(
+                      color: hover
+                          ? (destructive ? hv.bad : hv.acc).withValues(
+                              alpha: 0.6,
+                            )
+                          : hv.ln2,
+                    ),
+                  ),
+                  child: Icon(
+                    icon,
+                    size: 20,
+                    color: destructive ? hv.bad : hv.tx,
+                  ),
+                ),
               ),
-              child: Icon(icon, size: 20, color: destructive ? hv.bad : hv.tx),
             ),
           ),
         ),
       ),
     );
   }
+}
+
+/// Form eines Möbeltyps in der eigenen Größe (Vorschau beim Ziehen).
+class _ShapePainter extends CustomPainter {
+  _ShapePainter(this.kind, this.ink);
+  final String kind;
+  final FurnitureInk ink;
+
+  @override
+  void paint(Canvas canvas, Size size) =>
+      paintFurnitureShape(canvas, kind, size, ink);
+
+  @override
+  bool shouldRepaint(_ShapePainter old) => old.kind != kind || old.ink != ink;
 }
 
 class _PoolChip extends StatelessWidget {
@@ -1508,6 +2262,10 @@ class _EditorOverlay extends FloorOverlayPainter {
     required this.cellMeters,
     required this.dragCell,
     required this.outsideHover,
+    this.furniture,
+    this.handles,
+    this.handleRadius = 6,
+    this.furnitureLabel,
   });
 
   final HavenColors hv;
@@ -1520,12 +2278,86 @@ class _EditorOverlay extends FloorOverlayPainter {
   final GridPoint? dragCell;
   final bool outsideHover;
 
+  /// Gewähltes Möbelstück mit seinen Griffen (Pixel).
+  final FloorFurniture? furniture;
+  final List<(FurnitureHandle, Offset)>? handles;
+  final double handleRadius;
+
+  /// Maße bzw. Winkel während der Geste.
+  final String? furnitureLabel;
+
   String _m(double v) =>
       (v == v.roundToDouble() ? v.toStringAsFixed(0) : v.toStringAsFixed(1))
           .replaceAll('.', ',');
 
+  void _paintFurnitureSelection(Canvas canvas, Size size, FloorGeometry geo) {
+    final f = furniture!;
+    paintFurniture(
+      canvas,
+      f,
+      geo.cellToPx(f.center),
+      geo.scale,
+      FurnitureInk.accent(hv),
+    );
+    final pts = [for (final c in f.corners) geo.cellToPx(c)];
+    final frame = Path()..addPolygon(pts, true);
+    canvas.drawPath(
+      frame,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.2
+        ..color = hv.acc.withValues(alpha: 0.9),
+    );
+    final hs = handles ?? const [];
+    final top = geo.cellToPx(f.toWorld(Offset(0, -f.h / 2)));
+    for (final (h, at) in hs) {
+      if (h.isRotate) {
+        canvas.drawLine(
+          top,
+          at,
+          Paint()
+            ..strokeWidth = 1.2
+            ..color = hv.acc.withValues(alpha: 0.8),
+        );
+        final r = handleRadius + 3;
+        canvas.drawCircle(at, r, Paint()..color = hv.acc);
+        // Kleiner Drehpfeil.
+        final arc = Rect.fromCircle(center: at, radius: r * 0.5);
+        final ink = Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1.5
+          ..strokeCap = StrokeCap.round
+          ..color = hv.ai;
+        canvas.drawArc(arc, -math.pi * 0.9, math.pi * 1.5, false, ink);
+        final tip = at + Offset(r * 0.5, 0);
+        canvas.drawLine(tip, tip + Offset(-r * 0.28, -r * 0.22), ink);
+        canvas.drawLine(tip, tip + Offset(r * 0.22, -r * 0.26), ink);
+        continue;
+      }
+      final r = h.isCorner ? handleRadius : handleRadius * 0.8;
+      canvas.drawCircle(at, r, Paint()..color = hv.s1);
+      canvas.drawCircle(
+        at,
+        r,
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1.8
+          ..color = hv.acc,
+      );
+    }
+    final label = furnitureLabel;
+    if (label != null) {
+      final b = Rect.fromPoints(
+        geo.cellToPx(f.bounds.topLeft),
+        geo.cellToPx(f.bounds.bottomRight),
+      );
+      _label(canvas, size, b.bottomCenter + const Offset(0, 22), label, hv.acc);
+    }
+  }
+
   @override
   void paint(Canvas canvas, Size size, FloorGeometry geo) {
+    if (furniture != null) _paintFurnitureSelection(canvas, size, geo);
     if (outsideHover && geo.outside != null) {
       canvas.drawRRect(
         RRect.fromRectAndRadius(geo.outside!, const Radius.circular(22)),
@@ -1699,5 +2531,8 @@ class _EditorOverlay extends FloorOverlayPainter {
       old.invalid != invalid ||
       old.activeVertex != activeVertex ||
       old.dragCell != dragCell ||
-      old.outsideHover != outsideHover;
+      old.outsideHover != outsideHover ||
+      old.furniture != furniture ||
+      old.handleRadius != handleRadius ||
+      old.furnitureLabel != furnitureLabel;
 }

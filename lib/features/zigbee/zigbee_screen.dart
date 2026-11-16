@@ -2,6 +2,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:material_ui/material_ui.dart';
 
+import '../../core/adaptive/breakpoints.dart';
+import '../../core/adaptive/hover.dart';
 import '../../core/state/providers.dart';
 import '../../core/theme/tokens.dart';
 import '../../core/widgets/entry_animation.dart';
@@ -16,6 +18,8 @@ import 'widgets/device_icon.dart';
 import 'widgets/mesh_card.dart';
 import 'widgets/zb_common.dart';
 import 'zigbee_actions.dart';
+import 'zigbee_device_screen.dart';
+import 'zigbee_selection.dart';
 import 'zigbee_model.dart';
 import 'zigbee_providers.dart';
 
@@ -34,6 +38,62 @@ class _ZigbeeScreenState extends ConsumerState<ZigbeeScreen> {
   ZbFilter? _filter;
   bool _allNeeds = false;
 
+  @override
+  void initState() {
+    super.initState();
+    // `?select=<IEEE>` wählt am Desktop ein Gerät (Links, Screenshots).
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final sel = GoRouterState.of(context).uri.queryParameters['select'];
+      if (sel != null) ref.read(zigbeeSelectionProvider.notifier).select(sel);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final list = _list(context);
+    if (!context.isDesktopLayout) return list;
+    // Desktop: Master-Detail, Liste links, Gerät rechts.
+    final hv = context.hv;
+    final sel = ref.watch(zigbeeSelectionProvider);
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        SizedBox(
+          width: DesktopMetrics.masterWidth + 40,
+          child: ZigbeeMasterScope(child: list),
+        ),
+        Expanded(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(8, 16, 20, 20),
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: hv.s1.withValues(alpha: hv.isDark ? 0.4 : 0.6),
+                borderRadius: BorderRadius.circular(HavenRadii.l),
+                border: Border.all(color: hv.ln),
+              ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(HavenRadii.l),
+                child: AnimatedSwitcher(
+                  duration: context.motion(HavenMotion.d2),
+                  child: sel == null
+                      ? const _NoSelection()
+                      : ZigbeeDeviceScreen(
+                          key: ValueKey(sel),
+                          ieee: sel,
+                          embedded: true,
+                        ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _list(BuildContext context) => _listBody(context);
+
   String _subtitle(ZigbeeData z, int count) {
     final parts = <String>[
       '$count ${count == 1 ? 'Gerät' : 'Geräte'}',
@@ -43,8 +103,7 @@ class _ZigbeeScreenState extends ConsumerState<ZigbeeScreen> {
     return parts.join(' · ');
   }
 
-  @override
-  Widget build(BuildContext context) {
+  Widget _listBody(BuildContext context) {
     final hv = context.hv;
     final z = ref.watch(zigbeeProvider);
     final views = ref.watch(zigbeeViewsProvider);
@@ -186,9 +245,7 @@ class _ZigbeeScreenState extends ConsumerState<ZigbeeScreen> {
                     },
                   ),
           ),
-          const SliverToBoxAdapter(
-            child: SizedBox(height: HavenSpace.navClearance),
-          ),
+          SliverToBoxAdapter(child: SizedBox(height: context.navClearance)),
         ],
       ),
     );
@@ -344,7 +401,7 @@ class _NeedRow extends ConsumerWidget {
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
       child: PressScale(
-        onTap: () => context.push(zigbeeDevicePath(v.ieee)),
+        onTap: () => openZigbeeDevice(context, v.ieee),
         child: Container(
           padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
@@ -388,7 +445,7 @@ class _NeedRow extends ConsumerWidget {
               PressScale(
                 onTap: need.kind == ZbNeedKind.noRoom
                     ? () => pickRoom(context, ref, v)
-                    : () => context.push(zigbeeDevicePath(v.ieee)),
+                    : () => openZigbeeDevice(context, v.ieee),
                 child: Container(
                   constraints: const BoxConstraints(
                     minHeight: HavenSpace.touch - 8,
@@ -508,14 +565,18 @@ class _Chip extends StatelessWidget {
 // ---- Zeile ---------------------------------------------------------------------
 
 /// Eine Gerätezeile: Icon, Name, Modell, Status rechts.
-class ZbDeviceRow extends StatelessWidget {
+class ZbDeviceRow extends ConsumerWidget {
   const ZbDeviceRow({super.key, required this.view});
   final ZbDeviceView view;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final hv = context.hv;
     final v = view;
+    // Desktop (Master-Detail): gewählte Zeile mit Akzent.
+    final selected =
+        ZigbeeMasterScope.active(context) &&
+        ref.watch(zigbeeSelectionProvider) == v.ieee;
     final pills = <Widget>[
       if (!v.available)
         ZbPill(text: 'Offline', color: hv.bad)
@@ -536,62 +597,101 @@ class ZbDeviceRow extends StatelessWidget {
         label: '${v.name}, ${v.device.modelLine}',
         child: PressScale(
           pressedScale: 0.98,
-          onTap: () => context.push(zigbeeDevicePath(v.ieee)),
-          child: Container(
-            padding: const EdgeInsets.fromLTRB(10, 10, 12, 10),
-            decoration: BoxDecoration(
-              color: hv.s1,
-              borderRadius: BorderRadius.circular(HavenRadii.m),
-              border: Border.all(color: hv.ln),
-            ),
-            child: Row(
-              children: [
-                Container(
-                  width: 48,
-                  height: 48,
-                  decoration: BoxDecoration(
-                    color: hv.s2,
-                    borderRadius: BorderRadius.circular(HavenRadii.s + 2),
-                  ),
-                  padding: const EdgeInsets.all(4),
-                  child: ZbDeviceIcon(type: v.type, size: 40),
+          onTap: () => openZigbeeDevice(context, v.ieee),
+          child: HoverBuilder(
+            builder: (context, hover) => AnimatedContainer(
+              duration: context.motion(HavenMotion.d1),
+              padding: const EdgeInsets.fromLTRB(10, 10, 12, 10),
+              decoration: BoxDecoration(
+                color: Color.alphaBlend(
+                  selected
+                      ? hv.acc.withValues(alpha: 0.12)
+                      : hoverOverlay(hv, hover),
+                  hv.s1,
                 ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        v.name,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: HavenText.label.copyWith(
-                          color: hv.tx,
-                          fontSize: 14.5,
+                borderRadius: BorderRadius.circular(HavenRadii.m),
+                border: Border.all(
+                  color: selected ? hv.acc.withValues(alpha: 0.7) : hv.ln,
+                  width: selected ? 1.5 : 1,
+                ),
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    width: 48,
+                    height: 48,
+                    decoration: BoxDecoration(
+                      color: hv.s2,
+                      borderRadius: BorderRadius.circular(HavenRadii.s + 2),
+                    ),
+                    padding: const EdgeInsets.all(4),
+                    child: ZbDeviceIcon(type: v.type, size: 40),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          v.name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: HavenText.label.copyWith(
+                            color: hv.tx,
+                            fontSize: 14.5,
+                          ),
                         ),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        v.device.modelLine.isEmpty
-                            ? deviceTypeLabel(v.type)
-                            : v.device.modelLine,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: HavenText.caption.copyWith(color: hv.tx2),
-                      ),
-                    ],
+                        const SizedBox(height: 2),
+                        Text(
+                          v.device.modelLine.isEmpty
+                              ? deviceTypeLabel(v.type)
+                              : v.device.modelLine,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: HavenText.caption.copyWith(color: hv.tx2),
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-                if (pills.isNotEmpty) ...[
-                  const SizedBox(width: 8),
-                  Wrap(spacing: 4, runSpacing: 4, children: pills),
+                  if (pills.isNotEmpty) ...[
+                    const SizedBox(width: 8),
+                    Wrap(spacing: 4, runSpacing: 4, children: pills),
+                  ],
+                  const SizedBox(width: 4),
+                  Icon(Icons.chevron_right_rounded, color: hv.tx3, size: 22),
                 ],
-                const SizedBox(width: 4),
-                Icon(Icons.chevron_right_rounded, color: hv.tx3, size: 22),
-              ],
+              ),
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// Detailspalte ohne Auswahl.
+class _NoSelection extends StatelessWidget {
+  const _NoSelection();
+
+  @override
+  Widget build(BuildContext context) {
+    final hv = context.hv;
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.hub_outlined, size: 44, color: hv.tx3),
+          const SizedBox(height: 12),
+          Text(
+            'Wähle links ein Gerät',
+            style: HavenText.headline.copyWith(color: hv.tx2),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Einstellungen, Zustand und Diagnose erscheinen hier.',
+            style: HavenText.caption.copyWith(color: hv.tx3),
+          ),
+        ],
       ),
     );
   }

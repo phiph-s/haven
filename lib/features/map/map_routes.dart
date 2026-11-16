@@ -19,10 +19,13 @@ final List<RouteBase> mapRoutes = <RouteBase>[
       transitionDuration: HavenMotion.pageIn,
       reverseTransitionDuration: HavenMotion.pageOut,
       child: FloorEditorScreen(
-        // Nur für Screenshots (debug_launch.dart): mode=devices, sel=<Raum>,
+        // Nur für Screenshots (debug_launch.dart): mode=devices|furniture,
+        // sel=<Raum>, fsel=<Möbel-ID>,
         // drag=<Entity> zeigt das Ziehen-Label.
         startInDevices: state.uri.queryParameters['mode'] == 'devices',
+        startInFurniture: state.uri.queryParameters['mode'] == 'furniture',
         startSelected: state.uri.queryParameters['sel'],
+        startFurniture: state.uri.queryParameters['fsel'],
         startDrag: state.uri.queryParameters['drag'],
       ),
       transitionsBuilder: (context, animation, secondary, child) =>

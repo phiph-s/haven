@@ -14,6 +14,8 @@ import '../../features/shell/app_shell.dart';
 import '../../features/updates/updates_screen.dart';
 import '../../features/zigbee/zigbee_routes.dart';
 import '../../features/zigbee/zigbee_screen.dart';
+import '../adaptive/breakpoints.dart';
+import '../adaptive/side_panel_route.dart';
 import '../state/providers.dart';
 import '../theme/tokens.dart';
 import '../widgets/haven_sheet.dart';
@@ -40,9 +42,21 @@ abstract final class Routes {
 
 /// Raum: Sheet von unten (`HavenSheetPage`), die App dahinter rückt zurück.
 /// `extent` (nur Entwicklungsdaten) öffnet halb gezogen für Screenshots.
-Page<void> _roomPage(Ref ref, GoRouterState state) {
+Page<void> _roomPage(Ref ref, GoRouterState state, [BuildContext? context]) {
   final fake = ref.read(sessionProvider).mode == SessionMode.fake;
   final q = state.uri.queryParameters;
+  // Desktop: Seitenpanel von rechts statt Sheet von unten.
+  if (context != null && context.isDesktopLayout) {
+    return SidePanelPage<void>(
+      key: state.pageKey,
+      name: state.name,
+      child: RoomScreen(
+        roomId: state.pathParameters['id']!,
+        panel: true,
+        autoSheet: q['sheet'] == '1' && fake,
+      ),
+    );
+  }
   return HavenSheetPage<void>(
     key: state.pageKey,
     name: state.name,
@@ -62,7 +76,8 @@ Page<void> _slidePage(GoRouterState state, Widget child) =>
       key: state.pageKey,
       transitionDuration: HavenMotion.pageIn,
       reverseTransitionDuration: HavenMotion.pageOut,
-      child: child,
+      // Desktop: lesbare Breite statt über den ganzen Bildschirm.
+      child: ReadableWidth(child: child),
       transitionsBuilder: (context, animation, secondary, child) =>
           SlideTransition(
             position: Tween(begin: const Offset(1, 0), end: Offset.zero)
@@ -129,7 +144,8 @@ GoRouter buildRouter(Ref ref, {String? initialLocation}) {
                   GoRoute(
                     path: 'room/:id',
                     parentNavigatorKey: rootNavigatorKey,
-                    pageBuilder: (context, state) => _roomPage(ref, state),
+                    pageBuilder: (context, state) =>
+                        _roomPage(ref, state, context),
                   ),
                 ],
               ),
@@ -147,6 +163,7 @@ GoRouter buildRouter(Ref ref, {String? initialLocation}) {
                     startMinutes: double.tryParse(
                       s.uri.queryParameters['t'] ?? '',
                     ),
+                    startInspect: s.uri.queryParameters['inspect'],
                   ),
                 ),
                 routes: mapRoutes,

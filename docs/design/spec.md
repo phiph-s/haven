@@ -147,7 +147,24 @@ Ein Raster aus Zellen, eine Zelle ist ungefähr 0,5 m. Räume sind Polygone, der
       "type": "object",
       "properties": { "margin": { "type": "integer", "default": 3, "description": "Zellen Garten um die Wohnung auf der Karte" } }
     },
-    "updatedAt": { "type": "integer", "description": "Stempel des Abgleichs (ms)" }
+    "updatedAt": { "type": "integer", "description": "Stempel des Abgleichs (ms)" },
+    "furniture": {
+      "type": "array",
+      "description": "Möbel, nur Deko (ab App 0.6, optional). Neue Apps schreiben das Feld immer, auch leer.",
+      "items": {
+        "type": "object",
+        "required": ["id", "kind", "x", "y", "w", "h"],
+        "properties": {
+          "id": { "type": "string" },
+          "kind": { "type": "string", "description": "Typ aus der Bibliothek, z. B. sofa, bed_double, door. Unbekannte bleiben erhalten." },
+          "x": { "type": "number", "description": "Mitte in Zellen" },
+          "y": { "type": "number", "description": "Mitte in Zellen" },
+          "w": { "type": "number", "description": "Breite in Zellen vor der Drehung" },
+          "h": { "type": "number", "description": "Tiefe in Zellen vor der Drehung" },
+          "rotation": { "type": "number", "default": 0, "description": "Grad im Uhrzeigersinn" }
+        }
+      }
+    }
   }
 }
 ```
@@ -159,6 +176,7 @@ Regeln:
 - **Raum ohne Platzierung:** Geräte mit bekanntem Raum, aber ohne Platzierung liegen auf freien Zellen nahe der Raummitte.
 - **Version 1** (Rechtecke `x, y, w, h`, Platzierungen `roomId, rx, ry` relativ zum Raum) wird beim Laden umgestellt: Rechteck-Polygone, Platzierungen auf die Zelle `x + floor(rx * w)`, alles rückt 3 Zellen nach rechts unten (Platz für Draußen), das Raster wächst um 6. Gespeichert wird danach Version 2.
 - Ein Raum mit `areaId` öffnet beim Tippen die Raumansicht (Kartenart Licht).
+- **Möbel** (Modus „Einrichten“): Bibliothek mit 25 Skizzen in sechs Gruppen (Schlafen, Wohnen, Essen und Küche, Bad, Arbeiten, Bau), Stil wie in Entwurf 2 (feine Linie, leichte Füllung). Verschieben im Halbraster (Shift frei), Skalieren über Griffe, Drehen in 15°-Schritten (Shift frei), Duplizieren, Löschen, Rückgängig. Auf der Karte liegen sie dezent über den Räumen und unter Licht und Heatmap. Schema bleibt 2: Fehlt `furniture` beim Speichern (ältere App), behält die Integration die gespeicherten Möbel.
 
 Speicherort: Haven-Integration in HA (`.storage/haven.floorplan`), pro Haus ein Dokument, Abgleich zwischen Geräten (siehe `ARCHITECTURE.md`, „Geteilte Daten“).
 

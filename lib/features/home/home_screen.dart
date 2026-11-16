@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:material_ui/material_ui.dart';
 
+import '../../core/adaptive/breakpoints.dart';
 import '../../core/state/providers.dart';
 import '../../core/theme/tokens.dart';
 import '../../core/widgets/accent_scope.dart';
@@ -111,6 +112,193 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         builder: (context) {
           final hv = context.hv;
           final top = MediaQuery.paddingOf(context).top;
+          final desktop = context.isDesktopLayout;
+          final pad = desktop ? 28.0 : HavenSpace.page;
+
+          final header = ScreenHeader(
+            eyebrow: _greeting(),
+            title: 'Zuhause',
+            subtitle: _subtitle(),
+            actions: [
+              RoundIconButton(
+                icon: _editing ? Icons.check_rounded : Icons.edit_outlined,
+                label: _editing ? 'Bearbeiten beenden' : 'Übersicht bearbeiten',
+                active: _editing,
+                onTap: () => setState(() => _editing = !_editing),
+              ),
+              // Am Desktop steht der Zugang in der Seitenleiste.
+              if (!desktop) const SettingsButton(),
+            ],
+          );
+          final quickChips = SizedBox(
+            height: 56,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              padding: EdgeInsets.symmetric(horizontal: pad, vertical: 10),
+              itemCount: quick.length,
+              separatorBuilder: (_, _) => const SizedBox(width: 8),
+              itemBuilder: (context, i) => _QuickChip(
+                label: quick[i].$1,
+                icon: quick[i].$2,
+                onTap: () {
+                  HapticFeedback.selectionClick();
+                  quick[i].$3();
+                },
+              ),
+            ),
+          );
+          final roomsHeader = SectionHeader(
+            'Räume',
+            padding: EdgeInsets.fromLTRB(pad, 12, pad, 10),
+          );
+          final roomGrid = Padding(
+            padding: EdgeInsets.symmetric(horizontal: pad),
+            child: LayoutBuilder(
+              builder: (context, c) {
+                final half = (c.maxWidth - 12) / 2;
+                if (rooms.isEmpty &&
+                    snap.status != ConnectionStatus.connected) {
+                  return _RoomSkeleton(half: half);
+                }
+                if (_editing) return _RoomOrderList(rooms: rooms);
+                if (desktop) {
+                  // Raster: gleich breite Kacheln, so viele wie passen.
+                  final n = gridColumns(
+                    c.maxWidth,
+                    minItem: DesktopMetrics.roomTileMin,
+                    max: 5,
+                  );
+                  final w = (c.maxWidth - 12 * (n - 1)) / n;
+                  return Wrap(
+                    spacing: 12,
+                    runSpacing: 12,
+                    children: [
+                      for (var i = 0; i < rooms.length; i++)
+                        SizedBox(
+                          width: w,
+                          child: EntryAnimation(
+                            index: i,
+                            child: RoomTile(roomId: rooms[i].id, wide: true),
+                          ),
+                        ),
+                    ],
+                  );
+                }
+                return Wrap(
+                  spacing: 12,
+                  runSpacing: 12,
+                  children: [
+                    for (var i = 0; i < rooms.length; i++)
+                      SizedBox(
+                        width: (i == 0 && rooms.length.isOdd)
+                            ? c.maxWidth
+                            : half,
+                        child: EntryAnimation(
+                          index: i,
+                          child: RoomTile(
+                            roomId: rooms[i].id,
+                            wide: i == 0 && rooms.length.isOdd,
+                          ),
+                        ),
+                      ),
+                  ],
+                );
+              },
+            ),
+          );
+          final roomHint = Padding(
+            padding: EdgeInsets.fromLTRB(pad, 8, pad, 0),
+            child: Text(
+              _editing
+                  ? 'Halten und ziehen sortiert die Räume, auf allen Geräten.'
+                  : desktop
+                  ? 'Klick schaltet. Pfeil oder Rechtsklick öffnet den Raum.'
+                  : 'Tippen schaltet. Halten oder Pfeil öffnet den Raum.',
+              style: HavenText.caption.copyWith(color: hv.tx3),
+            ),
+          );
+          final widgetsHeader = SectionHeader(
+            'Widgets',
+            padding: EdgeInsets.fromLTRB(
+              desktop ? 0 : pad,
+              14,
+              desktop ? 0 : pad,
+              6,
+            ),
+            trailing: TextLink(
+              _editing ? 'Fertig' : 'Bearbeiten',
+              onTap: () => setState(() => _editing = !_editing),
+            ),
+          );
+          final widgetList = _editing
+              ? _EditList(widgets: widgets)
+              : _WidgetGrid(widgets: widgets);
+
+          Future<void> refresh() async {
+            Haptics.tick();
+            await repo.refresh();
+          }
+
+          final Widget content;
+          if (desktop) {
+            // Desktop: Räume im Raster links, Widgets in einer Seitenspalte.
+            content = Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: ListView(
+                    padding: EdgeInsets.only(bottom: context.navClearance),
+                    children: [
+                      header,
+                      _Notices(snap: snap, fake: repo.isFake),
+                      const UpdateNotices(),
+                      quickChips,
+                      roomsHeader,
+                      roomGrid,
+                      roomHint,
+                    ],
+                  ),
+                ),
+                Container(
+                  width: DesktopMetrics.sideColumn + 24,
+                  margin: const EdgeInsets.fromLTRB(0, 16, 20, 16),
+                  decoration: BoxDecoration(
+                    color: hv.s1.withValues(alpha: hv.isDark ? 0.35 : 0.5),
+                    borderRadius: BorderRadius.circular(HavenRadii.l),
+                    border: Border.all(color: hv.ln),
+                  ),
+                  child: ListView(
+                    padding: const EdgeInsets.fromLTRB(16, 4, 16, 20),
+                    children: [widgetsHeader, widgetList],
+                  ),
+                ),
+              ],
+            );
+          } else {
+            content = RefreshIndicator(
+              color: hv.acc,
+              backgroundColor: hv.s1,
+              onRefresh: refresh,
+              child: ListView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                padding: const EdgeInsets.only(bottom: HavenSpace.navClearance),
+                children: [
+                  header,
+                  _Notices(snap: snap, fake: repo.isFake),
+                  const UpdateNotices(),
+                  quickChips,
+                  roomsHeader,
+                  roomGrid,
+                  roomHint,
+                  widgetsHeader,
+                  Padding(
+                    padding: EdgeInsets.symmetric(horizontal: pad),
+                    child: widgetList,
+                  ),
+                ],
+              ),
+            );
+          }
           return Stack(
             children: [
               // Der Glow beginnt am oberen Bildschirmrand, hinter der
@@ -124,143 +312,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   child: MeshGlow(palette: palette, style: MeshStyle.ambient),
                 ),
               ),
-              SafeArea(
-                bottom: false,
-                child: RefreshIndicator(
-                  color: hv.acc,
-                  backgroundColor: hv.s1,
-                  onRefresh: () async {
-                    Haptics.tick();
-                    await repo.refresh();
-                  },
-                  child: ListView(
-                    physics: const AlwaysScrollableScrollPhysics(),
-                    padding: const EdgeInsets.only(
-                      bottom: HavenSpace.navClearance,
-                    ),
-                    children: [
-                      ScreenHeader(
-                        eyebrow: _greeting(),
-                        title: 'Zuhause',
-                        subtitle: _subtitle(),
-                        actions: [
-                          RoundIconButton(
-                            icon: _editing
-                                ? Icons.check_rounded
-                                : Icons.edit_outlined,
-                            label: _editing
-                                ? 'Bearbeiten beenden'
-                                : 'Übersicht bearbeiten',
-                            active: _editing,
-                            onTap: () => setState(() => _editing = !_editing),
-                          ),
-                          const SettingsButton(),
-                        ],
-                      ),
-                      _Notices(snap: snap, fake: repo.isFake),
-                      const UpdateNotices(),
-                      SizedBox(
-                        height: 56,
-                        child: ListView.separated(
-                          scrollDirection: Axis.horizontal,
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: HavenSpace.page,
-                            vertical: 10,
-                          ),
-                          itemCount: quick.length,
-                          separatorBuilder: (_, _) => const SizedBox(width: 8),
-                          itemBuilder: (context, i) => _QuickChip(
-                            label: quick[i].$1,
-                            icon: quick[i].$2,
-                            onTap: () {
-                              HapticFeedback.selectionClick();
-                              quick[i].$3();
-                            },
-                          ),
-                        ),
-                      ),
-                      const SectionHeader(
-                        'Räume',
-                        padding: EdgeInsets.fromLTRB(
-                          HavenSpace.page,
-                          12,
-                          HavenSpace.page,
-                          10,
-                        ),
-                      ),
-                      Padding(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: HavenSpace.page,
-                        ),
-                        child: LayoutBuilder(
-                          builder: (context, c) {
-                            final half = (c.maxWidth - 12) / 2;
-                            if (rooms.isEmpty &&
-                                snap.status != ConnectionStatus.connected) {
-                              return _RoomSkeleton(half: half);
-                            }
-                            if (_editing) return _RoomOrderList(rooms: rooms);
-                            return Wrap(
-                              spacing: 12,
-                              runSpacing: 12,
-                              children: [
-                                for (var i = 0; i < rooms.length; i++)
-                                  SizedBox(
-                                    width: (i == 0 && rooms.length.isOdd)
-                                        ? c.maxWidth
-                                        : half,
-                                    child: EntryAnimation(
-                                      index: i,
-                                      child: RoomTile(
-                                        roomId: rooms[i].id,
-                                        wide: i == 0 && rooms.length.isOdd,
-                                      ),
-                                    ),
-                                  ),
-                              ],
-                            );
-                          },
-                        ),
-                      ),
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(
-                          HavenSpace.page,
-                          8,
-                          HavenSpace.page,
-                          0,
-                        ),
-                        child: Text(
-                          _editing
-                              ? 'Halten und ziehen sortiert die Räume, auf allen Geräten.'
-                              : 'Tippen schaltet. Halten oder Pfeil öffnet den Raum.',
-                          style: HavenText.caption.copyWith(color: hv.tx3),
-                        ),
-                      ),
-                      SectionHeader(
-                        'Widgets',
-                        padding: const EdgeInsets.fromLTRB(
-                          HavenSpace.page,
-                          14,
-                          HavenSpace.page,
-                          6,
-                        ),
-                        trailing: TextLink(
-                          _editing ? 'Fertig' : 'Bearbeiten',
-                          onTap: () => setState(() => _editing = !_editing),
-                        ),
-                      ),
-                      Padding(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: HavenSpace.page,
-                        ),
-                        child: _editing
-                            ? _EditList(widgets: widgets)
-                            : _WidgetGrid(widgets: widgets),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
+              SafeArea(bottom: false, child: content),
             ],
           );
         },

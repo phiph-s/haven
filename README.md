@@ -47,7 +47,9 @@ flutter build web --dart-define=HAVEN_FAKE=true
 # dann z. B. index.html?theme=dark&screen=room&room=salon&preset=party
 ```
 
-Parameter stehen in `lib/debug_launch.dart`. Aufbau und Konventionen: [ARCHITECTURE.md](ARCHITECTURE.md). Gestaltung und Entwürfe: [docs/design/](docs/design/spec.md). Android-Builds laufen auf einem Rechner mit Android SDK, Java 21 und Flutter (stable).
+Parameter stehen in `lib/debug_launch.dart`. Ab 1000 px Breite zeigt die App das Desktop-Layout (Seitenleiste, Spalten, Raum als Seitenpanel), darunter das Handy-Layout.
+
+**Als Seitenleisten-Eintrag in Home Assistant:** `tool/build_ha_panel.sh` baut die Web-Fassung (`flutter build web --release --no-web-resources-cdn --base-href /haven_static/<version>/`), entfernt Überflüssiges (nur eine CanvasKit, keine Source-Maps, kein Service Worker) und kopiert sie nach `../integration/custom_components/haven/frontend/` (anderer Ort mit `--out`). Die Version kommt aus der `manifest.json` der Integration und muss dazu passen, nach jedem Versionssprung also neu bauen. Größe etwa 13 MB (CanvasKit 7 MB, App 4 MB, Lizenztexte 1,4 MB). Zum Testen ohne HA: `tool/build_ha_panel.sh --fake --out /tmp/x/haven_static/0.3.0`, `/tmp/x` per `python3 -m http.server` ausliefern und `/haven_static/0.3.0/?screen=home` öffnen. Aufbau und Konventionen: [ARCHITECTURE.md](ARCHITECTURE.md). Gestaltung und Entwürfe: [docs/design/](docs/design/spec.md). Android-Builds laufen auf einem Rechner mit Android SDK, Java 21 und Flutter (stable).
 
 ## Release
 

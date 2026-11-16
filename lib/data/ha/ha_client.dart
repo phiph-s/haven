@@ -29,6 +29,7 @@ class HaClient {
   HaClient({
     required String url,
     required String token,
+    this.tokenProvider,
     ChannelFactory? channelFactory,
     this.pingInterval = const Duration(seconds: 25),
     this.requestTimeout = const Duration(seconds: 15),
@@ -42,7 +43,12 @@ class HaClient {
        _rng = random ?? Random();
 
   final Uri uri;
-  final String _token;
+  String _token;
+
+  /// Liefert vor jedem Verbindungsaufbau ein gültiges Token (Panel in HA:
+  /// kurzlebiges Access-Token aus `hass.auth`). Ohne gilt das feste Token.
+  final Future<String> Function()? tokenProvider;
+  int _authFailures = 0;
   final ChannelFactory _factory;
   final Duration pingInterval;
   final Duration requestTimeout;
@@ -128,6 +134,11 @@ class HaClient {
         await _closedSignal!.future;
       } catch (e) {
         _teardown();
+        // Mit Token-Quelle (Panel) war das Token vielleicht gerade
+        // abgelaufen: zweimal neu holen, erst dann aufgeben.
+        if (_authFailed && tokenProvider != null && ++_authFailures < 3) {
+          _authFailed = false;
+        }
         if (_authFailed) {
           _setStatus(ConnectionStatus.authFailed);
           _failFirst(
@@ -167,6 +178,15 @@ class HaClient {
   }
 
   Future<void> _connectOnce() async {
+    final tp = tokenProvider;
+    if (tp != null) {
+      try {
+        final t = await tp();
+        if (t.isNotEmpty) _token = t;
+      } catch (_) {
+        // Das letzte Token versuchen.
+      }
+    }
     _authDone = Completer<void>();
     _closedSignal = Completer<void>();
     final ch = _factory(uri);
@@ -179,6 +199,7 @@ class HaClient {
       cancelOnError: true,
     );
     await _authDone!.future.timeout(const Duration(seconds: 10));
+    _authFailures = 0;
     _setStatus(ConnectionStatus.connected);
     _startPing();
     await _resubscribe();

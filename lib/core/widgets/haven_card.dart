@@ -1,5 +1,6 @@
 import 'package:material_ui/material_ui.dart';
 
+import '../adaptive/hover.dart';
 import '../theme/tokens.dart';
 
 /// Karte auf s1 mit Haarlinie und weichem Schatten.
@@ -56,27 +57,36 @@ class RoundIconButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final hv = context.hv;
-    return Semantics(
-      button: true,
-      label: label,
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: onTap,
-        child: SizedBox(
-          width: HavenSpace.touch,
-          height: HavenSpace.touch,
-          child: Center(
-            child: AnimatedContainer(
-              duration: context.motion(HavenMotion.d2),
-              width: 42,
-              height: 42,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: active ? hv.acc : hv.s1,
-                border: Border.all(color: hv.ln),
-                boxShadow: hv.shadowSmall,
+    // Desktop: Tooltip mit der Beschriftung, Hover hebt den Rand an. Auf
+    // Touch bleibt alles wie bisher.
+    return DesktopTooltip(
+      message: label,
+      child: Semantics(
+        button: true,
+        label: label,
+        child: HoverBuilder(
+          builder: (context, hover) => GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: onTap,
+            child: SizedBox(
+              width: HavenSpace.touch,
+              height: HavenSpace.touch,
+              child: Center(
+                child: AnimatedContainer(
+                  duration: context.motion(HavenMotion.d2),
+                  width: 42,
+                  height: 42,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: active
+                        ? hv.acc
+                        : Color.alphaBlend(hoverOverlay(hv, hover), hv.s1),
+                    border: Border.all(color: hover ? hv.ln2 : hv.ln),
+                    boxShadow: hv.shadowSmall,
+                  ),
+                  child: Icon(icon, size: 21, color: active ? hv.ai : hv.tx),
+                ),
               ),
-              child: Icon(icon, size: 21, color: active ? hv.ai : hv.tx),
             ),
           ),
         ),
