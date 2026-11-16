@@ -18,6 +18,8 @@ import 'automations_provider.dart';
 import 'haven_automations_provider.dart';
 import 'knob_logic.dart';
 import 'knob_widgets.dart';
+import 'motion_editor_screen.dart';
+import 'motion_widgets.dart';
 
 /// Pfad der Liste der Home-Assistant-Automationen.
 const haAutomationsPath = '/automations/home-assistant';
@@ -102,11 +104,17 @@ class AutomationsScreen extends ConsumerWidget {
               ),
               child: EntryAnimation(
                 index: i,
-                child: HavenAutomationCard(
-                  key: ValueKey(a.id),
-                  automation: a,
-                  roomName: data?.rooms[a.roomAreaId]?.name,
-                ),
+                child: a.isMotion
+                    ? MotionAutomationCard(
+                        key: ValueKey(a.id),
+                        automation: a,
+                        roomName: data?.rooms[a.roomAreaId]?.name,
+                      )
+                    : HavenAutomationCard(
+                        key: ValueKey(a.id),
+                        automation: a,
+                        roomName: data?.rooms[a.roomAreaId]?.name,
+                      ),
               ),
             ),
         if (data == null || data.supported)
@@ -121,7 +129,7 @@ class AutomationsScreen extends ConsumerWidget {
               label: 'Neue Automation',
               icon: Icons.add_rounded,
               primary: true,
-              onTap: () => context.push(knobEditorPath()),
+              onTap: () => _chooseType(context),
             ),
           ),
         const SizedBox(height: 30),
@@ -148,6 +156,89 @@ class AutomationsScreen extends ConsumerWidget {
       ],
     );
   }
+}
+
+/// Welche Art Automation? Drehregler oder Bewegungslicht.
+Future<void> _chooseType(BuildContext context) async {
+  final kind = await showHavenSheet<String>(
+    context,
+    builder: (ctx) {
+      final hv = ctx.hv;
+      Widget option(String id, IconData icon, String title, String text) =>
+          Padding(
+            padding: const EdgeInsets.only(bottom: 10),
+            child: PressScale(
+              pressedScale: 0.98,
+              onTap: () => Navigator.of(ctx).pop(id),
+              child: Semantics(
+                button: true,
+                label: title,
+                excludeSemantics: true,
+                child: Container(
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: hv.s1,
+                    borderRadius: BorderRadius.circular(HavenRadii.l),
+                    border: Border.all(color: hv.ln),
+                  ),
+                  child: Row(
+                    children: [
+                      GestureGlyph(icon: icon, size: 48),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              title,
+                              style: HavenText.label.copyWith(
+                                color: hv.tx,
+                                fontSize: 15,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              text,
+                              style: HavenText.body.copyWith(
+                                color: hv.tx2,
+                                fontSize: 14,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          );
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            'Was soll Haven übernehmen?',
+            style: HavenText.section.copyWith(color: hv.tx),
+          ),
+          const SizedBox(height: 14),
+          option(
+            'knob',
+            kRotateIcon,
+            'Drehregler für einen Raum',
+            'Drehen dimmt, Drücken schaltet, Doppelt wechselt die Szene.',
+          ),
+          option(
+            'motion',
+            Icons.directions_walk_rounded,
+            'Bewegungslicht',
+            'Ein Melder schaltet das Licht, nur wenn es passt.',
+          ),
+        ],
+      );
+    },
+  );
+  if (!context.mounted || kind == null) return;
+  context.push(kind == 'motion' ? motionEditorPath() : knobEditorPath());
 }
 
 class _Notice extends StatelessWidget {
@@ -196,6 +287,28 @@ class _EmptyHaven extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final hv = context.hv;
+    Widget tile(IconData icon, String title, String text) => Row(
+      children: [
+        GestureGlyph(icon: icon, size: 52),
+        const SizedBox(width: 14),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: HavenText.label.copyWith(color: hv.tx, fontSize: 15),
+              ),
+              const SizedBox(height: 3),
+              Text(
+                text,
+                style: HavenText.body.copyWith(color: hv.tx2, fontSize: 14),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
     return Padding(
       padding: const EdgeInsets.fromLTRB(
         HavenSpace.page,
@@ -210,25 +323,18 @@ class _EmptyHaven extends StatelessWidget {
           borderRadius: BorderRadius.circular(HavenRadii.l),
           border: Border.all(color: hv.ln),
         ),
-        child: Row(
+        child: Column(
           children: [
-            const GestureGlyph(icon: kRotateIcon, size: 52),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Drehregler für einen Raum',
-                    style: HavenText.label.copyWith(color: hv.tx, fontSize: 15),
-                  ),
-                  const SizedBox(height: 3),
-                  Text(
-                    'Drehen dimmt, Drücken schaltet, Doppelt wechselt die Szene.',
-                    style: HavenText.body.copyWith(color: hv.tx2, fontSize: 14),
-                  ),
-                ],
-              ),
+            tile(
+              kRotateIcon,
+              'Drehregler für einen Raum',
+              'Drehen dimmt, Drücken schaltet, Doppelt wechselt die Szene.',
+            ),
+            const SizedBox(height: 16),
+            tile(
+              Icons.directions_walk_rounded,
+              'Bewegungslicht',
+              'Ein Melder schaltet das Licht, nur wenn es passt.',
             ),
           ],
         ),

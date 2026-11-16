@@ -6,6 +6,15 @@ import 'automation_logic.dart';
 /// Gerätetypen mit Aktionen (Drehregler, Taster).
 const kActionDeviceTypes = {'knob', 'remote'};
 
+/// Gerätetypen von Bewegungs- und Anwesenheitsmeldern.
+const kMotionDeviceTypes = {'motion', 'presence'};
+
+/// Wörter, an denen eine HA-Automation zu Reglern bzw. Meldern passt.
+final kKnobWords = RegExp(r'knopf|knob|drehregler|regler|taster|schalter');
+final kMotionWords = RegExp(
+  r'bewegung|melder|motion|prasenz|anwesen|occupied|occupancy|presence|sensor',
+);
+
 String gestureLabel(KnobGesture g) => switch (g) {
   KnobGesture.rotate => 'Drehen',
   KnobGesture.single => 'Drücken',
@@ -60,7 +69,7 @@ Map<int, String> validateKnobDraft(
     errors[1] = 'Wähl mindestens einen Regler oder Taster';
   } else if (draft.enabled) {
     for (final d in draft.devices) {
-      final owner = all.ownerOf(d, exceptId: draft.id);
+      final owner = all.ownerOf(d, exceptId: draft.id, type: 'room_knob');
       if (owner != null) {
         errors[1] = '${deviceNames[d] ?? d} steuert schon ${owner.name}';
         break;
@@ -127,6 +136,7 @@ List<HaConflict> findHaConflicts({
   required Map<String, String> deviceNames,
   required Map<String, List<String>> deviceAutomations,
   required List<AutomationItem> haAutomations,
+  RegExp? words,
 }) {
   final byId = {for (final a in haAutomations) a.entityId: a};
   final out = <String, HaConflict>{};
@@ -144,8 +154,7 @@ List<HaConflict> findHaConflicts({
   for (final a in haAutomations) {
     if (!a.on || out.containsKey(a.entityId)) continue;
     final n = foldText(a.name);
-    final knobWords = RegExp(r'knopf|knob|drehregler|regler|taster|schalter');
-    if (!knobWords.hasMatch(n)) continue;
+    if (!(words ?? kKnobWords).hasMatch(n)) continue;
     final hit =
         names.any((x) => x.isNotEmpty && n.contains(x)) ||
         (room != null &&

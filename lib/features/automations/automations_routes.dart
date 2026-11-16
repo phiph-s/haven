@@ -7,6 +7,7 @@ import '../../core/widgets/system_bars.dart';
 import '../ha_web/ha_web_screen.dart';
 import 'ha_automations_screen.dart';
 import 'knob_editor_screen.dart';
+import 'motion_editor_screen.dart';
 
 /// Von rechts hereinschieben (Vollbild ohne Navigation).
 Page<void> _slide(GoRouterState state, Widget child) =>
@@ -33,6 +34,8 @@ Page<void> _slide(GoRouterState state, Widget child) =>
 /// - `/automations/knob/new?room=<area>&step=<0..6>` bzw.
 ///   `/automations/knob/<id>?step=`: Drehregler-Assistent bzw. -Editor
 ///   (`demo=1` füllt den Live-Test für Screenshots).
+/// - `/automations/motion/new?room=&step=` bzw. `/automations/motion/<id>`:
+///   Bewegungslicht-Assistent bzw. -Editor.
 final List<RouteBase> automationsRoutes = <RouteBase>[
   GoRoute(
     path: 'ha',
@@ -59,6 +62,23 @@ final List<RouteBase> automationsRoutes = <RouteBase>[
       return _slide(
         state,
         KnobEditorScreen(
+          id: id == 'new' ? null : id,
+          initialRoom: q['room'],
+          initialStep: int.tryParse(q['step'] ?? ''),
+          demo: q['demo'] == '1',
+        ),
+      );
+    },
+  ),
+  GoRoute(
+    path: 'motion/:id',
+    parentNavigatorKey: rootNavigatorKey,
+    pageBuilder: (context, state) {
+      final id = state.pathParameters['id']!;
+      final q = state.uri.queryParameters;
+      return _slide(
+        state,
+        MotionEditorScreen(
           id: id == 'new' ? null : id,
           initialRoom: q['room'],
           initialStep: int.tryParse(q['step'] ?? ''),

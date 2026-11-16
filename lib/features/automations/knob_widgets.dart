@@ -77,8 +77,15 @@ class GestureGlyph extends StatelessWidget {
 /// Hinweis, wenn HA-Automationen dieselben Regler steuern, mit Knopf zum
 /// Deaktivieren nach Bestätigung.
 class HaConflictCard extends ConsumerWidget {
-  const HaConflictCard({super.key, required this.conflicts});
+  const HaConflictCard({
+    super.key,
+    required this.conflicts,
+    this.what = 'Regler',
+  });
   final List<HaConflict> conflicts;
+
+  /// Was die HA-Automationen ansprechen („Regler“, „Melder“).
+  final String what;
 
   Future<void> _disable(BuildContext context, WidgetRef ref) async {
     final ok = await showHavenSheet<bool>(
@@ -170,7 +177,7 @@ class HaConflictCard extends ConsumerWidget {
           ),
           const SizedBox(height: 6),
           Text(
-            'Diese HA-Automationen steuern dieselben Regler. Deaktiviere sie, '
+            'Diese HA-Automationen ${what == 'Regler' ? 'steuern' : 'nutzen'} dieselben $what. Deaktiviere sie, '
             'sonst passiert alles doppelt.',
             style: HavenText.body.copyWith(color: hv.tx2, fontSize: 14),
           ),

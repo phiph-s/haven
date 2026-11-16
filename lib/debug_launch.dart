@@ -16,7 +16,7 @@ import 'package:material_ui/material_ui.dart';
 /// `screen=zigbee_mesh` zeigt den Netz-Graphen, `select=<ieee>` (bzw. `ieee=`)
 /// wählt einen Knoten, `filter=all` zeigt alle Verbindungen.
 /// `screen=room&extent=0.5` öffnet das Raum-Sheet halb gezogen.
-/// `screen=map&layer=temperature` wählt die Kartenart (`light`,
+/// `screen=map&layer=temperature` wählt die Kartenart (`combo`, `lamps`,
 /// `temperature`, `humidity`, `presence`, `network`, `battery`),
 /// `menu=1` klappt die Auswahl der Kartenarten auf, `t=-20` stellt den
 /// Zeitstrahl der Bewegung auf vor 20 min.
@@ -29,6 +29,9 @@ import 'package:material_ui/material_ui.dart';
 /// den Drehregler-Assistenten (`room=`, `preset=<Schritt 0..6>`),
 /// `screen=automation_edit` eine Beispiel-Automation (`ieee=<ID>`,
 /// `preset=<Schritt>`), beide mit Beispielgesten im Live-Test.
+/// `screen=motion_new&room=waschraum&preset=<Schritt 0..6>` ist der
+/// Bewegungslicht-Assistent, `screen=motion_edit&preset=<Schritt>` das
+/// Beispiel `demo-waschraum`.
 class LaunchOverrides {
   const LaunchOverrides({
     this.theme,
@@ -140,6 +143,10 @@ class LaunchOverrides {
       '/automations/knob/new?room=$room&step=${preset ?? 0}&demo=1',
     'automation_edit' =>
       '/automations/knob/${ieee ?? 'demo-salon'}?step=${preset ?? 6}&demo=1',
+    'motion_new' =>
+      '/automations/motion/new?room=$room&step=${preset ?? 0}&demo=1',
+    'motion_edit' =>
+      '/automations/motion/${ieee ?? 'demo-waschraum'}?step=${preset ?? 6}&demo=1',
     'settings' => '/settings',
     'updates' => '/settings/updates',
     'onboarding' => '/onboarding',

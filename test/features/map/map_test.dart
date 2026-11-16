@@ -76,7 +76,7 @@ void main() {
     // Feld) zeigt zusätzlich ihr erstes Gerät im Gruppenknoten.
     expect(find.byType(MapMarker), findsNWidgets(plan.placements.length + 1));
     expect(find.byType(FloorGroupBadge), findsOneWidget);
-    expect(find.bySemanticsLabel('Kartenart: Licht'), findsOneWidget);
+    expect(find.bySemanticsLabel('Kartenart: Kombi'), findsOneWidget);
 
     // Alle platzierten Entities gibt es in den Beispieldaten.
     final snap = c.read(snapshotProvider);

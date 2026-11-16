@@ -65,6 +65,10 @@ void main() {
     );
     await tester.tap(find.text('Neue Automation'));
     await tester.pumpAndSettle();
+    // Erst die Art wählen
+    expect(find.text('Bewegungslicht'), findsWidgets);
+    await tester.tap(find.text('Drehregler für einen Raum'));
+    await tester.pumpAndSettle();
     expect(find.text('Drehregler für einen Raum'), findsOneWidget);
     expect(find.text('Welcher Raum?'), findsOneWidget);
 
@@ -142,7 +146,7 @@ void main() {
     expect(saved.options.scenes, [0, 1, 2, 3]);
     // zurück im Tab, die neue Karte ist da
     expect(find.text('Haven-Automationen'), findsOneWidget);
-    expect(find.text('2 von 2 Haven-Automationen aktiv'), findsOneWidget);
+    expect(find.text('3 von 3 Haven-Automationen aktiv'), findsOneWidget);
   });
 
   testWidgets(

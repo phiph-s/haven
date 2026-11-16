@@ -102,7 +102,8 @@ class _KnobEditorScreenState extends ConsumerState<KnobEditorScreen> {
     if (devices.isEmpty) {
       devices = [
         for (final k in ref.read(knobDevicesProvider))
-          if (k.roomId == areaId && all.ownerOf(k.ieee, exceptId: d.id) == null)
+          if (k.roomId == areaId &&
+              all.ownerOf(k.ieee, exceptId: d.id, type: 'room_knob') == null)
             k.ieee,
       ];
     }
@@ -309,7 +310,7 @@ class _KnobEditorScreenState extends ConsumerState<KnobEditorScreen> {
             ),
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 10, 20, 4),
-              child: _StepBar(
+              child: StepBar(
                 step: _step,
                 reached: _reached,
                 onTap: draft == null ? null : _go,
@@ -413,8 +414,15 @@ class _KnobEditorScreenState extends ConsumerState<KnobEditorScreen> {
 
 // ---- Leiste der Schritte ---------------------------------------------------
 
-class _StepBar extends StatelessWidget {
-  const _StepBar({required this.step, required this.reached, this.onTap});
+class StepBar extends StatelessWidget {
+  const StepBar({
+    super.key,
+    required this.step,
+    required this.reached,
+    this.onTap,
+    this.labels = _steps,
+  });
+  final List<String> labels;
   final int step;
   final int reached;
   final ValueChanged<int>? onTap;
@@ -424,11 +432,11 @@ class _StepBar extends StatelessWidget {
     final hv = context.hv;
     return Row(
       children: [
-        for (var i = 0; i < _steps.length; i++)
+        for (var i = 0; i < labels.length; i++)
           Expanded(
             child: Semantics(
               button: i <= reached,
-              label: 'Schritt ${i + 1}: ${_steps[i]}',
+              label: 'Schritt ${i + 1}: ${labels[i]}',
               excludeSemantics: true,
               child: GestureDetector(
                 behavior: HitTestBehavior.opaque,
@@ -462,8 +470,13 @@ class _StepBar extends StatelessWidget {
 
 // ---- Gemeinsame Bausteine -------------------------------------------------
 
-class _StepScroll extends StatelessWidget {
-  const _StepScroll({required this.title, this.lead, required this.children});
+class StepScroll extends StatelessWidget {
+  const StepScroll({
+    super.key,
+    required this.title,
+    this.lead,
+    required this.children,
+  });
   final String title;
   final String? lead;
   final List<Widget> children;
@@ -490,8 +503,8 @@ class _StepScroll extends StatelessWidget {
 }
 
 /// Auswahlzeile mit Haken bzw. Kreis.
-class _PickRow extends StatelessWidget {
-  const _PickRow({
+class PickRow extends StatelessWidget {
+  const PickRow({
     super.key,
     required this.title,
     this.subtitle,
@@ -602,7 +615,7 @@ class _RoomStep extends ConsumerWidget {
         final ia = order.indexOf(a.areaId), ib = order.indexOf(b.areaId);
         return (ia < 0 ? 999 : ia).compareTo(ib < 0 ? 999 : ib);
       });
-    return _StepScroll(
+    return StepScroll(
       title: 'Welcher Raum?',
       lead: 'Die Regler steuern das Licht dieses Raums.',
       children: [
@@ -612,7 +625,7 @@ class _RoomStep extends ConsumerWidget {
             style: HavenText.body.copyWith(color: context.hv.tx2),
           ),
         for (final r in rooms)
-          _PickRow(
+          PickRow(
             title: r.name,
             subtitle: _roomSubtitle(r, all),
             leading: Icon(Icons.meeting_room_outlined, color: context.hv.tx2),
@@ -665,10 +678,10 @@ class _DeviceStep extends ConsumerWidget {
     final conflicts = ref.watch(haConflictsProvider(draft));
 
     Widget row(ZbDeviceView k) {
-      final owner = all.ownerOf(k.ieee, exceptId: draft.id);
+      final owner = all.ownerOf(k.ieee, exceptId: draft.id, type: 'room_knob');
       final selected = draft.devices.contains(k.ieee);
       final kind = k.device.deviceType == 'remote' ? 'Taster' : 'Drehregler';
-      return _PickRow(
+      return PickRow(
         multi: true,
         title: k.name,
         subtitle: owner != null && draft.enabled
@@ -702,7 +715,7 @@ class _DeviceStep extends ConsumerWidget {
       );
     }
 
-    return _StepScroll(
+    return StepScroll(
       title: 'Welche Regler und Taster?',
       lead: 'Alle gewählten Geräte machen dasselbe.',
       children: [
@@ -712,11 +725,11 @@ class _DeviceStep extends ConsumerWidget {
             style: HavenText.body.copyWith(color: hv.tx2),
           ),
         if (inRoom.isNotEmpty) ...[
-          _Label('Im Raum ${room?.name ?? ''}'.trim()),
+          FieldLabel('Im Raum ${room?.name ?? ''}'.trim()),
           for (final k in inRoom) row(k),
         ],
         if (others.isNotEmpty) ...[
-          _Label(inRoom.isEmpty ? 'Alle Geräte' : 'Weitere'),
+          FieldLabel(inRoom.isEmpty ? 'Alle Geräte' : 'Weitere'),
           for (final k in others) row(k),
         ],
         if (conflicts.isNotEmpty) ...[
@@ -728,8 +741,8 @@ class _DeviceStep extends ConsumerWidget {
   }
 }
 
-class _Label extends StatelessWidget {
-  const _Label(this.text);
+class FieldLabel extends StatelessWidget {
+  const FieldLabel(this.text, {super.key});
   final String text;
 
   @override
@@ -787,7 +800,7 @@ class _GestureStep extends StatelessWidget {
             ),
             const SizedBox(height: 14),
             for (final b in options)
-              _PickRow(
+              PickRow(
                 title: bindingLabel(g, b, scenes),
                 subtitle: _hint(b),
                 selected: b == current,
@@ -814,7 +827,7 @@ class _GestureStep extends StatelessWidget {
   Widget build(BuildContext context) {
     final hv = context.hv;
     final scenes = room?.scenes ?? const <GroupScene>[];
-    return _StepScroll(
+    return StepScroll(
       title: 'Was soll passieren?',
       lead: 'Tipp auf eine Geste, um sie zu belegen.',
       children: [
@@ -904,7 +917,7 @@ class _SceneStep extends StatelessWidget {
     final hv = context.hv;
     final all = room?.scenes ?? const <GroupScene>[];
     if (room?.group == null || all.isEmpty) {
-      return _StepScroll(
+      return StepScroll(
         title: 'Szenen',
         lead: room?.group == null
             ? 'Dieser Raum hat keine Z2M-Gruppe. Szenen gibt es nur mit Gruppe, '
@@ -949,7 +962,7 @@ class _SceneStep extends StatelessWidget {
           },
           children: [
             for (final (i, (s, on)) in ordered.indexed)
-              _PickRow(
+              PickRow(
                 key: ValueKey(s.id),
                 multi: true,
                 title: s.name,
@@ -1013,7 +1026,7 @@ class _SceneStep extends StatelessWidget {
             runSpacing: 8,
             children: [
               for (final s in all)
-                _Chip(
+                OptionChip(
                   label: s.name,
                   selected: s.id == onScene,
                   onTap: () => onChanged(
@@ -1030,8 +1043,9 @@ class _SceneStep extends StatelessWidget {
   }
 }
 
-class _Chip extends StatelessWidget {
-  const _Chip({
+class OptionChip extends StatelessWidget {
+  const OptionChip({
+    super.key,
     required this.label,
     required this.selected,
     required this.onTap,
@@ -1101,10 +1115,10 @@ class _OptionsStepState extends State<_OptionsStep> {
     final o = d.options;
     final rotates =
         o.binding(KnobGesture.rotate).action == GestureAction.brightness;
-    return _StepScroll(
+    return StepScroll(
       title: 'Feinschliff',
       children: [
-        _Label('Name'),
+        FieldLabel('Name'),
         Container(
           height: 52,
           padding: const EdgeInsets.symmetric(horizontal: 14),
@@ -1133,7 +1147,7 @@ class _OptionsStepState extends State<_OptionsStep> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                _ValueHeader(
+                ValueHeader(
                   'Schrittweite',
                   '${stepPercent(o.step)} % je Rastung',
                 ),
@@ -1150,7 +1164,7 @@ class _OptionsStepState extends State<_OptionsStep> {
                   ),
                 ),
                 const SizedBox(height: 16),
-                _ValueHeader(
+                ValueHeader(
                   'Mindesthelligkeit',
                   '${stepPercent(o.minBrightness)} %',
                 ),
@@ -1169,7 +1183,7 @@ class _OptionsStepState extends State<_OptionsStep> {
                   ),
                 ),
                 const SizedBox(height: 16),
-                _ValueHeader(
+                ValueHeader(
                   'Übergang',
                   '${o.transition.toStringAsFixed(1).replaceAll('.', ',')} s',
                 ),
@@ -1186,7 +1200,7 @@ class _OptionsStepState extends State<_OptionsStep> {
                   onChanged: (v) => _opts(o.copyWith(transition: v)),
                 ),
                 const SizedBox(height: 14),
-                _SwitchRow(
+                SwitchRow(
                   title: 'Am Minimum ausschalten',
                   subtitle: 'Weiter nach links drehen schaltet aus',
                   value: o.offAtMin,
@@ -1201,8 +1215,8 @@ class _OptionsStepState extends State<_OptionsStep> {
   }
 }
 
-class _ValueHeader extends StatelessWidget {
-  const _ValueHeader(this.title, this.value);
+class ValueHeader extends StatelessWidget {
+  const ValueHeader(this.title, this.value, {super.key});
   final String title;
   final String value;
 
@@ -1223,8 +1237,9 @@ class _ValueHeader extends StatelessWidget {
   }
 }
 
-class _SwitchRow extends StatelessWidget {
-  const _SwitchRow({
+class SwitchRow extends StatelessWidget {
+  const SwitchRow({
+    super.key,
     required this.title,
     this.subtitle,
     required this.value,
@@ -1310,7 +1325,7 @@ class _SummaryStep extends ConsumerWidget {
       ),
     );
 
-    return _StepScroll(
+    return StepScroll(
       title: 'Alles klar?',
       children: [
         HavenCard(
@@ -1344,7 +1359,7 @@ class _SummaryStep extends ConsumerWidget {
           ),
         ),
         const SizedBox(height: 12),
-        _SwitchRow(
+        SwitchRow(
           title: 'Aktiv',
           subtitle: 'Aus: Die Regler tun nichts',
           value: draft.enabled,

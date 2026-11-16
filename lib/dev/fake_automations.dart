@@ -4,8 +4,9 @@ import '../data/haven_repository.dart';
 import '../data/models/haven_automation.dart';
 import 'fake_zigbee.dart';
 
-/// Haven-Automationen in den Entwicklungsdaten: zwei Beispiele im Speicher
-/// (Drehregler im Salon, Taster im Ruheraum) und simulierte Gesten.
+/// Haven-Automationen in den Entwicklungsdaten: drei Beispiele im Speicher
+/// (Drehregler im Salon, Taster im Ruheraum, Bewegungslicht im Waschraum) und
+/// simulierte Gesten bzw. Zustände des Bewegungslichts.
 ///
 /// Gesten wirken wie in der Integration auf die Lampen des Raums (über die
 /// Raum-Aktionen des Fake-Repositorys). Solange jemand die Auslösungen hört
@@ -31,6 +32,7 @@ class FakeAutomations {
 
   static const salonKnob = '0x00124b0000000016';
   static const ruheraumButton = '0x00124b0000000008';
+  static const waschraumPresence = '0x00124b000000001f';
 
   late final StreamController<AutomationTrigger> _triggers;
   final _changed = StreamController<void>.broadcast();
@@ -38,6 +40,9 @@ class FakeAutomations {
   int _simTick = 0;
   int _nextId = 3;
   final Map<String, int> _lastScene = {};
+
+  int _motionTick = 0;
+  Timer? _motionSim;
 
   late List<HavenAutomation> _items = [
     HavenAutomation(
@@ -75,6 +80,33 @@ class FakeAutomations {
       lastTriggered: AutomationFired(
         DateTime.now().subtract(const Duration(hours: 3)),
         'single',
+      ),
+    ),
+    HavenAutomation(
+      id: 'demo-waschraum',
+      type: kMotionType,
+      name: 'Bewegungslicht Waschraum',
+      roomAreaId: 'waschraum',
+      devices: const [waschraumPresence],
+      motion: const MotionOptions(
+        windows: [TimeWindow('18:00', '07:00')],
+        sun: SunWindow(from: SunEdge('sunset'), until: SunEdge('sunrise', 60)),
+        luxBelow: 30,
+        light: MotionLight(brightness: 140, colorTemp: 2700),
+        night: NightLight(),
+        delay: 90,
+        warn: true,
+      ),
+      motionStatus: MotionStatus(
+        phase: MotionPhase.motion,
+        offAt: DateTime.now().add(const Duration(seconds: 80)),
+        night: false,
+        lux: 12,
+        detectors: const ['binary_sensor.prasenz_waschraum_presence'],
+      ),
+      lastTriggered: AutomationFired(
+        DateTime.now().subtract(const Duration(seconds: 10)),
+        'motion_extend',
       ),
     ),
   ];
@@ -128,18 +160,28 @@ class FakeAutomations {
     }
     if (a.devices.isEmpty) {
       throw HavenException(
-        'Wähl mindestens einen Regler oder Taster',
+        a.isMotion
+            ? 'Wähl mindestens einen Melder'
+            : 'Wähl mindestens einen Regler oder Taster',
         code: 'invalid_format',
       );
     }
     if (a.enabled) {
       for (final d in a.devices) {
         final owner = _items
-            .where((x) => x.enabled && x.id != a.id && x.devices.contains(d))
+            .where(
+              (x) =>
+                  x.enabled &&
+                  x.id != a.id &&
+                  x.type == a.type &&
+                  x.devices.contains(d),
+            )
             .firstOrNull;
         if (owner != null) {
           throw HavenException(
-            'Das Gerät steuert schon ${owner.name}',
+            a.isMotion
+                ? 'Der Melder meldet schon für ${owner.name}'
+                : 'Das Gerät steuert schon ${owner.name}',
             code: 'device_taken',
           );
         }
@@ -151,7 +193,10 @@ class FakeAutomations {
     if (i < 0) {
       _items.add(saved);
     } else {
-      _items[i] = saved.copyWith(lastTriggered: _items[i].lastTriggered);
+      _items[i] = saved.copyWith(
+        lastTriggered: _items[i].lastTriggered,
+        motionStatus: _items[i].motionStatus,
+      );
     }
     _changed.add(null);
     return _items.firstWhere((x) => x.id == saved.id);
@@ -165,7 +210,142 @@ class FakeAutomations {
   Future<void> test(String id, String action) async {
     final a = _items.where((x) => x.id == id).firstOrNull;
     if (a == null) throw HavenException('Unbekannt.', code: 'not_found');
+    if (a.isMotion) return _testMotion(a, action);
     await _fire(a, action, null, 'test');
+  }
+
+  /// Test eines Bewegungslichts: `motion`, `clear`, `takeover`.
+  Future<void> _testMotion(HavenAutomation a, String action) async {
+    final delay = a.motion?.delay ?? 120;
+    final (event, status) = switch (action) {
+      'motion' => (
+        'motion_on',
+        MotionStatus(
+          phase: MotionPhase.motion,
+          occupied: true,
+          night: false,
+          lux: 12,
+          detectors: a.motionStatus?.detectors ?? const [],
+        ),
+      ),
+      'clear' => (
+        'motion_extend',
+        MotionStatus(
+          phase: MotionPhase.motion,
+          offAt: DateTime.now().add(Duration(seconds: delay)),
+          lux: 12,
+          detectors: a.motionStatus?.detectors ?? const [],
+        ),
+      ),
+      _ => (
+        'takeover',
+        MotionStatus(
+          phase: MotionPhase.manual,
+          lux: 12,
+          detectors: a.motionStatus?.detectors ?? const [],
+        ),
+      ),
+    };
+    _emitMotion(a, event, status, 'test');
+    if (event == 'motion_on') {
+      await repo.setRoomBrightness(a.roomAreaId, 55);
+    }
+  }
+
+  void _emitMotion(
+    HavenAutomation a,
+    String event,
+    MotionStatus status,
+    String source,
+  ) {
+    final now = DateTime.now();
+    final i = _items.indexWhere((x) => x.id == a.id);
+    if (i < 0) return;
+    _items = [..._items]
+      ..[i] = _items[i].copyWith(
+        motionStatus: status,
+        lastTriggered: AutomationFired(now, event),
+      );
+    if (!_triggers.isClosed) {
+      _triggers.add(
+        AutomationTrigger(
+          id: a.id!,
+          action: event,
+          room: a.roomAreaId,
+          source: source,
+          at: now,
+          motion: status,
+        ),
+      );
+    }
+  }
+
+  // Erfundener Ablauf für das Bewegungslicht: an, verlängern, Nachlauf,
+  // Vorwarnung, aus, Übernahme von Hand, wieder frei.
+  void _motionStep() {
+    final a = _items.where((x) => x.id == 'demo-waschraum').firstOrNull;
+    if (a == null || !a.enabled) return;
+    const det = ['binary_sensor.prasenz_waschraum_presence'];
+    final now = DateTime.now();
+    final script = <(String, MotionStatus)>[
+      (
+        'motion_on',
+        const MotionStatus(
+          phase: MotionPhase.motion,
+          occupied: true,
+          night: false,
+          lux: 12,
+          detectors: det,
+        ),
+      ),
+      (
+        'motion_extend',
+        MotionStatus(
+          phase: MotionPhase.motion,
+          offAt: now.add(const Duration(seconds: 90)),
+          lux: 12,
+          detectors: det,
+        ),
+      ),
+      (
+        'warn',
+        MotionStatus(
+          phase: MotionPhase.warn,
+          offAt: now.add(const Duration(seconds: 20)),
+          lux: 12,
+          detectors: det,
+        ),
+      ),
+      (
+        'motion_off',
+        const MotionStatus(phase: MotionPhase.idle, lux: 12, detectors: det),
+      ),
+      (
+        'motion_on',
+        const MotionStatus(
+          phase: MotionPhase.motion,
+          occupied: true,
+          night: true,
+          lux: 12,
+          detectors: det,
+        ),
+      ),
+      (
+        'takeover',
+        const MotionStatus(phase: MotionPhase.manual, lux: 12, detectors: det),
+      ),
+      (
+        'motion_off',
+        const MotionStatus(
+          phase: MotionPhase.inactive,
+          inactive: 'lux',
+          lux: 80,
+          detectors: det,
+        ),
+      ),
+    ];
+    final (event, status) = script[_motionTick++ % script.length];
+    _emitMotion(a, event, status, 'device');
   }
 
   /// Eine Geste an einem Gerät: Meldung wie von Z2M, dann die Automation.
@@ -289,11 +469,17 @@ class FakeAutomations {
       final (ieee, action) = _pattern[_simTick++ % _pattern.length];
       unawaited(gesture(ieee, action));
     });
+    _motionSim = Timer.periodic(
+      const Duration(seconds: 4),
+      (_) => _motionStep(),
+    );
   }
 
   void _stopSimulation() {
     _sim?.cancel();
     _sim = null;
+    _motionSim?.cancel();
+    _motionSim = null;
   }
 
   Future<void> dispose() async {

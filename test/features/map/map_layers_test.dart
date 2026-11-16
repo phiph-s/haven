@@ -4,6 +4,10 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:haven/app.dart';
 import 'package:haven/core/state/providers.dart';
 import 'package:haven/data/models/floor_plan.dart';
+import 'package:haven/data/models/haven_automation.dart';
+import 'package:haven/data/models/zigbee.dart';
+import 'package:haven/features/map/map_light_controls.dart';
+import 'package:haven/features/map/map_markers.dart';
 import 'package:haven/data/models/state_history.dart';
 import 'package:haven/data/storage/settings_store.dart';
 import 'package:haven/dev/fake_floor_plan.dart';
@@ -16,6 +20,7 @@ import 'package:haven/features/map/map_readings.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class _Repo implements FloorPlanRepository {
+  _Repo([this.plan]);
   HavenFloorPlan? plan;
   @override
   Future<HavenFloorPlan?> load() async => plan;
@@ -29,6 +34,7 @@ Future<(ProviderContainer, SettingsStore)> _pump(
   WidgetTester tester, {
   Map<String, Object> prefs = const {},
   bool settle = true,
+  HavenFloorPlan? plan,
 }) async {
   SharedPreferences.setMockInitialValues(prefs);
   final store = SettingsStore(await SharedPreferences.getInstance());
@@ -46,7 +52,7 @@ Future<(ProviderContainer, SettingsStore)> _pump(
       settingsStoreProvider.overrideWithValue(store),
       tokenStoreProvider.overrideWithValue(MemoryTokenStore()),
       initialSessionProvider.overrideWithValue(session),
-      floorPlanRepositoryProvider.overrideWithValue(_Repo()),
+      floorPlanRepositoryProvider.overrideWithValue(_Repo(plan)),
     ],
   );
   addTearDown(c.dispose);
@@ -68,6 +74,82 @@ Future<(ProviderContainer, SettingsStore)> _pump(
 }
 
 void main() {
+  group('Lichtschalter der Kartenart Licht', () {
+    ZbDevice dev(String ieee, String type, List<String> ents) => ZbDevice(
+      ieee: ieee,
+      friendlyName: 'Gerät $ieee',
+      deviceType: type,
+      haEntities: ents,
+    );
+    FloorPlacement at(String id) => FloorPlacement(entityId: id, x: 1, y: 1);
+    HavenAutomation auto(String type, List<String> devs, {bool on = true}) =>
+        HavenAutomation(
+          id: 'a',
+          type: type,
+          name: 'x',
+          enabled: on,
+          roomAreaId: 'salon',
+          devices: devs,
+        );
+    final plan = HavenFloorPlan(
+      placements: [
+        at('light.a'),
+        at('sensor.knob_battery'),
+        at('sensor.btn_battery'),
+        at('sensor.motion_battery'),
+        at('sensor.plain_battery'),
+      ],
+    );
+    final devices = [
+      dev('k', ZbType.knob, ['sensor.knob_battery']),
+      dev('b', ZbType.remote, ['sensor.btn_battery']),
+      dev('m', ZbType.motion, ['sensor.motion_battery']),
+      dev('p', ZbType.remote, ['sensor.plain_battery']),
+    ];
+    const rooms = {
+      'salon': AutomationRoom(areaId: 'salon', name: 'Salon', group: 'g_salon'),
+    };
+
+    test('Knob-Automation oder Raumgruppe, mit Raumhinweis', () {
+      final r = lightControlRooms(
+        plan: plan,
+        devices: devices,
+        groups: const [
+          ZbGroup(id: 1, friendlyName: 'g_salon', memberIeees: ['b']),
+        ],
+        automations: HavenAutomations(
+          automations: [
+            auto('room_knob', ['k']),
+          ],
+          rooms: rooms,
+        ),
+      );
+      expect(r, {
+        'sensor.knob_battery': 'Salon',
+        'sensor.btn_battery': 'Salon',
+      });
+    });
+
+    test(
+      'Bewegungslicht-Melder, deaktivierte und fremde Geräte zählen nicht',
+      () {
+        final r = lightControlRooms(
+          plan: plan,
+          devices: devices,
+          groups: const [],
+          automations: HavenAutomations(
+            automations: [
+              auto('room_motion', ['m']),
+              auto('room_knob', ['k'], on: false),
+            ],
+            rooms: rooms,
+          ),
+        );
+        expect(r, isEmpty);
+      },
+    );
+  });
+
   group('Heatmap', () {
     test('IDW: ein Sensor gleichmäßig, zwei ergeben einen Verlauf', () {
       const one = [HeatSample(Offset(2, 2), 21)];
@@ -292,19 +374,26 @@ void main() {
           .setMockMethodCallHandler(SystemChannels.platform, (_) async => null);
     });
 
-    test('Name lesen, unbekannt wird Licht', () {
+    test('Name lesen, unbekannt wird Kombi, altes „light“ wird migriert', () {
       expect(MapLayer.fromName('temperature'), MapLayer.temperature);
-      expect(MapLayer.fromName('gibtsnicht'), MapLayer.light);
-      expect(MapLayer.fromName(null), MapLayer.light);
+      expect(MapLayer.fromName('gibtsnicht'), MapLayer.combo);
+      expect(MapLayer.fromName(null), MapLayer.combo);
+      expect(MapLayer.fromName('light'), MapLayer.combo);
+      expect(MapLayer.fromName('combo'), MapLayer.combo);
+      expect(MapLayer.fromName('lamps'), MapLayer.light);
+      expect(MapLayer.combo.label, 'Kombi');
+      for (final l in MapLayer.values) {
+        expect(MapLayer.fromName(l.storeName), l, reason: l.name);
+      }
     });
 
     testWidgets('Auswahl klappt auf, wechselt und merkt sich die Art', (
       tester,
     ) async {
       final (c, store) = await _pump(tester);
-      expect(c.read(mapLayerProvider), MapLayer.light);
+      expect(c.read(mapLayerProvider), MapLayer.combo);
       expect(find.text('Temperatur'), findsNothing);
-      await tester.tap(find.bySemanticsLabel('Kartenart: Licht'));
+      await tester.tap(find.bySemanticsLabel('Kartenart: Kombi'));
       await tester.pumpAndSettle();
       expect(find.text('Temperatur'), findsOneWidget);
       expect(find.text('Funknetz'), findsOneWidget);
@@ -330,6 +419,54 @@ void main() {
       expect(c.read(mapLayerProvider), MapLayer.presence);
       expect(find.byType(PresenceMarker), findsNWidgets(2));
       expect(find.textContaining('Bewegung'), findsWidgets);
+    });
+
+    testWidgets('gemerkte alte Art „light“ startet als Kombi', (tester) async {
+      final (c, _) = await _pump(tester, prefs: {'map_layer': 'light'});
+      expect(c.read(mapLayerProvider), MapLayer.combo);
+      expect(find.bySemanticsLabel('Kartenart: Kombi'), findsOneWidget);
+    });
+
+    testWidgets('Licht: nur Lampen und Lichtschalter, Rest ausgeblendet', (
+      tester,
+    ) async {
+      final plan = HavenFloorPlan(
+        grid: kFakeFloorPlan.grid,
+        rooms: kFakeFloorPlan.rooms,
+        furniture: kFakeFloorPlan.furniture,
+        coordinator: kFakeFloorPlan.coordinator,
+        placements: [
+          ...kFakeFloorPlan.placements,
+          const FloorPlacement(
+            entityId: 'sensor.drehknopf_salon_1_battery',
+            x: 6,
+            y: 9,
+          ),
+        ],
+      );
+      final (c, store) = await _pump(
+        tester,
+        prefs: {'map_layer': 'lamps'},
+        plan: plan,
+      );
+      expect(c.read(mapLayerProvider), MapLayer.light);
+      final lamps = kFakeFloorPlan.placements
+          .where((p) => p.entityId.startsWith('light.'))
+          .length;
+      expect(
+        find.byType(MapMarker),
+        findsNWidgets(lamps + 2),
+        reason: 'Lampen, ein Regler, Koordinator',
+      );
+      expect(find.byType(PresenceMarker), findsNothing);
+      expect(find.textContaining('Licht'), findsWidgets);
+      await tester.tap(find.bySemanticsLabel('Kartenart: Licht'));
+      await tester.pumpAndSettle();
+      expect(find.text('Kombi'), findsOneWidget);
+      await tester.tap(find.text('Kombi'));
+      await tester.pumpAndSettle();
+      expect(store.mapLayer, 'combo');
+      expect(find.byType(MapMarker), findsNWidgets(plan.placements.length + 1));
     });
 
     testWidgets('Batterie: schwache hervorgehoben', (tester) async {

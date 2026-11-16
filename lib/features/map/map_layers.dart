@@ -10,22 +10,29 @@ import '../../core/widgets/press_scale.dart';
 
 /// Kartenarten. Die gewählte Art merkt sich die App lokal.
 enum MapLayer {
-  light('Licht', Icons.lightbulb_rounded),
-  temperature('Temperatur', Icons.thermostat_rounded),
-  humidity('Luftfeuchte', Icons.water_drop_rounded),
-  presence('Bewegung', Icons.directions_walk_rounded),
-  network('Funknetz', Icons.hub_rounded),
-  battery('Batterie', Icons.battery_5_bar_rounded);
+  combo('Kombi', Icons.layers_rounded, 'combo'),
+  light('Licht', Icons.lightbulb_rounded, 'lamps'),
+  temperature('Temperatur', Icons.thermostat_rounded, 'temperature'),
+  humidity('Luftfeuchte', Icons.water_drop_rounded, 'humidity'),
+  presence('Bewegung', Icons.directions_walk_rounded, 'presence'),
+  network('Funknetz', Icons.hub_rounded, 'network'),
+  battery('Batterie', Icons.battery_5_bar_rounded, 'battery');
 
-  const MapLayer(this.label, this.icon);
+  const MapLayer(this.label, this.icon, this.storeName);
   final String label;
   final IconData icon;
 
+  /// Schlüssel im lokalen Speicher. „light“ stand früher für die Kartenart,
+  /// die jetzt „Kombi“ heißt. Das neue „Licht“ speichert deshalb als „lamps“,
+  /// ein alter Eintrag „light“ wird zu Kombi.
+  final String storeName;
+
   static MapLayer fromName(String? name) {
+    if (name == 'light') return combo;
     for (final l in values) {
-      if (l.name == name) return l;
+      if (l.storeName == name) return l;
     }
-    return light;
+    return combo;
   }
 }
 
@@ -37,7 +44,7 @@ class MapLayerNotifier extends Notifier<MapLayer> {
   void set(MapLayer layer) {
     if (layer == state) return;
     state = layer;
-    unawaited(ref.read(settingsStoreProvider).setMapLayer(layer.name));
+    unawaited(ref.read(settingsStoreProvider).setMapLayer(layer.storeName));
   }
 }
 

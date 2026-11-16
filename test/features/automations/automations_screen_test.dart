@@ -53,7 +53,7 @@ void main() {
       await _pump(tester, '/automations');
       expect(find.text('Abläufe'), findsWidgets);
       expect(find.text('Haven-Automationen'), findsOneWidget);
-      expect(find.text('2 von 2 Haven-Automationen aktiv'), findsOneWidget);
+      expect(find.text('3 von 3 Haven-Automationen aktiv'), findsOneWidget);
       // Karten mit Raum, Anzahl, zuletzt ausgelöst
       expect(find.text('Salon'), findsOneWidget);
       expect(find.text('Ruheraum'), findsOneWidget);
@@ -75,7 +75,7 @@ void main() {
       await _pump(tester, '/automations');
       await tester.tap(find.byType(HavenSwitch).first);
       await tester.pumpAndSettle();
-      expect(find.text('1 von 2 Haven-Automationen aktiv'), findsOneWidget);
+      expect(find.text('2 von 3 Haven-Automationen aktiv'), findsOneWidget);
       final all = await _repo.havenAutomations();
       expect(all.byId('demo-salon')!.enabled, isFalse);
       expect(find.text('ausgeschaltet'), findsOneWidget);

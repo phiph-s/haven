@@ -33,6 +33,7 @@ import 'map_data.dart';
 import 'map_layer_widgets.dart';
 import 'map_inspector.dart';
 import 'map_layers.dart';
+import 'map_light_controls.dart';
 import 'map_markers.dart';
 import 'map_painters.dart';
 import 'map_readings.dart';
@@ -120,6 +121,15 @@ class _MapHeader extends ConsumerWidget {
         (t == null ? '' : ' · ${num1(t)} °C im Schnitt');
   }
 
+  String _lampsSub(WidgetRef ref) {
+    final n = ref.watch(mapLightsProvider(plan!)).onCount;
+    return n == 0
+        ? 'Alle Lichter aus'
+        : n == 1
+        ? 'Ein Licht an'
+        : '$n Lichter an';
+  }
+
   String _heatSub(WidgetRef ref, HeatKind k) {
     final d = ref.watch(mapReadingsProvider(plan!)).heat(k);
     final vals = [
@@ -176,7 +186,8 @@ class _MapHeader extends ConsumerWidget {
       sub = 'Dein Zuhause im Grundriss';
     } else {
       sub = switch (layer) {
-        MapLayer.light => _lightSub(ref),
+        MapLayer.combo => _lightSub(ref),
+        MapLayer.light => _lampsSub(ref),
         MapLayer.temperature => _heatSub(ref, HeatKind.temperature),
         MapLayer.humidity => _heatSub(ref, HeatKind.humidity),
         MapLayer.presence => _presenceSub(ref),
@@ -410,7 +421,8 @@ class _MapBodyState extends ConsumerState<_MapBody> {
     _ensureClock(layer == MapLayer.presence);
 
     final _LayerView v = switch (layer) {
-      MapLayer.light => _lightView(plan),
+      MapLayer.combo => _lightView(plan),
+      MapLayer.light => _lampsView(plan),
       MapLayer.temperature => _heatView(plan, readings, HeatKind.temperature),
       MapLayer.humidity => _heatView(plan, readings, HeatKind.humidity),
       MapLayer.presence => _presenceView(plan, readings),
@@ -657,6 +669,55 @@ class _MapBodyState extends ConsumerState<_MapBody> {
         ].join(' · ');
       },
       onNodeTap: _tapNode,
+      onRoomTap: _tapRoom,
+      card: _StatusCard(lights: lights),
+    );
+  }
+
+  // ---- Nur Licht ------------------------------------------------------------
+
+  /// Lampen mit Lichtkegel in ihrer Farbe plus die Schalter, die Licht
+  /// steuern. Ausgenommene Lichter bleiben gedimmt sichtbar: Sie leuchten
+  /// trotzdem und gehören auf den Grundriss, nur Haven-Abläufe lassen sie aus.
+  _LayerView _lampsView(HavenFloorPlan plan) {
+    final hv = context.hv;
+    final lights = ref.watch(mapLightsProvider(plan));
+    final controls = ref.watch(mapLightControlsProvider(plan)).rooms;
+    final excluded = ref.watch(
+      snapshotProvider.select((s) => s.excludedLights),
+    );
+    final ids = [
+      for (final p in plan.placements)
+        if (lights.lamps.containsKey(p.entityId) ||
+            controls.containsKey(p.entityId))
+          p,
+    ];
+    return _LayerView(
+      plan: plan,
+      nodes: [
+        for (final p in ids)
+          FloorNode(id: p.entityId, point: plan.pointOfCell(p.cell)),
+      ],
+      nodeBuilder: (context, n) {
+        final isControl = controls.containsKey(n.id);
+        final marker = MapMarker(
+          entityId: n.id,
+          kind: isControl
+              ? FloorKind.remote
+              : plan.placementOf(n.id)!.resolvedKind,
+        );
+        return excluded.contains(n.id)
+            ? Opacity(opacity: 0.45, child: marker)
+            : marker;
+      },
+      underlay: MapLightPainter(plan: plan, lights: lights, hv: hv),
+      onNodeTap: (n) {
+        final room = controls[n.id];
+        if (room == null) return _tapNode(n);
+        Haptics.tick();
+        final name = ref.read(entityProvider(n.id))?.name ?? n.id;
+        _say('$name · steuert das Licht in $room');
+      },
       onRoomTap: _tapRoom,
       card: _StatusCard(lights: lights),
     );

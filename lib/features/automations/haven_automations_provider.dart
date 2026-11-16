@@ -13,14 +13,42 @@ import 'knob_logic.dart';
 /// (`kind: automations`) und nach jedem Verbinden.
 class HavenAutomationsNotifier extends AsyncNotifier<HavenAutomations> {
   StreamSubscription<void>? _sub;
+  StreamSubscription<AutomationTrigger>? _trig;
 
   @override
   Future<HavenAutomations> build() async {
     final repo = ref.watch(repositoryProvider);
     _sub?.cancel();
     _sub = repo.automationsChanged.listen((_) => unawaited(reload()));
-    ref.onDispose(() => _sub?.cancel());
+    _trig?.cancel();
+    _trig = repo.automationTriggers.listen(_onTrigger);
+    ref.onDispose(() {
+      _sub?.cancel();
+      _trig?.cancel();
+    });
     return repo.havenAutomations();
+  }
+
+  /// Zustand eines Bewegungslichts live aus dem Ereignis übernehmen.
+  void _onTrigger(AutomationTrigger t) {
+    final status = t.motion;
+    final cur = state.value;
+    if (status == null || cur == null || !ref.mounted) return;
+    final a = cur.byId(t.id);
+    if (a == null || !a.isMotion) return;
+    state = AsyncData(
+      cur.copyWith(
+        automations: [
+          for (final x in cur.automations)
+            x.id == t.id
+                ? x.copyWith(
+                    motionStatus: status,
+                    lastTriggered: AutomationFired(t.at, t.action),
+                  )
+                : x,
+        ],
+      ),
+    );
   }
 
   Future<void> reload() async {
@@ -103,6 +131,14 @@ final knobDevicesProvider = Provider<List<ZbDeviceView>>((ref) {
   ];
 });
 
+/// Bewegungs- und Anwesenheitsmelder aus der Zigbee-Liste.
+final motionDevicesProvider = Provider<List<ZbDeviceView>>((ref) {
+  return [
+    for (final v in ref.watch(zigbeeViewsProvider))
+      if (kMotionDeviceTypes.contains(v.device.deviceType)) v,
+  ];
+});
+
 /// IEEE → Name für Texte.
 final knobDeviceNamesProvider = Provider<Map<String, String>>((ref) {
   return {for (final v in ref.watch(zigbeeViewsProvider)) v.ieee: v.name};
@@ -131,5 +167,6 @@ final haConflictsProvider = Provider.family<List<HaConflict>, HavenAutomation>((
     deviceNames: ref.watch(knobDeviceNamesProvider),
     deviceAutomations: all.deviceAutomations,
     haAutomations: ref.watch(automationsProvider).items,
+    words: draft.isMotion ? kMotionWords : kKnobWords,
   );
 });
