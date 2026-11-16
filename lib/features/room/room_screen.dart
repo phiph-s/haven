@@ -19,6 +19,8 @@ import 'widgets/lamp_row.dart';
 import 'widgets/lamp_sheet.dart';
 import 'widgets/light_control_list.dart';
 import 'widgets/scene_card.dart';
+import 'widgets/scene_editor.dart';
+import '../../core/widgets/horizontal_scroller.dart';
 
 /// Raum als Sheet von unten (Route in `router.dart`, `HavenSheetPage`):
 /// Hintergrund aus der Raumfarbe, Helligkeitsregler, Szenen und Lampen.
@@ -153,6 +155,9 @@ class _RoomBody extends ConsumerWidget {
     final room = view.room;
     final bottom = MediaQuery.of(context).padding.bottom;
     final hasLights = view.lamps.isNotEmpty;
+    // Liest den Snapshot mit, damit die Karte nach dem Verbinden erscheint.
+    ref.watch(snapshotProvider.select((s) => s.rooms));
+    final canEditScenes = repo.canEditScenes(room.id);
     final excludedCount = ref.watch(
       snapshotProvider.select((s) => s.excludedLampsOf(room).length),
     );
@@ -275,17 +280,22 @@ class _RoomBody extends ConsumerWidget {
           ),
           // Szenen
           const SizedBox(height: 22),
-          const SectionHeader(
+          SectionHeader(
             'Szenen',
-            padding: EdgeInsets.symmetric(horizontal: 20),
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            trailing: canEditScenes
+                ? SceneSaveChip(onTap: () => saveSceneFlow(context, ref, room))
+                : null,
           ),
           const SizedBox(height: 10),
-          if (room.scenes.isEmpty)
+          if (room.scenes.isEmpty && !canEditScenes)
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 20),
               child: HavenCard(
                 child: Text(
-                  'Dieser Raum hat noch keine Szenen. In Haven legst du sie an und schreibst sie in die Gruppe.',
+                  room.zigbeeGroupId == null
+                      ? 'Dieser Raum hat noch keine Szenen. Szenen liegen in einer Zigbee-Gruppe, dieser Raum hat keine.'
+                      : 'Dieser Raum hat noch keine Szenen. Zum Anlegen braucht Haven eine neuere Integration in Home Assistant.',
                   style: HavenText.body.copyWith(color: hv.tx2, fontSize: 13.5),
                 ),
               ),
@@ -293,22 +303,36 @@ class _RoomBody extends ConsumerWidget {
           else
             SizedBox(
               height: 108,
-              child: ListView.separated(
-                scrollDirection: Axis.horizontal,
-                padding: const EdgeInsets.fromLTRB(20, 8, 20, 8),
-                itemCount: room.scenes.length,
-                separatorBuilder: (_, _) => const SizedBox(width: 12),
-                itemBuilder: (context, i) {
-                  final s = room.scenes[i];
-                  return SceneCard(
-                    scene: s,
-                    active: view.activeSceneId == s.id,
-                    onTap: () {
-                      HapticFeedback.selectionClick();
-                      repo.applyScene(room.id, s.id);
-                    },
-                  );
-                },
+              child: HorizontalScroller(
+                builder: (context, controller) => ListView.separated(
+                  controller: controller,
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.fromLTRB(20, 8, 20, 8),
+                  itemCount: room.scenes.length + (canEditScenes ? 1 : 0),
+                  separatorBuilder: (_, _) => const SizedBox(width: 12),
+                  itemBuilder: (context, i) {
+                    if (i == room.scenes.length) {
+                      return SceneAddCard(
+                        onTap: () => saveSceneFlow(context, ref, room),
+                      );
+                    }
+                    final s = room.scenes[i];
+                    return SceneCard(
+                      scene: s,
+                      active: view.activeSceneId == s.id,
+                      onTap: () {
+                        HapticFeedback.selectionClick();
+                        repo.applyScene(room.id, s.id);
+                      },
+                      onEdit: canEditScenes && s.editable
+                          ? () {
+                              HapticFeedback.mediumImpact();
+                              editSceneFlow(context, ref, room, s);
+                            }
+                          : null,
+                    );
+                  },
+                ),
               ),
             ),
           // Lampen

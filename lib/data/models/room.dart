@@ -14,6 +14,9 @@ class RoomScene {
     this.kelvin,
     this.onlyLightIds,
     this.entityId,
+    this.groupId,
+    this.number,
+    this.stored = false,
   });
 
   final String id;
@@ -31,6 +34,17 @@ class RoomScene {
 
   /// HA-Szene (`scene.zg...`). In den Entwicklungsdaten erfunden.
   final String? entityId;
+
+  /// Z2M-Gruppe und Szenen-ID in der Gruppe. Damit ruft die Integration
+  /// (Feature `scenes`) die Szene auf und Haven kann sie ändern.
+  final int? groupId;
+  final int? number;
+
+  /// Farben und Helligkeit stammen vom Speichern über Haven (echt), sonst
+  /// aus `scene_styles.dart` (erfunden).
+  final bool stored;
+
+  bool get editable => groupId != null && number != null;
 }
 
 /// Bedienelement im Raum: Drehregler (Knob), Taster, Fernbedienung.
@@ -63,6 +77,7 @@ class Room {
     this.areaId,
     this.groupEntityId,
     this.lightGroupIds = const [],
+    this.zigbeeGroupId,
   });
 
   final String id;
@@ -77,6 +92,9 @@ class Room {
   /// die Raumsteuerung alle Mitglieder auf einmal, geht der Befehl an die
   /// Gruppe (ein Zigbee-Befehl statt vieler, kein Nacheinander-Aufleuchten).
   final String? groupEntityId;
+
+  /// ID der Z2M-Raumgruppe, in der die Szenen liegen.
+  final int? zigbeeGroupId;
 
   /// Lichtgruppen im Bereich (HA-Gruppen, Z2M-Gruppen). Nie Lampen.
   final List<String> lightGroupIds;

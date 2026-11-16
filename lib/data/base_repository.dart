@@ -21,6 +21,31 @@ abstract class BaseRepository implements HavenRepository {
 
   bool get disposed => _disposed;
 
+  // ---- Szenen: ohne Unterstützung (Unterklassen überschreiben) ----------
+
+  @override
+  bool canEditScenes(String roomId) => false;
+
+  @override
+  Future<int> storeScene(String roomId, {String? name, int? number}) =>
+      throw HavenException(
+        'Szenen lassen sich hier nicht speichern',
+        code: 'not_supported',
+      );
+
+  @override
+  Future<void> renameScene(String roomId, int number, String name) =>
+      throw HavenException(
+        'Szenen lassen sich hier nicht ändern',
+        code: 'not_supported',
+      );
+
+  @override
+  Future<void> removeScene(String roomId, int number) => throw HavenException(
+    'Szenen lassen sich hier nicht löschen',
+    code: 'not_supported',
+  );
+
   // ---- Geteilte Dokumente, im Speicher (Entwicklungsdaten, Tests) --------
 
   final Map<AppDataKind, RemoteDoc> _docs = {};

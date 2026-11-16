@@ -108,6 +108,14 @@ Zigbee-Geräte, die es nicht mehr gibt oder deren Batterie leer ist, die Z2M abe
 - **Fake:** „Lampe Ruhebett“ (180 Tage) und „Sensor Ruheraum“ (5 Tage) in `FakeZigbee.kFakeSilent`; Info meldet die Option an.
 - Ungeprüft: alles nur gegen Fake und Tests, nicht gegen echtes HA oder Z2M.
 
+## Szenen speichern (Integration ab 0.6.0, Feature `scenes`)
+Szenen bleiben Z2M-Gruppenszenen, Haven nimmt aber die Bedienung ab: keine IDs, Speichern heißt immer „aktuelles Licht übernehmen“.
+- **Daten:** `RoomScene.groupId`/`number` (Z2M-Gruppe und Szenen-ID, `editable`), `stored` (Farben echt), `Room.zigbeeGroupId`. `HavenRepository.canEditScenes`, `storeScene(roomId, name:, number:)` (ohne `number` neu, sonst überschreiben, ID bleibt, Abläufe laufen weiter), `renameScene`, `removeScene`. `BaseRepository` wirft `not_supported`. Mit `scenes` ruft `applyScene` die Szene über `haven/zigbee/scene_recall` auf statt über die HA-Entity (die fehlt kurz nach dem Anlegen und behält nach dem Umbenennen ihre alte ID), `roomsFromHaven(sceneCommands: true)` nimmt dann auch Szenen ohne Entity.
+- **Look** (`data/scene_look.dart`, rein): `sceneLookOf(lamps)` fasst alle Lampen des Raums (auch ausgenommene, Z2M speichert jedes Gruppenmitglied) zu bis zu 3 Farben (hellste zuerst, fast gleiche einmal), mittlerer Helligkeit und, wenn alle weiß leuchten, Kelvin zusammen. Geht als `look` an die Integration, kommt über `haven/zigbee/groups` zurück und färbt die Szenenkarte; ohne Look gilt `scene_styles.dart`.
+- **Oberfläche** (`features/room/widgets/scene_editor.dart`): „Speichern“ im Kopf des Abschnitts Szenen und als Karte am Ende der Reihe. Sheet mit Vorschau des aktuellen Lichts, Name, „Bestehende ersetzen“ (Chips) und Vorschlägen. Ein vorhandener Name schaltet auf Ersetzen um (`sceneNamed`, ohne Groß/klein). Langes Drücken oder Rechtsklick auf eine Szene: ersetzen, umbenennen, löschen. Ohne Feature erscheint nichts davon.
+- **Fake:** hält Szenen je Gruppe und den Lampenzustand jeder gespeicherten Szene, `applyScene` stellt ihn wieder her.
+- Ungeprüft gegen echtes Z2M: ob `bridge/groups` nach jeder Szenenänderung neu kommt, wie ausgeschaltete Lampen in der Szene landen.
+
 ## Zigbee-Netzgraph (Spec 5a)
 Dateien: `data/models/zigbee_network.dart` (Modell), `features/zigbee/mesh/` (`mesh_scene.dart`, `mesh_painter.dart`, `mesh_graph.dart`, `mesh_screen.dart`, `mesh_providers.dart`), Miniatur in `widgets/mesh_card.dart`. Route `/zigbee/mesh` (`zigbeeMeshPath`, optional `?select=<ieee>`), Vollbild unter `zigbeeRoutes`.
 

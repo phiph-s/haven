@@ -13,6 +13,8 @@ import '../data/models/state_history.dart';
 import '../data/models/zigbee.dart';
 import '../data/models/zigbee_network.dart';
 import '../data/storage/settings_store.dart';
+import '../data/scene_look.dart';
+import '../data/scene_styles.dart';
 import 'fake_automations.dart';
 import 'fake_data.dart';
 import 'fake_floor_plan.dart';
@@ -74,6 +76,11 @@ class FakeRepository extends BaseRepository {
   final Map<String, List<String>> _lastOn = {};
   final Map<String, String> _activeScenes = {};
   List<Room> _rooms = const [];
+
+  /// Szenen je Gruppe (`[{id, name, look}]`) und je gespeicherter Szene der
+  /// Zustand jeder Lampe (`"gruppe:szene"`), wie Z2M ihn auf den Geräten hält.
+  final Map<int, List<Map<String, dynamic>>> _sceneDefs = {};
+  final Map<String, Map<String, _Mem>> _sceneLamps = {};
   Timer? _timer;
   bool _started = false;
 
@@ -211,7 +218,13 @@ class FakeRepository extends BaseRepository {
         });
       }
     }
-    _rooms = FakeRooms(inventory).derive();
+    for (final g in (inventory['z2m_groups'] as List)) {
+      _sceneDefs[g['id'] as int] = [
+        for (final sc in (g['scenes'] as List))
+          {'id': sc['id'], 'name': sc['name'], 'look': null},
+      ];
+    }
+    _rooms = FakeRooms(inventory).derive(scenes: _sceneDefs);
     // Melder: letzte Auslösung kurz vor dem Start (Anwesenheit auf der Karte).
     final now = DateTime.now();
     _motionAgo.forEach((id, min) {
@@ -483,6 +496,21 @@ class FakeRepository extends BaseRepository {
     if (r == null) return;
     final scene = r.scenes.where((s) => s.id == sceneId).firstOrNull;
     if (scene == null) return;
+    final saved = _sceneLamps['${scene.groupId}:${scene.number}'];
+    if (saved != null) {
+      saved.forEach((id, m) {
+        final cur = _mem[id];
+        if (cur == null) return;
+        cur
+          ..on = m.on
+          ..brightness = m.brightness
+          ..rgb = m.rgb
+          ..kelvin = m.kelvin;
+      });
+      _activeScenes[roomId] = sceneId;
+      _commit(saved.keys.where(_mem.containsKey));
+      return;
+    }
     final changed = <String>[];
     var i = 0;
     for (final id in _controlled(r)) {
@@ -511,6 +539,136 @@ class FakeRepository extends BaseRepository {
     }
     _activeScenes[roomId] = sceneId;
     _commit(changed);
+  }
+
+  // ---- Szenen anlegen und ändern ------------------------------------------
+
+  @override
+  bool canEditScenes(String roomId) => _room(roomId)?.zigbeeGroupId != null;
+
+  List<Map<String, dynamic>> _scenesOf(String roomId) {
+    final gid = _room(roomId)?.zigbeeGroupId;
+    if (gid == null) {
+      throw HavenException(
+        'Dieser Raum hat keine Zigbee-Gruppe',
+        code: 'not_found',
+      );
+    }
+    return _sceneDefs[gid]!;
+  }
+
+  String _sceneName(
+    List<Map<String, dynamic>> list,
+    String? name,
+    int? except,
+  ) {
+    final clean = (name ?? '').trim().split(RegExp(r'\s+')).join(' ');
+    if (clean.isEmpty) {
+      throw HavenException(
+        'Der Name darf nicht leer sein',
+        code: 'invalid_format',
+      );
+    }
+    final owner = list.where(
+      (s) =>
+          (s['name'] as String).toLowerCase() == clean.toLowerCase() &&
+          s['id'] != except,
+    );
+    if (owner.isNotEmpty) {
+      throw HavenException(
+        'Die Szene \'${owner.first['name']}\' gibt es schon',
+        code: 'name_taken',
+      );
+    }
+    return clean;
+  }
+
+  Future<void> _sceneDelay() async {
+    if (simulate) await Future<void>.delayed(const Duration(milliseconds: 600));
+  }
+
+  void _rebuildRooms() {
+    _rooms = FakeRooms(inventory).derive(scenes: _sceneDefs);
+    _push();
+  }
+
+  @override
+  Future<int> storeScene(String roomId, {String? name, int? number}) async {
+    final list = _scenesOf(roomId);
+    final gid = _room(roomId)!.zigbeeGroupId!;
+    final existing = number == null
+        ? null
+        : list.where((s) => s['id'] == number).firstOrNull;
+    if (number != null && existing == null) {
+      throw HavenException('Die Szene gibt es nicht mehr', code: 'not_found');
+    }
+    final clean = _sceneName(
+      list,
+      name ?? existing?['name'] as String?,
+      number,
+    );
+    await _sceneDelay();
+    final used = {for (final s in list) s['id'] as int};
+    final id =
+        number ??
+        Iterable<int>.generate(256).firstWhere((i) => !used.contains(i));
+    final r = _room(roomId)!;
+    final lamps = [
+      for (final l in r.lightIds)
+        if (_mem.containsKey(l)) l,
+    ];
+    final look = sceneLookOf(
+      [for (final l in lamps) snapshot.lamp(l)].nonNulls.toList(),
+    );
+    final def = {'id': id, 'name': clean, 'look': look.toJson()};
+    if (existing != null) {
+      list[list.indexOf(existing)] = def;
+    } else {
+      list.add(def);
+    }
+    _sceneLamps['$gid:$id'] = {
+      for (final l in lamps)
+        l: _Mem(
+          _mem[l]!.on,
+          _mem[l]!.brightness,
+          _mem[l]!.rgb,
+          _mem[l]!.kelvin,
+        ),
+    };
+    _activeScenes[roomId] = slugify(clean);
+    _rebuildRooms();
+    return id;
+  }
+
+  @override
+  Future<void> renameScene(String roomId, int number, String name) async {
+    final list = _scenesOf(roomId);
+    final i = list.indexWhere((s) => s['id'] == number);
+    if (i < 0) {
+      throw HavenException('Die Szene gibt es nicht mehr', code: 'not_found');
+    }
+    final clean = _sceneName(list, name, number);
+    await _sceneDelay();
+    final wasActive =
+        _activeScenes[roomId] == slugify(list[i]['name'] as String);
+    list[i] = {...list[i], 'name': clean};
+    if (wasActive) _activeScenes[roomId] = slugify(clean);
+    _rebuildRooms();
+  }
+
+  @override
+  Future<void> removeScene(String roomId, int number) async {
+    final list = _scenesOf(roomId);
+    final gid = _room(roomId)!.zigbeeGroupId!;
+    final i = list.indexWhere((s) => s['id'] == number);
+    if (i < 0) return;
+    await _sceneDelay();
+    if (_activeScenes[roomId] == slugify(list[i]['name'] as String)) {
+      _activeScenes.remove(roomId);
+    }
+    list.removeAt(i);
+    _sceneLamps.remove('$gid:$number');
+    _rebuildRooms();
   }
 
   @override
@@ -707,7 +865,7 @@ class FakeRepository extends BaseRepository {
                         'device_type': devs[m]!['device_type'],
                       },
                 ],
-                'scenes': g['scenes'],
+                'scenes': _sceneDefs[g['id']] ?? g['scenes'],
               },
           ],
         };

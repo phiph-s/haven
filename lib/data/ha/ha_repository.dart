@@ -10,12 +10,14 @@ import '../models/device.dart';
 import '../models/entity_state.dart';
 import '../models/floor_plan.dart';
 import '../models/haven_automation.dart';
+import '../models/lamp.dart';
 import '../models/light_groups.dart';
 import '../models/room.dart';
 import '../models/snapshot.dart';
 import '../models/state_history.dart';
 import '../models/zigbee.dart';
 import '../models/zigbee_network.dart';
+import '../scene_look.dart';
 import '../scene_styles.dart';
 import '../storage/settings_store.dart';
 import '../sync/app_data.dart';
@@ -364,7 +366,12 @@ class HaRepository extends BaseRepository {
     }
     _rooms = roomsRes == null
         ? _fallbackRooms()
-        : roomsFromHaven(roomsRes, groupsRes, _entities);
+        : roomsFromHaven(
+            roomsRes,
+            groupsRes,
+            _entities,
+            sceneCommands: _features.contains('scenes'),
+          );
     _devices = roomsRes == null ? const [] : devicesFromHaven(roomsRes);
   }
 
@@ -399,8 +406,9 @@ class HaRepository extends BaseRepository {
   static List<Room> roomsFromHaven(
     Map<String, dynamic> roomsRes,
     Map<String, dynamic>? groupsRes,
-    Map<String, EntityState> entities,
-  ) {
+    Map<String, EntityState> entities, {
+    bool sceneCommands = false,
+  }) {
     final groups = <int, Map<String, dynamic>>{
       for (final g in (groupsRes?['groups'] as List? ?? const []))
         ((g as Map)['id'] as num).toInt(): Map<String, dynamic>.from(g),
@@ -458,19 +466,29 @@ class HaRepository extends BaseRepository {
       }
       if (g != null) {
         final gslug = slugify(g['friendly_name'] as String);
+        final groupId = (g['id'] as num?)?.toInt();
         for (final s in (g['scenes'] as List? ?? const [])) {
           final name = '${s['name']}';
+          final number = (s['id'] as num?)?.toInt();
           final entityId = 'scene.${gslug}_${s['id']}_${slugify(name)}';
-          if (!entities.containsKey(entityId)) continue;
+          // Mit `scenes` ruft die Integration die Szene auf, die HA-Entity
+          // braucht es nicht (sie fehlt kurz nach dem Anlegen und behält nach
+          // dem Umbenennen ihre alte ID).
+          final hasEntity = entities.containsKey(entityId);
+          if (!hasEntity && !(sceneCommands && number != null)) continue;
+          final look = SceneLook.fromJson(s['look']);
           final style = sceneStyleFor(name);
           scenes.add(
             RoomScene(
               id: slugify(name),
               name: name,
-              colors: style.colors,
-              brightness: style.brightness,
-              kelvin: style.kelvin,
-              entityId: entityId,
+              colors: look?.cardColors ?? style.colors,
+              brightness: look?.brightness ?? style.brightness,
+              kelvin: look == null ? style.kelvin : look.kelvin,
+              entityId: hasEntity ? entityId : null,
+              groupId: sceneCommands ? groupId : null,
+              number: sceneCommands ? number : null,
+              stored: look != null,
             ),
           );
         }
@@ -500,6 +518,7 @@ class HaRepository extends BaseRepository {
           controls: controls,
           groupEntityId: groupEntity,
           lightGroupIds: groupIds.toList()..sort(),
+          zigbeeGroupId: (g?['id'] as num?)?.toInt(),
         ),
       );
     }
@@ -702,15 +721,87 @@ class HaRepository extends BaseRepository {
   Future<void> applyScene(String roomId, String sceneId) async {
     final r = _room(roomId);
     final scene = r?.scenes.where((s) => s.id == sceneId).firstOrNull;
-    if (r == null || scene?.entityId == null) return;
+    if (r == null || scene == null) return;
+    if (!scene.editable && scene.entityId == null) return;
     _activeScenes[roomId] = sceneId;
     _pushNow();
+    if (scene.editable) {
+      await client.send({
+        'type': 'haven/zigbee/scene_recall',
+        'group_id': scene.groupId,
+        'scene_id': scene.number,
+      });
+      return;
+    }
     await client.send({
       'type': 'call_service',
       'domain': 'scene',
       'service': 'turn_on',
-      'target': {'entity_id': scene!.entityId},
+      'target': {'entity_id': scene.entityId},
     });
+  }
+
+  @override
+  bool canEditScenes(String roomId) =>
+      _features.contains('scenes') && _room(roomId)?.zigbeeGroupId != null;
+
+  /// Alle Lampen der Raumgruppe, auch ausgenommene: Z2M speichert die Szene
+  /// für jedes Mitglied.
+  List<Lamp> _sceneLamps(Room r) => [
+    for (final id in r.lightIds)
+      if (_entities[id] != null) Lamp.fromEntity(_entities[id]!),
+  ];
+
+  @override
+  Future<int> storeScene(String roomId, {String? name, int? number}) async {
+    final r = _room(roomId);
+    if (r?.zigbeeGroupId == null) {
+      throw HavenException(
+        'Dieser Raum hat keine Zigbee-Gruppe',
+        code: 'not_found',
+      );
+    }
+    final res = await client.send({
+      'type': 'haven/zigbee/scene_store',
+      'group_id': r!.zigbeeGroupId,
+      'scene_id': ?number,
+      'name': ?name,
+      'look': sceneLookOf(_sceneLamps(r)).toJson(),
+    }) as Map;
+    final stored = (res['scene_id'] as num).toInt();
+    await reloadRooms();
+    final scene = _room(roomId)?.scenes
+        .where((s) => s.number == stored)
+        .firstOrNull;
+    if (scene != null) {
+      _activeScenes[roomId] = scene.id;
+      _pushNow();
+    }
+    return stored;
+  }
+
+  @override
+  Future<void> renameScene(String roomId, int number, String name) async {
+    final r = _room(roomId);
+    await client.send({
+      'type': 'haven/zigbee/scene_rename',
+      'group_id': r?.zigbeeGroupId,
+      'scene_id': number,
+      'name': name,
+    });
+    await reloadRooms();
+  }
+
+  @override
+  Future<void> removeScene(String roomId, int number) async {
+    final r = _room(roomId);
+    await client.send({
+      'type': 'haven/zigbee/scene_remove',
+      'group_id': r?.zigbeeGroupId,
+      'scene_id': number,
+    });
+    _activeScenes.remove(roomId);
+    await reloadRooms();
   }
 
   @override

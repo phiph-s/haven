@@ -1,4 +1,5 @@
 import '../data/models/room.dart';
+import '../data/scene_look.dart';
 import '../data/scene_styles.dart';
 
 /// Baut die Räume der Beispielwohnung aus den Konstanten in `fake_data.dart`.
@@ -24,7 +25,9 @@ class FakeRooms {
     return null;
   }
 
-  List<Room> derive() {
+  /// [scenes] ersetzt die Szenen der Gruppen (Gruppen-ID → `[{id, name,
+  /// look}]`), damit das Fake Szenen anlegen und ändern kann.
+  List<Room> derive({Map<int, List<Map<String, dynamic>>>? scenes}) {
     final rooms = <Room>[];
     for (final r in inventory['rooms'] as List) {
       final id = r['id'] as String;
@@ -76,20 +79,27 @@ class FakeRooms {
       ];
 
       // Szenen der Gruppe dieses Raums.
-      final scenes = <RoomScene>[];
+      final roomScenes = <RoomScene>[];
+      int? groupId;
       for (final g in _groups) {
         if (g['room'] != id) continue;
-        for (final s in (g['scenes'] as List)) {
+        final gid = g['id'] as int;
+        groupId ??= gid;
+        for (final s in (scenes?[gid] ?? (g['scenes'] as List))) {
           final name = s['name'] as String;
+          final look = SceneLook.fromJson(s['look']);
           final style = sceneStyleFor(name);
-          scenes.add(
+          roomScenes.add(
             RoomScene(
               id: slugify(name),
               name: name,
-              colors: style.colors,
-              brightness: style.brightness,
-              kelvin: style.kelvin,
-              onlyLightIds: name == 'Lichtleiste'
+              colors: look?.cardColors ?? style.colors,
+              brightness: look?.brightness ?? style.brightness,
+              kelvin: look == null ? style.kelvin : look.kelvin,
+              groupId: gid,
+              number: s['id'] as int,
+              stored: look != null,
+              onlyLightIds: look == null && name == 'Lichtleiste'
                   ? lights.where((l) => l.contains('lichtleiste')).toList()
                   : null,
               entityId:
@@ -106,8 +116,9 @@ class FakeRooms {
           lightIds: lights,
           temperatureId: temp,
           humidityId: hum,
-          scenes: scenes,
+          scenes: roomScenes,
           controls: controls,
+          zigbeeGroupId: groupId,
         ),
       );
     }

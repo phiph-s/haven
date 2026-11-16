@@ -55,6 +55,22 @@ abstract class HavenRepository implements ZigbeeApi, AutomationsApi {
   /// Szene eines Raums anwenden.
   Future<void> applyScene(String roomId, String sceneId);
 
+  /// Szenen anlegen und ändern geht: Integration mit Feature `scenes` und eine
+  /// Z2M-Gruppe im Raum. Schreiben braucht Admin-Rechte in HA.
+  bool canEditScenes(String roomId);
+
+  /// Speichert den aktuellen Zustand aller Lampen der Raumgruppe als Szene.
+  /// Ohne [number] entsteht eine neue Szene (der Name muss frei sein, sonst
+  /// [HavenException] mit `name_taken`), mit [number] wird diese überschrieben
+  /// (ohne [name] bleibt der Name). Liefert die Szenen-ID.
+  Future<int> storeScene(String roomId, {String? name, int? number});
+
+  /// Benennt eine Szene der Raumgruppe um.
+  Future<void> renameScene(String roomId, int number, String name);
+
+  /// Löscht eine Szene aus der Raumgruppe.
+  Future<void> removeScene(String roomId, int number);
+
   /// Alles aus im ganzen Haus (nur Lampen der Lichtsteuerung).
   Future<void> allLightsOff();
 
