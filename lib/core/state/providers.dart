@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:async';
 
 import 'package:material_ui/material_ui.dart';
@@ -182,6 +183,13 @@ final syncNoticeProvider = NotifierProvider<SyncNoticeController, SyncNotice?>(
   SyncNoticeController.new,
 );
 
+/// Laufende Abgleiche der geteilten Dokumente (Anzeige in den Einstellungen).
+final syncRegistryProvider = Provider<SyncRegistry>((ref) {
+  final r = SyncRegistry();
+  ref.onDispose(r.dispose);
+  return r;
+});
+
 /// Übersicht: Widgets und Reihenfolge der Räume. Ein geteiltes Dokument
 /// (`haven/widgets/set` mit `layout.room_order`, siehe `sync/app_data.dart`),
 /// lokal im `SettingsStore` als Cache.
@@ -239,15 +247,26 @@ class HomeLayoutController extends Notifier<HomeLayout> {
           return true;
         },
         onError: (m) => ref.read(syncNoticeProvider.notifier).show(m),
+        describe: (d) {
+          final n = (d['widgets'] as List).length;
+          return n == 1 ? '1 Widget' : '$n Widgets';
+        },
       );
       _sync = sync;
-      ref.onDispose(sync.dispose);
+      final registry = ref.read(syncRegistryProvider);
+      registry.register(sync);
+      ref.onDispose(() {
+        registry.unregister(sync);
+        sync.dispose();
+      });
       sync.start();
     }
     return HomeLayout(widgets: store.widgets, roomOrder: store.roomOrder);
   }
 
   Future<void> _changed(HomeLayout next) async {
+    // Nur echte Änderungen zählen (sonst käme ein Hochladen ohne Anlass).
+    if (jsonEncode(next.toDoc()) == jsonEncode(state.toDoc())) return;
     state = next;
     final store = ref.read(settingsStoreProvider);
     await store.setWidgets(next.widgets);

@@ -52,6 +52,7 @@ class SettingsRow extends StatelessWidget {
     this.trailing,
     this.destructive = false,
     this.iconColor,
+    this.subtitleLines = 2,
   });
 
   final IconData icon;
@@ -61,6 +62,7 @@ class SettingsRow extends StatelessWidget {
   final Widget? trailing;
   final bool destructive;
   final Color? iconColor;
+  final int subtitleLines;
 
   @override
   Widget build(BuildContext context) {
@@ -97,7 +99,7 @@ class SettingsRow extends StatelessWidget {
                   if (subtitle != null)
                     Text(
                       subtitle!,
-                      maxLines: 2,
+                      maxLines: subtitleLines,
                       overflow: TextOverflow.ellipsis,
                       style: HavenText.caption.copyWith(color: hv.tx2),
                     ),

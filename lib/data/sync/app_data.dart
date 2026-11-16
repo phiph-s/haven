@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 
 import '../haven_repository.dart';
@@ -64,35 +66,58 @@ enum SyncAction {
 
   /// Den lokalen Stand hochladen (Migration oder Änderung von offline).
   upload,
+
+  /// Lokal ungespeichert, aber der Server hat sich seitdem geändert (anderes
+  /// Gerät). Der Server gilt, die lokale Änderung wird verworfen.
+  conflict,
 }
 
-/// Abgleich zwischen lokalem Cache und Server. Neuere Fassung gewinnt.
+/// Abgleich zwischen lokalem Cache und Server.
 ///
-/// - Server leer, lokal etwas: hochladen (erste Migration nach dem Update
-///   oder Gerät mit altem lokalen Stand).
-/// - Lokal ungespeicherte Änderung ([localDirty]) und neuer als der Server:
-///   hochladen.
-/// - Sonst gilt der Server, außer er ist genau der lokale Stand.
+/// Verglichen werden keine Uhrzeiten (die Geräte gehen verschieden), sondern
+/// der Stand, auf dem die lokale Fassung beruht: [baseStamp] ist der zuletzt
+/// vom Server übernommene oder erfolgreich gespeicherte `updated_at`.
+///
+/// - Server leer, lokal etwas: hochladen (erste Migration).
+/// - Kein lokaler Stand: Server übernehmen.
+/// - Kein [baseStamp] (Installation vor 0.6.1, nie abgeglichen): Der Server
+///   gilt, auch bei lokalen Änderungen.
+/// - Server == [baseStamp]: lokal ungespeichert hochladen, sonst nichts.
+/// - Server != [baseStamp]: lokal ungespeichert ist ein Konflikt (Server
+///   gewinnt), sonst Server übernehmen.
 SyncAction decideSync({
   required bool hasLocal,
   required bool localDirty,
-  required int? localStamp,
+  required int? baseStamp,
   required RemoteDoc remote,
 }) {
   if (remote.isEmpty) return hasLocal ? SyncAction.upload : SyncAction.none;
-  if (!hasLocal) return SyncAction.takeRemote;
-  final r = remote.updatedAt;
-  final l = localStamp;
-  // Gleicher Stempel: dieselbe Fassung (z. B. das Echo des eigenen Speicherns).
-  if (r != null && r == l) return SyncAction.none;
-  if (localDirty && (r == null || (l ?? 0) > r)) return SyncAction.upload;
-  // Auch wenn lokal ein jüngerer, schon hochgeladener Stand liegt (Server
-  // wiederhergestellt): Der Server bleibt die Wahrheit.
-  return SyncAction.takeRemote;
+  if (!hasLocal || baseStamp == null) return SyncAction.takeRemote;
+  if (remote.updatedAt == baseStamp) {
+    return localDirty ? SyncAction.upload : SyncAction.none;
+  }
+  return localDirty ? SyncAction.conflict : SyncAction.takeRemote;
 }
 
+/// Hinweis nach einem Konflikt (Server gewinnt).
+String syncConflictText(AppDataKind kind) {
+  final what = switch (kind) {
+    AppDataKind.floorplan => 'Der Grundriss',
+    AppDataKind.widgets => 'Die Übersicht',
+    AppDataKind.prefs => 'Die Lichtsteuerung',
+  };
+  return '$what wurde auf einem anderen Gerät geändert, die Fassung aus Home Assistant gilt.';
+}
+
+/// Fehler, bei denen das Gerät nur gerade nicht durchkommt: Die Änderung
+/// bleibt offen und wird später hochgeladen.
+bool isOfflineError(Object e) =>
+    e is TimeoutException ||
+    (e is HavenException && (e.code == 'disconnected' || e.code == 'timeout'));
+
 /// Speicherfehler, verständlich formuliert. `null`: kein Hinweis nötig
-/// (z. B. offline, es wird später nachgeholt).
+/// (z. B. offline, es wird später nachgeholt). Alles außer `unauthorized`,
+/// `invalid_format` und Offline gilt als Konflikt: Der Server gewinnt.
 String? syncErrorText(Object e, AppDataKind kind) {
   final code = e is HavenException ? e.code : null;
   final what = switch (kind) {
@@ -108,6 +133,6 @@ String? syncErrorText(Object e, AppDataKind kind) {
     'disconnected' || 'timeout' => null,
     'unknown_command' || 'not_found' => null,
     _ =>
-      'Home Assistant konnte $what gerade nicht speichern. Haven versucht es später noch einmal.',
+      'Home Assistant konnte $what nicht speichern (${code ?? 'Fehler'}: ${e is HavenException ? e.message : e}). Die Fassung aus Home Assistant gilt.',
   };
 }

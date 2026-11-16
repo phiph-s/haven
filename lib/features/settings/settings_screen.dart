@@ -19,6 +19,7 @@ import '../updates/app_update_provider.dart';
 import '../updates/app_update_widgets.dart';
 import '../updates/ha_updates_provider.dart';
 import 'settings_widgets.dart';
+import 'sync_section.dart';
 import '../room/widgets/light_control_list.dart';
 
 /// Pfad des Grundriss-Editors. Der Karten-Agent legt die Route `editor` unter
@@ -260,6 +261,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 ],
               ),
             ),
+            ...[section('Synchronisation'), pad(const SyncSection())],
             section('Home Assistant'),
             pad(
               SettingsGroup(

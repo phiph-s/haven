@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -67,77 +68,38 @@ Future<SettingsStore> _store([Map<String, Object> init = const {}]) async {
 void main() {
   group('decideSync', () {
     const remote = RemoteDoc(data: {'x': 1}, updatedAt: 200);
+    SyncAction decide({
+      bool hasLocal = true,
+      bool dirty = false,
+      int? base,
+      RemoteDoc r = remote,
+    }) => decideSync(
+      hasLocal: hasLocal,
+      localDirty: dirty,
+      baseStamp: base,
+      remote: r,
+    );
+
     test('Server leer: lokal hochladen (Migration) oder nichts', () {
-      expect(
-        decideSync(
-          hasLocal: true,
-          localDirty: false,
-          localStamp: null,
-          remote: RemoteDoc.empty,
-        ),
-        SyncAction.upload,
-      );
-      expect(
-        decideSync(
-          hasLocal: false,
-          localDirty: false,
-          localStamp: null,
-          remote: RemoteDoc.empty,
-        ),
-        SyncAction.none,
-      );
+      expect(decide(r: RemoteDoc.empty), SyncAction.upload);
+      expect(decide(hasLocal: false, r: RemoteDoc.empty), SyncAction.none);
     });
-    test('neuere Fassung gewinnt', () {
-      // Lokal ungespeichert und neuer: hoch.
-      expect(
-        decideSync(
-          hasLocal: true,
-          localDirty: true,
-          localStamp: 300,
-          remote: remote,
-        ),
-        SyncAction.upload,
-      );
-      // Lokal ungespeichert, aber der Server ist neuer: Server.
-      expect(
-        decideSync(
-          hasLocal: true,
-          localDirty: true,
-          localStamp: 100,
-          remote: remote,
-        ),
-        SyncAction.takeRemote,
-      );
-      // Nicht geändert, Server anders: Server.
-      expect(
-        decideSync(
-          hasLocal: true,
-          localDirty: false,
-          localStamp: 100,
-          remote: remote,
-        ),
-        SyncAction.takeRemote,
-      );
-      // Gleicher Stempel: nichts (Echo des eigenen Speicherns).
-      expect(
-        decideSync(
-          hasLocal: true,
-          localDirty: true,
-          localStamp: 200,
-          remote: remote,
-        ),
-        SyncAction.none,
-      );
-      // Neues Gerät ohne eigenen Stand: Server.
-      expect(
-        decideSync(
-          hasLocal: false,
-          localDirty: false,
-          localStamp: null,
-          remote: remote,
-        ),
-        SyncAction.takeRemote,
-      );
+    test('Server == baseStamp: dirty lädt hoch, sonst nichts', () {
+      expect(decide(dirty: true, base: 200), SyncAction.upload);
+      expect(decide(base: 200), SyncAction.none);
+    });
+    test('Server != baseStamp: dirty ist Konflikt, sonst Übernahme', () {
+      expect(decide(dirty: true, base: 100), SyncAction.conflict);
+      // Auch wenn die lokale Uhr "später" geht: Uhrzeiten zählen nicht.
+      expect(decide(dirty: true, base: 999), SyncAction.conflict);
+      expect(decide(base: 100), SyncAction.takeRemote);
+    });
+    test('Ohne baseStamp (alte Installation): Server gilt', () {
+      expect(decide(dirty: true), SyncAction.takeRemote);
+      expect(decide(), SyncAction.takeRemote);
+    });
+    test('Neues Gerät ohne eigenen Stand: Server', () {
+      expect(decide(hasLocal: false), SyncAction.takeRemote);
     });
     test('Stempel: Millisekunden, Sekunden, ISO', () {
       expect(parseStamp(1763200000000), 1763200000000);
@@ -248,6 +210,9 @@ void main() {
     test(
       'Offline: bleibt offen und wird beim nächsten Abgleich hochgeladen',
       () async {
+        await repo.storeAppData(AppDataKind.widgets, {'n': 0}, 1);
+        await store.setSync('widgets', stamp: 1, dirty: false, base: 1);
+        local = {'n': 0};
         repo.failWith = 'disconnected';
         sync.start();
         await _settle();
@@ -257,12 +222,86 @@ void main() {
         expect(errors, isEmpty);
         expect(sync.dirty, isTrue);
         repo.failWith = null;
-        await repo.storeAppData(AppDataKind.widgets, {'n': 0}, 1);
-        await _settle();
-        // Lokal neuer und offen: hoch.
+        await sync.pull();
+        // Server unverändert (== baseStamp) und lokal offen: hoch.
         expect(repo.stores.last.$2, {'n': 7});
       },
     );
+    test(
+      'Offline-Fehler (disconnected, timeout) bleiben dirty, still',
+      () async {
+        sync.start();
+        await _settle();
+        for (final code in ['disconnected', 'timeout']) {
+          repo.failWith = code;
+          local = {'n': 1};
+          await sync.changed();
+          await sync.flush();
+          expect(sync.dirty, isTrue, reason: code);
+          expect(errors, isEmpty, reason: code);
+        }
+      },
+    );
+
+    test('Anderer Fehler: Code und Text sichtbar, Server gilt', () async {
+      await repo.storeAppData(AppDataKind.widgets, {'n': 'server'}, 500);
+      await store.setSync('widgets', stamp: 500, dirty: false, base: 500);
+      local = {'n': 'server'};
+      sync.start();
+      await _settle();
+      repo.failWith = 'home_assistant_error';
+      local = {'n': 'lokal'};
+      await sync.changed();
+      await sync.flush();
+      await _settle();
+      expect(errors.single, contains('home_assistant_error'));
+      expect(errors.single, contains('nein'));
+      expect(sync.dirty, isFalse);
+      expect(local, {'n': 'server'});
+      expect(sync.info.value.state, SyncState.error);
+      expect(sync.info.value.lastError, contains('home_assistant_error'));
+      // Und es gibt keinen Endlosversuch beim nächsten Abgleich.
+      repo.failWith = null;
+      final before = repo.stores.length;
+      await sync.pull();
+      expect(repo.stores.length, before);
+    });
+
+    test('Erfolgreiches Speichern merkt den Stand als Basis', () async {
+      sync.start();
+      await _settle();
+      local = {'n': 1};
+      await sync.changed();
+      await sync.flush();
+      expect(sync.dirty, isFalse);
+      expect(sync.baseStamp, sync.stamp);
+      expect(sync.baseStamp, repo.stores.last.$3);
+    });
+
+    test('Konflikt: Server gewinnt, Hinweis, lokale Änderung weg', () async {
+      await repo.storeAppData(AppDataKind.widgets, {'n': 'server'}, 500);
+      local = {'n': 'lokal'};
+      // Die lokale Uhr geht vor: Stempel nach der Server-Zeit, dirty.
+      await store.setSync('widgets', stamp: 9000, dirty: true, base: 100);
+      sync.start();
+      await _settle();
+      expect(local, {'n': 'server'});
+      expect(errors.single, contains('anderen Gerät'));
+      expect(repo.stores.length, 1); // nur die Vorbereitung oben
+      expect(sync.dirty, isFalse);
+      expect(sync.baseStamp, 500);
+    });
+
+    test('„Stand übernehmen“ verwirft die lokale Fassung', () async {
+      await repo.storeAppData(AppDataKind.widgets, {'n': 'server'}, 500);
+      local = {'n': 'lokal'};
+      await store.setSync('widgets', stamp: 600, dirty: true, base: 500);
+      final msg = await sync.takeRemoteNow();
+      expect(msg, contains('übernommen'));
+      expect(local, {'n': 'server'});
+      expect(sync.dirty, isFalse);
+      expect(sync.baseStamp, 500);
+    });
   });
 
   group('Grundriss und Übersicht über Provider', () {
@@ -322,6 +361,86 @@ void main() {
       await c.read(floorPlanProvider.notifier).save(kFakeFloorPlan);
       await _settle();
       expect(repo.stores.last.$1, AppDataKind.floorplan);
+    });
+
+    test('Laden und Migration lösen kein Speichern aus', () async {
+      final v1 = HavenFloorPlan.fromJson(
+        Map<String, dynamic>.from(
+          jsonDecode(
+            jsonEncode({
+              'version': 1,
+              'grid': {'cols': 20, 'rows': 26, 'cellMeters': 0.5},
+              'rooms': [
+                {'id': 'wz', 'name': 'Wohnen', 'x': 0, 'y': 0, 'w': 10, 'h': 8},
+              ],
+              'placements': <dynamic>[],
+            }),
+          ) as Map,
+        ),
+      );
+      expect(v1.migratedFrom, 1);
+      final (c, repo, store) = await make(localPlan: v1);
+      await repo.storeAppData(AppDataKind.floorplan, {
+        'plan': v1.toJson(),
+      }, 1000);
+      await store.setSync('floorplan', stamp: 1000, dirty: false, base: 1000);
+      final before = repo.stores.length;
+      final sub = c.listen(floorPlanProvider, (_, _) {});
+      addTearDown(sub.close);
+      await c.read(floorPlanProvider.future);
+      await _settle();
+      expect(repo.stores.length, before);
+      expect(store.syncDirty('floorplan'), isFalse);
+      // Speichern desselben Plans ist keine Änderung.
+      await c.read(floorPlanProvider.notifier).save(v1);
+      await _settle();
+      expect(repo.stores.length, before);
+      expect(store.syncDirty('floorplan'), isFalse);
+    });
+
+    test('Übersicht: unveränderte Reihenfolge speichert nicht', () async {
+      final (c, repo, store) = await make();
+      final sub = c.listen(homeLayoutProvider, (_, _) {});
+      addTearDown(sub.close);
+      await _settle();
+      final n = repo.stores.length;
+      c.read(homeLayoutProvider.notifier).setRoomOrder(const []);
+      await _settle();
+      expect(repo.stores.length, n);
+      expect(store.syncDirty('widgets'), isFalse);
+    });
+
+    test('Handy mit altem Cache und dirty-Stempel nach Server-Zeit bekommt die Möbel', () async {
+      final old = kFakeFloorPlan.copyWith(furniture: const []);
+      expect(old.furniture, isEmpty);
+      expect(kFakeFloorPlan.furniture, isNotEmpty);
+      final (c, repo, store) = await make(localPlan: old);
+      // Server: Plan mit Möbeln aus dem Panel, 11:18.
+      await repo.storeAppData(AppDataKind.floorplan, {
+        'plan': kFakeFloorPlan.toJson(),
+      }, 1794827886440);
+      // Handy: lokal "geändert" nach 11:18 (Migration der alten Version),
+      // nie mit dem Server abgeglichen (kein baseStamp).
+      await store.setSync(
+        'floorplan',
+        stamp: 1794827886440 + 3600000,
+        dirty: true,
+      );
+      final before = repo.stores.length;
+      final sub = c.listen(floorPlanProvider, (_, _) {});
+      addTearDown(sub.close);
+      await c.read(floorPlanProvider.future);
+      await _settle();
+      expect(
+        c.read(floorPlanProvider).value!.furniture,
+        hasLength(kFakeFloorPlan.furniture.length),
+      );
+      expect(repo.stores.length, before, reason: 'nichts hochgeladen');
+      expect(store.syncDirty('floorplan'), isFalse);
+      expect(store.syncBase('floorplan'), 1794827886440);
+      final info = c.read(syncRegistryProvider).docs[AppDataKind.floorplan]!;
+      expect(info.info.value.state, SyncState.current);
+      expect(info.info.value.remoteSummary, contains('Möbel'));
     });
 
     test(

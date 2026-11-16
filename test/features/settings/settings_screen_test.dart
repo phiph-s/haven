@@ -46,7 +46,10 @@ void main() {
     expect(find.text('Trennen'), findsNothing);
     expect(find.text('Grundriss bearbeiten'), findsOneWidget);
     expect(find.text('Räume verwalten'), findsOneWidget);
-    expect(find.text('Lichtsteuerung'), findsOneWidget);
+    // Einmal in „Zuhause“, einmal in „Synchronisation“.
+    expect(find.text('Lichtsteuerung'), findsNWidgets(2));
+    expect(find.text('Synchronisation'), findsOneWidget);
+    expect(find.text('Jetzt abgleichen'), findsOneWidget);
     expect(find.text('Alle Lichter gehören dazu'), findsOneWidget);
     await tester.scrollUntilVisible(
       find.text('Home Assistant öffnen'),
@@ -56,8 +59,8 @@ void main() {
     expect(find.text('Home Assistant öffnen'), findsOneWidget);
 
     // Lichtsteuerung: ein Licht ausnehmen, gilt sofort und bleibt lokal.
-    await tester.ensureVisible(find.text('Lichtsteuerung'));
-    await tester.tap(find.text('Lichtsteuerung'));
+    await tester.ensureVisible(find.text('Lichtsteuerung').first);
+    await tester.tap(find.text('Lichtsteuerung').first);
     await tester.pumpAndSettle();
     final lamp = find.bySemanticsLabel(
       'Tischlampe Salon in der Lichtsteuerung',
@@ -77,6 +80,7 @@ void main() {
     expect(find.text('1 Licht ausgenommen'), findsOneWidget);
 
     await tester.ensureVisible(find.text('Räume verwalten'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Räume verwalten'));
     await tester.pumpAndSettle();
     expect(find.text('Salon'), findsOneWidget);

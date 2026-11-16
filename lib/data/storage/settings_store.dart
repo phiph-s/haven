@@ -117,7 +117,18 @@ class SettingsStore implements LocalPrefs {
   /// Lokal geändert, aber noch nicht in HA gespeichert.
   bool syncDirty(String kind) => _p.getBool('sync_${kind}_dirty') ?? false;
 
-  Future<void> setSync(String kind, {int? stamp, required bool dirty}) async {
+  /// Server-Stand (`updated_at`), auf dem die lokale Fassung beruht: zuletzt
+  /// übernommen oder erfolgreich gespeichert. `null`: nie abgeglichen.
+  int? syncBase(String kind) => _p.getInt('sync_${kind}_base');
+
+  /// [base] nur setzen, wenn angegeben, sonst bleibt der bisherige Stand.
+  Future<void> setSync(
+    String kind, {
+    int? stamp,
+    required bool dirty,
+    int? base,
+  }) async {
+    if (base != null) await _p.setInt('sync_${kind}_base', base);
     if (stamp == null) {
       await _p.remove('sync_${kind}_at');
     } else {

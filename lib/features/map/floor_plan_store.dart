@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -94,16 +95,34 @@ class FloorPlanNotifier extends AsyncNotifier<HavenFloorPlan?> {
           return true;
         },
         onError: (m) => ref.read(syncNoticeProvider.notifier).show(m),
+        describe: (d) {
+          final plan = Map<String, dynamic>.from(d['plan'] as Map);
+          final rooms = (plan['rooms'] as List?)?.length ?? 0;
+          final furniture = (plan['furniture'] as List?)?.length ?? 0;
+          return '${rooms == 1 ? '1 Raum' : '$rooms Räume'}, $furniture Möbel';
+        },
       );
       _sync = sync;
-      ref.onDispose(sync.dispose);
+      final registry = ref.read(syncRegistryProvider);
+      registry.register(sync);
+      ref.onDispose(() {
+        registry.unregister(sync);
+        sync.dispose();
+      });
       sync.start();
     }
     return _local ?? repo?.sampleFloorPlan;
   }
 
   /// Setzt den Stand sofort, legt ihn lokal ab und speichert entprellt in HA.
+  ///
+  /// Nur echte Änderungen: Ist der Plan (als JSON) schon der gespeicherte,
+  /// passiert nichts. Laden, Migrieren und Öffnen zählen nie als Änderung.
   Future<void> save(HavenFloorPlan plan) async {
+    final old = _local ?? state.value;
+    if (old != null && jsonEncode(old.toJson()) == jsonEncode(plan.toJson())) {
+      return;
+    }
     state = AsyncData(plan);
     _local = plan;
     await ref.read(floorPlanRepositoryProvider).save(plan);

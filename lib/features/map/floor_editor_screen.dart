@@ -644,10 +644,11 @@ class _FloorEditorScreenState extends ConsumerState<FloorEditorScreen> {
       kinds: {for (final d in pool.all) d.id: d.kind},
     );
     if (identical(next, plan)) return;
+    // Nur anzeigen, nicht speichern: Das Öffnen des Editors ist keine
+    // Änderung des Nutzers. Gespeichert wird mit der ersten echten Änderung.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || _plan != plan) return;
       setState(() => _plan = next);
-      unawaited(ref.read(floorPlanProvider.notifier).save(next));
     });
   }
 
