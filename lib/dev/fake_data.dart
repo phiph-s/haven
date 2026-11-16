@@ -616,6 +616,14 @@ const Map<String, dynamic> kFakeInventory = {
             'friendly_name': 'Sensor Terrasse Batterie',
           },
         },
+        'sensor.sensor_terrasse_voltage': {
+          'state': '2650',
+          'attributes': {
+            'unit_of_measurement': 'mV',
+            'device_class': 'voltage',
+            'friendly_name': 'Sensor Terrasse Spannung',
+          },
+        },
         'sensor.sensor_terrasse_temperature': {
           'state': '8.01',
           'attributes': {

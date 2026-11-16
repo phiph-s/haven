@@ -355,6 +355,8 @@ class FloorPlanView extends StatefulWidget {
     this.onRoomTap,
     this.onOutsideTap,
     this.onNodeTap,
+    this.onNodeLongPress,
+    this.onNodeSecondaryTap,
     this.onGroupOpen,
     this.interactive = true,
     this.fitGrid = false,
@@ -402,6 +404,12 @@ class FloorPlanView extends StatefulWidget {
   final ValueChanged<FloorRoom>? onRoomTap;
   final VoidCallback? onOutsideTap;
   final ValueChanged<FloorNode>? onNodeTap;
+
+  /// Langes Drücken auf einen Knoten.
+  final ValueChanged<FloorNode>? onNodeLongPress;
+
+  /// Rechtsklick (zweite Taste) auf einen Knoten.
+  final ValueChanged<FloorNode>? onNodeSecondaryTap;
 
   /// Eine Gruppe wurde aufgefächert (`null`: geschlossen).
   final ValueChanged<FloorNodeGroup?>? onGroupOpen;
@@ -680,10 +688,18 @@ class _FloorPlanViewState extends State<FloorPlanView>
     if (nodeBuilder != null) {
       for (final n in widget.nodes) {
         Widget w = nodeBuilder(context, n);
-        if (widget.onNodeTap != null) {
+        if (widget.onNodeTap != null ||
+            widget.onNodeLongPress != null ||
+            widget.onNodeSecondaryTap != null) {
           w = GestureDetector(
             behavior: HitTestBehavior.opaque,
-            onTap: () => widget.onNodeTap!(n),
+            onTap: widget.onNodeTap == null ? null : () => widget.onNodeTap!(n),
+            onLongPress: widget.onNodeLongPress == null
+                ? null
+                : () => widget.onNodeLongPress!(n),
+            onSecondaryTap: widget.onNodeSecondaryTap == null
+                ? null
+                : () => widget.onNodeSecondaryTap!(n),
             child: w,
           );
         }

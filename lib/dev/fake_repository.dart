@@ -245,6 +245,40 @@ class FakeRepository extends BaseRepository {
       e.domain == 'binary_sensor' &&
       const {'occupancy', 'motion', 'presence'}.contains(e.deviceClass);
 
+  bool _isClimate(EntityState? e) =>
+      e != null &&
+      e.domain == 'sensor' &&
+      const {'temperature', 'humidity'}.contains(e.deviceClass) &&
+      e.number != null;
+
+  /// Erfundener Tagesverlauf eines Klimasensors: eine Welle um den aktuellen
+  /// Wert, alle 30 Minuten ein Punkt, der letzte ist der echte Zustand.
+  List<StateChange> _climateHistory(String id, EntityState e, DateTime start) {
+    final now = DateTime.now();
+    final base = e.number!;
+    final temp = e.deviceClass == 'temperature';
+    final amp = temp ? 1.4 : 4.0;
+    final seed = id.codeUnits.fold<int>(7, (a, c) => (a * 31 + c) & 0xffff);
+    final phase = (seed % 628) / 100;
+    double wave(DateTime t) =>
+        sin(
+              t.millisecondsSinceEpoch / Duration.millisecondsPerDay * 2 * pi +
+                  phase,
+            ) *
+            amp +
+        sin(t.millisecondsSinceEpoch / 1800000 + phase) * amp * 0.15;
+    final offset = wave(now);
+    String fmt(double v) => temp ? v.toStringAsFixed(1) : v.toStringAsFixed(0);
+    final out = <StateChange>[];
+    var t = start.subtract(const Duration(minutes: 30));
+    while (t.isBefore(now.subtract(const Duration(minutes: 20)))) {
+      out.add(StateChange(fmt(base + wave(t) - offset), t));
+      t = t.add(const Duration(minutes: 30));
+    }
+    out.add(StateChange(e.state, now));
+    return out;
+  }
+
   /// Erfundene, aber feste History der Melder für die letzte Stunde: Wechsel
   /// rückwärts ab dem letzten echten Wechsel, Längen aus einem Hash.
   @override
@@ -255,6 +289,10 @@ class FakeRepository extends BaseRepository {
     final out = <String, List<StateChange>>{};
     for (final id in entityIds) {
       final e = _entities[id];
+      if (_isClimate(e)) {
+        out[id] = _climateHistory(id, e!, start);
+        continue;
+      }
       if (!_isMotion(e)) continue;
       final list = <StateChange>[];
       var on = e!.isOn;

@@ -164,6 +164,7 @@ GoRouter buildRouter(Ref ref, {String? initialLocation}) {
                       s.uri.queryParameters['t'] ?? '',
                     ),
                     startInspect: s.uri.queryParameters['inspect'],
+                    startTap: s.uri.queryParameters['tap'],
                   ),
                 ),
                 routes: mapRoutes,

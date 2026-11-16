@@ -21,20 +21,27 @@ import '../../core/widgets/press_scale.dart';
 import '../../core/widgets/screen_header.dart';
 import '../../data/models/floor_plan.dart';
 import '../../data/models/state_history.dart';
+import '../../data/models/zigbee.dart';
+import '../room/widgets/lamp_sheet.dart';
 import '../zigbee/mesh/mesh_graph.dart';
 import '../zigbee/mesh/mesh_painter.dart';
 import '../zigbee/mesh/mesh_providers.dart';
 import '../zigbee/mesh/mesh_scene.dart';
 import '../zigbee/mesh/mesh_screen.dart' show zigbeeMeshPath;
+import '../zigbee/zigbee_providers.dart';
+import '../zigbee/zigbee_screen.dart' show zigbeeDevicePath;
 import 'floor_plan_store.dart';
 import 'floor_plan_view.dart';
 import 'heatmap.dart';
 import 'map_data.dart';
+import 'map_actions.dart';
 import 'map_layer_widgets.dart';
 import 'map_inspector.dart';
+import 'map_info.dart';
 import 'map_layers.dart';
 import 'map_light_controls.dart';
 import 'map_markers.dart';
+import 'map_panels.dart';
 import 'map_painters.dart';
 import 'map_readings.dart';
 import 'map_routes.dart';
@@ -48,13 +55,15 @@ class MapScreen extends ConsumerWidget {
     this.startMenu = false,
     this.startMinutes,
     this.startInspect,
+    this.startTap,
   });
 
   /// Nur für Screenshots: Auswahl aufgeklappt, Zeitstrahl verschoben,
-  /// Raum im Inspektor (Desktop).
+  /// Raum im Inspektor (Desktop), angetippter Knoten oder Raum (`room:<ID>`).
   final bool startMenu;
   final double? startMinutes;
   final String? startInspect;
+  final String? startTap;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -88,6 +97,7 @@ class MapScreen extends ConsumerWidget {
                         startMenu: startMenu,
                         startMinutes: startMinutes,
                         startInspect: startInspect,
+                        startTap: startTap,
                       )
                     : const _EmptyMap(),
               ),
@@ -221,11 +231,13 @@ class _MapBody extends ConsumerStatefulWidget {
     this.startMenu = false,
     this.startMinutes,
     this.startInspect,
+    this.startTap,
   });
   final HavenFloorPlan plan;
   final bool startMenu;
   final double? startMinutes;
   final String? startInspect;
+  final String? startTap;
 
   @override
   ConsumerState<_MapBody> createState() => _MapBodyState();
@@ -241,6 +253,11 @@ class _MapBodyState extends ConsumerState<_MapBody> {
 
   /// Raum im Inspektor (nur Desktop).
   late String? _inspect = widget.startInspect;
+
+  /// Info-Panel im Inspektor (nur Desktop), auf dem Handy öffnet ein Sheet.
+  MapPanelSpec? _panel;
+  Timer? _powerTimer;
+  Timer? _startTapTimer;
   final _pickerKey = GlobalKey<MapLayerPickerState>();
 
   // Bewegung: Zeitstrahl und Takt fürs Abklingen.
@@ -252,8 +269,28 @@ class _MapBodyState extends ConsumerState<_MapBody> {
   bool _loadingHistory = false;
 
   @override
+  void initState() {
+    super.initState();
+    final tap = widget.startTap;
+    if (tap != null) {
+      // Nur für Screenshots: nach dem Einblenden antippen.
+      _startTapTimer = Timer(const Duration(milliseconds: 900), () {
+        if (!mounted) return;
+        if (tap.startsWith('room:')) {
+          final r = widget.plan.room(tap.substring(5));
+          if (r != null) _tapRoom(r);
+        } else {
+          _tapNode(FloorNode(id: tap, point: const PlanPoint(0, 0, '')));
+        }
+      });
+    }
+  }
+
+  @override
   void dispose() {
+    _startTapTimer?.cancel();
     _infoTimer?.cancel();
+    _powerTimer?.cancel();
     _clock?.cancel();
     _measureClock?.cancel();
     _heat.dispose();
@@ -304,58 +341,245 @@ class _MapBodyState extends ConsumerState<_MapBody> {
 
   // ---- Antippen -------------------------------------------------------------
 
+  /// Zieltyp eines Knotens. Lichtschalter der Kartenart Licht sind Regler,
+  /// sonst entscheiden Zigbee-Typ und Art der Platzierung.
+  MapTarget _targetOf(String id) {
+    final layer = ref.read(mapLayerProvider);
+    if (layer == MapLayer.network) return MapTarget.otherDevice;
+    if (layer == MapLayer.light &&
+        ref.read(mapLightControlsProvider(widget.plan)).rooms.containsKey(id)) {
+      return MapTarget.control;
+    }
+    final zb = zbDeviceForEntity(ref.read(zigbeeProvider).devices, id);
+    final kind =
+        widget.plan.placementOf(id)?.resolvedKind ?? FloorKind.ofEntity(id);
+    return mapTargetOf(kind, zbType: zb?.deviceType);
+  }
+
+  /// Zeigt ein Panel: auf dem Handy als Sheet, auf dem Desktop im Inspektor.
+  void _openPanel(MapPanelSpec spec) {
+    Haptics.tick();
+    if (context.isDesktopLayout) {
+      setState(() => _panel = spec);
+    } else {
+      unawaited(showMapPanel(context, spec));
+    }
+  }
+
+  void _closePanel() {
+    if (_panel != null) setState(() => _panel = null);
+  }
+
+  String _nameOf(String id) {
+    final zb = zbDeviceForEntity(ref.read(zigbeeProvider).devices, id);
+    return zb?.friendlyName ?? ref.read(entityProvider(id))?.name ?? id;
+  }
+
   void _tapNode(FloorNode n) {
-    final plan = widget.plan;
-    final p = plan.placementOf(n.id);
-    if (p == null) return;
+    final layer = ref.read(mapLayerProvider);
+    final target = _targetOf(n.id);
     final repo = ref.read(repositoryProvider);
     final e = ref.read(entityProvider(n.id));
     final name = e?.name ?? n.id;
-    switch (p.resolvedKind) {
-      case FloorKind.light:
-        Haptics.tick();
-        final on = e?.isOn ?? false;
-        unawaited(repo.setLights([n.id], on: !on));
-      case FloorKind.switchKind:
-        Haptics.tick();
+    switch (mapTapAction(layer, target)) {
+      case MapTapAction.toggleLamp:
+        Haptics.tap();
+        unawaited(repo.setLights([n.id], on: !(e?.isOn ?? false)));
+      case MapTapAction.togglePlug:
+        Haptics.tap();
+        final was = e?.isOn ?? false;
+        final w = plugPowerOf(ref, n.id);
         unawaited(repo.callService('switch', 'toggle', entityId: n.id));
-        _say('$name ${(e?.isOn ?? false) ? 'aus' : 'an'}');
-      case FloorKind.temperature:
+        _powerTimer?.cancel();
+        if (was) {
+          _say(
+            w != null && w > 0
+                ? '$name aus, zuletzt ${w.round()} W'
+                : '$name aus',
+          );
+        } else {
+          _say('$name an');
+          // Die Steckdose braucht einen Moment, bis sie ihre Leistung meldet.
+          _powerTimer = Timer(const Duration(milliseconds: 1500), () {
+            if (!mounted) return;
+            final now = plugPowerOf(ref, n.id);
+            if (now != null) _say('$name an, ${now.round()} W');
+          });
+        }
+      case MapTapAction.openClimateSheet:
+        final kind = layer == MapLayer.humidity
+            ? HeatKind.humidity
+            : HeatKind.temperature;
+        _openPanel(
+          MapPanelSpec(
+            key: 'sensor-${kind.name}-${n.id}',
+            builder: (_) => SensorPanel(entityId: n.id, kind: kind),
+          ),
+        );
+      case MapTapAction.openMotionSheet:
+        _openPanel(
+          MapPanelSpec(
+            key: 'motion-${n.id}',
+            builder: (_) => MotionPanel(entityId: n.id),
+          ),
+        );
+      case MapTapAction.openBatterySheet:
+        _openPanel(
+          MapPanelSpec(
+            key: 'battery-${n.id}',
+            builder: (_) => BatteryPanel(entityId: n.id),
+          ),
+        );
+      case MapTapAction.showControlInfo:
+        final room = ref
+            .read(mapLightControlsProvider(widget.plan))
+            .rooms[n.id];
+        if (room == null) return _say(name);
+        _openPanel(
+          MapPanelSpec(
+            key: 'control-${n.id}',
+            builder: (_) => ControlPanel(entityId: n.id, room: room),
+          ),
+        );
+      case MapTapAction.selectNetworkNode:
         Haptics.tick();
-        final v = e?.number;
-        _say(v == null ? name : '$name · ${num1(v)} °C');
-      case FloorKind.presence:
+        setState(() => _meshSel = _meshSel == n.id ? null : n.id);
+      case MapTapAction.showStatus:
         Haptics.tick();
-        _say('$name · ${(e?.isOn ?? false) ? 'Bewegung' : 'ruhig'}');
-      case FloorKind.contact:
-        Haptics.tick();
-        _say('$name · ${(e?.isOn ?? false) ? 'offen' : 'zu'}');
-      case FloorKind.media || FloorKind.remote || FloorKind.device:
-        Haptics.tick();
-        _say(name);
+        final shown = shortDeviceName(name);
+        _say(switch (widget.plan.placementOf(n.id)?.resolvedKind) {
+          FloorKind.contact => '$shown, ${(e?.isOn ?? false) ? 'offen' : 'zu'}',
+          _ => shown,
+        });
+      case MapTapAction.openRoomSheet ||
+          MapTapAction.openRoomClimate ||
+          MapTapAction.openRoomMotion ||
+          MapTapAction.openRoomBatteries ||
+          MapTapAction.none:
+        break;
     }
   }
 
-  void _tapReading(FloorNode n, String text) {
+  /// Langes Drücken: Licht-Sheet (Licht, Lampen), sonst das Gerät-Detail.
+  void _holdNode(FloorNode n) {
+    final layer = ref.read(mapLayerProvider);
+    switch (mapHoldAction(layer, _targetOf(n.id))) {
+      case MapHoldAction.openLampSheet:
+        Haptics.tick();
+        _openLamp(n.id);
+      case MapHoldAction.openDevice:
+        _openDevice(n.id);
+      case MapHoldAction.none:
+        break;
+    }
+  }
+
+  /// Rechtsklick (Desktop) auf ein Gerät.
+  void _secondaryNode(FloorNode n) {
+    final layer = ref.read(mapLayerProvider);
+    if (mapSecondaryAction(layer, _targetOf(n.id)) ==
+        MapHoldAction.openDevice) {
+      _openDevice(n.id);
+    }
+  }
+
+  void _openLamp(String id) {
+    unawaited(
+      showLampSheet(
+        context,
+        LampTarget(title: _nameOf(id), subtitle: id, lampIds: [id]),
+      ),
+    );
+  }
+
+  /// Volles Gerät-Detail. Im Funknetz ist die Knoten-ID die IEEE-Adresse.
+  void _openDevice(String id) {
+    final network = ref.read(mapLayerProvider) == MapLayer.network;
+    final devices = ref.read(zigbeeProvider).devices;
+    final ieee = network ? id : zbDeviceForEntity(devices, id)?.ieee;
+    final coordinator =
+        ieee != null && devices.any((d) => d.ieee == ieee && d.isCoordinator);
+    if (ieee == null || coordinator) {
+      // Kein Zigbee-Gerät: Lampen haben wenigstens ihr Sheet.
+      if (!network && _targetOf(id) == MapTarget.lamp) {
+        Haptics.tick();
+        return _openLamp(id);
+      }
+      return _say('${_nameOf(id)} hat keine Gerätedetails');
+    }
     Haptics.tick();
-    final e = ref.read(entityProvider(n.id));
-    _say('${e?.name ?? n.id} · $text');
+    unawaited(context.push(zigbeeDevicePath(ieee)));
+  }
+
+  /// „Identifizieren“ im Funknetz: das Gerät meldet sich mit Licht oder Ton.
+  Future<void> _identify(ZbDevice d) async {
+    Haptics.tap();
+    try {
+      await ref.read(repositoryProvider).zigbeeIdentify(d.ieee);
+      if (mounted) {
+        _say('${d.friendlyName} meldet sich jetzt mit Licht oder Ton');
+      }
+    } catch (e) {
+      if (mounted) _say('$e');
+    }
   }
 
   void _tapRoom(FloorRoom r) {
-    // Desktop: der Inspektor rechts zeigt den Raum, geöffnet wird von dort.
-    if (context.isDesktopLayout) {
-      Haptics.tick();
-      setState(() => _inspect = _inspect == r.id ? null : r.id);
-      return;
-    }
+    final layer = ref.read(mapLayerProvider);
     final sr = snapshotRoomFor(ref.read(snapshotProvider), r);
-    if (sr != null && sr.lightIds.isNotEmpty) {
-      Haptics.tick();
-      context.push(Routes.room(sr.id));
-    } else {
-      _say('${r.name} hat noch keine Lichter');
+    switch (mapTapAction(layer, MapTarget.room)) {
+      case MapTapAction.openRoomSheet:
+        _closePanel();
+        // Desktop: der Inspektor rechts zeigt den Raum, geöffnet wird von dort.
+        if (context.isDesktopLayout) {
+          Haptics.tick();
+          setState(() => _inspect = _inspect == r.id ? null : r.id);
+        } else if (sr != null && sr.lightIds.isNotEmpty) {
+          Haptics.tick();
+          context.push(Routes.room(sr.id));
+        } else {
+          _say('${r.name} hat noch keine Lichter');
+        }
+      case MapTapAction.openRoomClimate:
+        final kind = layer == MapLayer.humidity
+            ? HeatKind.humidity
+            : HeatKind.temperature;
+        _openRoomPanel(
+          r,
+          MapPanelSpec(
+            key: 'room-climate-${kind.name}-${r.id}',
+            builder: (_) =>
+                RoomClimatePanel(plan: widget.plan, room: r, kind: kind),
+          ),
+        );
+      case MapTapAction.openRoomMotion:
+        _openRoomPanel(
+          r,
+          MapPanelSpec(
+            key: 'room-motion-${r.id}',
+            builder: (_) => RoomMotionPanel(
+              room: r,
+              areaIds: [r.areaId, sr?.areaId, sr?.id],
+            ),
+          ),
+        );
+      case MapTapAction.openRoomBatteries:
+        _openRoomPanel(
+          r,
+          MapPanelSpec(
+            key: 'room-battery-${r.id}',
+            builder: (_) => RoomBatteriesPanel(plan: widget.plan, room: r),
+          ),
+        );
+      default:
+        // Funknetz: Auswahl aufheben.
+        if (_meshSel != null) setState(() => _meshSel = null);
     }
+  }
+
+  void _openRoomPanel(FloorRoom r, MapPanelSpec spec) {
+    if (context.isDesktopLayout) setState(() => _inspect = r.id);
+    _openPanel(spec);
   }
 
   /// Rechtsklick auf die Karte (Desktop).
@@ -409,6 +633,7 @@ class _MapBodyState extends ConsumerState<_MapBody> {
     setState(() {
       _menuOpen = false;
       _meshSel = null;
+      _panel = null;
     });
   }
 
@@ -470,6 +695,8 @@ class _MapBodyState extends ConsumerState<_MapBody> {
                       roomStyle: v.roomStyle,
                       roomSubtitle: v.subtitle,
                       onNodeTap: v.onNodeTap,
+                      onNodeLongPress: _holdNode,
+                      onNodeSecondaryTap: _secondaryNode,
                       onRoomTap: v.onRoomTap,
                       onOutsideTap: v.onOutsideTap,
                       showOutside: v.showOutside,
@@ -597,10 +824,15 @@ class _MapBodyState extends ConsumerState<_MapBody> {
                       },
                       roomSubtitle: v.subtitle,
                       onNodeTap: v.onNodeTap,
+                      onNodeLongPress: _holdNode,
+                      onNodeSecondaryTap: _secondaryNode,
                       onRoomTap: v.onRoomTap,
                       onOutsideTap: () {
-                        if (_inspect != null) {
-                          setState(() => _inspect = null);
+                        if (_inspect != null || _panel != null) {
+                          setState(() {
+                            _inspect = null;
+                            _panel = null;
+                          });
                         }
                         v.onOutsideTap?.call();
                       },
@@ -645,7 +877,12 @@ class _MapBodyState extends ConsumerState<_MapBody> {
             child: MapInspector(
               plan: plan,
               selected: inspect,
-              onSelect: (id) => setState(() => _inspect = id),
+              onSelect: (id) => setState(() {
+                _inspect = id;
+                _panel = null;
+              }),
+              panel: _panel,
+              onClosePanel: _closePanel,
               layerCard: KeyedSubtree(
                 key: ValueKey('card-${layer.name}'),
                 child: v.card,
@@ -723,13 +960,7 @@ class _MapBodyState extends ConsumerState<_MapBody> {
             : marker;
       },
       underlay: MapLightPainter(plan: plan, lights: lights, hv: hv),
-      onNodeTap: (n) {
-        final room = controls[n.id];
-        if (room == null) return _tapNode(n);
-        Haptics.tick();
-        final name = ref.read(entityProvider(n.id))?.name ?? n.id;
-        _say('$name · steuert das Licht in $room');
-      },
+      onNodeTap: _tapNode,
       onRoomTap: _tapRoom,
       card: _StatusCard(lights: lights),
     );
@@ -782,15 +1013,8 @@ class _MapBodyState extends ConsumerState<_MapBody> {
       roomStyle: (r) => data.rooms.containsKey(r.id)
           ? null
           : FloorRoomStyle(fill: hv.s1.withValues(alpha: 0.7)),
-      onNodeTap: (n) => _tapReading(n, text(values[n.id]!)),
-      onRoomTap: (r) {
-        final range = data.roomRange(r.id);
-        _say(
-          range == null
-              ? '${r.name}: kein Sensor auf dem Grundriss'
-              : '${r.name}: ${_range(range.$1, range.$2, kind)}',
-        );
-      },
+      onNodeTap: _tapNode,
+      onRoomTap: _tapRoom,
       card: HeatLegend(data: data),
     );
   }
@@ -849,19 +1073,7 @@ class _MapBodyState extends ConsumerState<_MapBody> {
         if (l.since == null) return 'ruhig';
         return agoText(l.since!, at);
       },
-      onNodeTap: (n) {
-        final m = readings.of(n.id)!;
-        final e = ref.read(entityProvider(m.motionId!));
-        _tapReading(
-          n,
-          m.motion
-              ? 'Bewegung'
-              : (m.motionSince == null
-                    ? 'ruhig'
-                    : 'ruhig, ${agoText(m.motionSince!, now)}'),
-        );
-        if (e == null) return;
-      },
+      onNodeTap: _tapNode,
       onRoomTap: _tapRoom,
       card: _PresenceCard(
         plan: plan,
@@ -932,6 +1144,12 @@ class _MapBodyState extends ConsumerState<_MapBody> {
       });
     }
     final sel = _meshSel == null ? null : scene.infos[_meshSel!];
+    final selDev = _meshSel == null
+        ? null
+        : ref
+              .watch(zigbeeProvider.select((z) => z.devices))
+              .where((d) => d.ieee == _meshSel)
+              .firstOrNull;
     final lqi = _meshSel == null ? null : map.lqiToParent(_meshSel!);
     return _LayerView(
       plan: scene.plan,
@@ -950,13 +1168,8 @@ class _MapBodyState extends ConsumerState<_MapBody> {
         fill: room.id == kNoRoomId ? hv.s2.withValues(alpha: 0.55) : null,
         border: hv.ln2,
       ),
-      onNodeTap: (n) {
-        Haptics.tick();
-        setState(() => _meshSel = _meshSel == n.id ? null : n.id);
-      },
-      onRoomTap: (_) {
-        if (_meshSel != null) setState(() => _meshSel = null);
-      },
+      onNodeTap: _tapNode,
+      onRoomTap: _tapRoom,
       onOutsideTap: () {
         if (_meshSel != null) setState(() => _meshSel = null);
       },
@@ -972,6 +1185,22 @@ class _MapBodyState extends ConsumerState<_MapBody> {
             : '${sel.name}${sel.roomName == null ? '' : ' · ${sel.roomName}'}'
                   '${lqi == null ? '' : ' · LQI $lqi'}',
         legend: true,
+        actions: [
+          if (selDev != null && !selDev.isCoordinator) ...[
+            _CardAction(
+              label: 'Gerät öffnen',
+              icon: Icons.open_in_new_rounded,
+              onTap: () => _openDevice(selDev.ieee),
+            ),
+            if ((selDev.isRouter || selDev.deviceType == ZbType.light) &&
+                selDev.classified.canIdentify)
+              _CardAction(
+                label: 'Identifizieren',
+                icon: Icons.lightbulb_outline_rounded,
+                onTap: () => _identify(selDev),
+              ),
+          ],
+        ],
         onOpen: () => context.push(
           _meshSel == null
               ? zigbeeMeshPath
@@ -1005,31 +1234,16 @@ class _MapBodyState extends ConsumerState<_MapBody> {
         final w = mine.where((b) => b.battery! < 20).length;
         return w == 0 ? '${mine.length} ok' : '$w schwach';
       },
-      onNodeTap: (n) =>
-          _tapReading(n, 'Batterie ${readings.of(n.id)!.battery!.round()} %'),
+      onNodeTap: _tapNode,
       onRoomTap: _tapRoom,
       card: _BatteryCard(
         total: bats.length,
         weak: [
-          for (final w in weak) (_shortName(name(w.entityId)), w.battery!),
+          for (final w in weak) (shortDeviceName(name(w.entityId)), w.battery!),
         ],
       ),
     );
   }
-}
-
-/// Gerätename ohne angehängte Eigenschaft („Sensor Terrasse Temperatur“).
-String _shortName(String n) {
-  for (final s in [
-    ' Temperatur',
-    ' Luftfeuchtigkeit',
-    ' Belegung',
-    ' Batterie',
-    ' Tür',
-  ]) {
-    if (n.endsWith(s)) return n.substring(0, n.length - s.length);
-  }
-  return n;
 }
 
 /// Alles, was eine Kartenart der `FloorPlanView` übergibt.
@@ -1184,10 +1398,14 @@ class _NetworkCard extends StatelessWidget {
     required this.text,
     required this.onOpen,
     this.legend = false,
+    this.actions = const [],
   });
   final String text;
   final VoidCallback onOpen;
   final bool legend;
+
+  /// Aktionen zum gewählten Knoten („Gerät öffnen“, „Identifizieren“).
+  final List<_CardAction> actions;
 
   @override
   Widget build(BuildContext context) {
@@ -1233,6 +1451,10 @@ class _NetworkCard extends StatelessWidget {
                   ],
                 ),
               ],
+              if (actions.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                Wrap(spacing: 8, runSpacing: 8, children: actions),
+              ],
             ],
           ),
         ),
@@ -1243,6 +1465,50 @@ class _NetworkCard extends StatelessWidget {
           onTap: onOpen,
         ),
       ],
+    );
+  }
+}
+
+/// Kleine Aktion unter dem Text einer Karte (Pille mit Symbol).
+class _CardAction extends StatelessWidget {
+  const _CardAction({
+    required this.label,
+    required this.icon,
+    required this.onTap,
+  });
+  final String label;
+  final IconData icon;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final hv = context.hv;
+    return Semantics(
+      button: true,
+      label: label,
+      child: PressScale(
+        onTap: onTap,
+        child: Container(
+          constraints: const BoxConstraints(minHeight: 40),
+          padding: const EdgeInsets.symmetric(horizontal: 14),
+          decoration: BoxDecoration(
+            color: hv.s2,
+            borderRadius: BorderRadius.circular(HavenRadii.pill),
+            border: Border.all(color: hv.ln2),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 16, color: hv.tx),
+              const SizedBox(width: 8),
+              Text(
+                label,
+                style: HavenText.label.copyWith(color: hv.tx, fontSize: 13.5),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

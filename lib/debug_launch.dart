@@ -20,6 +20,8 @@ import 'package:material_ui/material_ui.dart';
 /// `temperature`, `humidity`, `presence`, `network`, `battery`),
 /// `menu=1` klappt die Auswahl der Kartenarten auf, `t=-20` stellt den
 /// Zeitstrahl der Bewegung auf vor 20 min.
+/// `screen=map&layer=temperature&tap=<Entity>` tippt nach dem Start einen
+/// Knoten an, `tap=room:<Raum-ID>` einen Raum (öffnet das Info-Sheet).
 /// `screen=floorplan_editor&drag=<Entity>` zeigt das Ziehen-Label.
 /// `screen=floorplan_editor&preset=furniture` öffnet „Einrichten“,
 /// `fsel=<Möbel-ID>` wählt ein Möbelstück (z. B. `sofa`).
@@ -47,6 +49,7 @@ class LaunchOverrides {
     this.time,
     this.furniture,
     this.inspect,
+    this.tap,
   });
 
   factory LaunchOverrides.fromUri(Uri uri) {
@@ -70,6 +73,7 @@ class LaunchOverrides {
       time: q['t'],
       furniture: q['fsel'],
       inspect: q['inspect'],
+      tap: q['tap'],
     );
   }
 
@@ -107,6 +111,10 @@ class LaunchOverrides {
   /// Raum im Inspektor der Desktop-Karte (Screenshot).
   final String? inspect;
 
+  /// Knoten (`<Entity>`) oder Raum (`room:<ID>`), der nach dem Start der Karte
+  /// angetippt wird (Screenshot).
+  final String? tap;
+
   /// Es gibt etwas zu überschreiben.
   bool get active => screen != null || theme != null || preset != null;
 
@@ -116,9 +124,14 @@ class LaunchOverrides {
     'sheet' => '/room/$room?sheet=1',
     'map' => Uri(
       path: '/map',
-      queryParameters: !menu && time == null && inspect == null
+      queryParameters: !menu && time == null && inspect == null && tap == null
           ? null
-          : {if (menu) 'menu': '1', 't': ?time, 'inspect': ?inspect},
+          : {
+              if (menu) 'menu': '1',
+              't': ?time,
+              'inspect': ?inspect,
+              'tap': ?tap,
+            },
     ).toString(),
     'floorplan_editor' =>
       '/map/editor?mode=${switch (preset) {

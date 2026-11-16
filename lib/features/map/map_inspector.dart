@@ -13,6 +13,7 @@ import '../../core/widgets/haven_card.dart';
 import '../../core/widgets/haven_switch.dart';
 import '../../data/models/floor_plan.dart';
 import 'map_data.dart';
+import 'map_panels.dart';
 import 'map_routes.dart';
 
 /// Inspektor rechts neben der Desktop-Karte: oben die Ansicht (Legende,
@@ -26,6 +27,8 @@ class MapInspector extends ConsumerWidget {
     required this.onSelect,
     required this.layerCard,
     this.info,
+    this.panel,
+    this.onClosePanel,
   });
 
   final HavenFloorPlan plan;
@@ -39,6 +42,11 @@ class MapInspector extends ConsumerWidget {
 
   /// Kurzer Hinweis nach einer Aktion (ersetzt die Karte kurz).
   final String? info;
+
+  /// Info-Panel zu einem angetippten Gerät oder Raum (ersetzt die
+  /// Raumansicht, bis es geschlossen wird).
+  final MapPanelSpec? panel;
+  final VoidCallback? onClosePanel;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -76,7 +84,17 @@ class MapInspector extends ConsumerWidget {
             radius: HavenRadii.m,
             child: AnimatedSwitcher(
               duration: context.motion(HavenMotion.d2),
-              child: room == null
+              child: panel != null
+                  ? MapPanelScope(
+                      key: ValueKey('panel-${panel!.key}'),
+                      sheet: false,
+                      onClose: onClosePanel,
+                      child: Builder(
+                        builder: (context) =>
+                            ListView(children: [panel!.builder(context)]),
+                      ),
+                    )
+                  : room == null
                   ? _RoomList(
                       key: const ValueKey('list'),
                       plan: plan,
