@@ -48,6 +48,15 @@ jobs:
           echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/haven-release.jks"
           echo "HAVEN_KEYSTORE=$RUNNER_TEMP/haven-release.jks" >> "$GITHUB_ENV"
 
+      - name: Tag und pubspec.yaml vergleichen
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          version="$(sed -n 's/^version: *\([^+]*\)+.*/\1/p' pubspec.yaml)"
+          if [ "$tag" != "$version" ]; then
+            echo "::error::Der Tag v$tag passt nicht zur Version $version in pubspec.yaml. Version anpassen oder Tag neu setzen."
+            exit 1
+          fi
+
       - run: flutter pub get
 
       - name: APK bauen
@@ -57,11 +66,23 @@ jobs:
           HAVEN_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
           version="${GITHUB_REF_NAME#v}"
-          flutter build apk --release --build-name="$version" --build-number=${{ github.run_number }}
+          # Name und Build-Nummer kommen aus pubspec.yaml. Die Build-Nummer muss
+          # bei jedem Release steigen, sonst lehnt Android das Update ab.
+          flutter build apk --release
           cp build/app/outputs/flutter-apk/app-release.apk "haven-$version.apk"
           echo "APK_FILE=haven-$version.apk" >> "$GITHUB_ENV"
+
+      - name: Release-Text aus der Tag-Nachricht
+        run: |
+          git fetch --force origin "refs/tags/$GITHUB_REF_NAME:refs/tags/$GITHUB_REF_NAME"
+          git tag -l --format='%(contents)' "$GITHUB_REF_NAME" | sed '/^-----BEGIN PGP/,$d' > "$RUNNER_TEMP/notes.md"
+          if [ -s "$RUNNER_TEMP/notes.md" ]; then
+            echo "NOTES_FILE=$RUNNER_TEMP/notes.md" >> "$GITHUB_ENV"
+          fi
 
       - uses: softprops/action-gh-release@v2
         with:
           files: ${{ env.APK_FILE }}
-          generate_release_notes: true
+          # Text aus dem annotierten Tag, ohne Text die Liste der Commits
+          body_path: ${{ env.NOTES_FILE }}
+          generate_release_notes: ${{ env.NOTES_FILE == '' }}
