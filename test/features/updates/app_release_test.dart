@@ -171,13 +171,15 @@ void main() {
 
     test('404 heißt kein Release, andere Fehler werfen', () async {
       expect(
-        await ReleaseChecker(MockClient((_) async => http.Response('', 404)))
-            .latest(kAppRepo),
+        await ReleaseChecker(
+          MockClient((_) async => http.Response('', 404)),
+        ).latest(kAppRepo),
         isNull,
       );
       await expectLater(
-        ReleaseChecker(MockClient((_) async => http.Response('', 403)))
-            .latest(kAppRepo),
+        ReleaseChecker(
+          MockClient((_) async => http.Response('', 403)),
+        ).latest(kAppRepo),
         throwsA(isA<http.ClientException>()),
       );
     });

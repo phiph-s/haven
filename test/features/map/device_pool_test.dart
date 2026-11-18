@@ -125,9 +125,11 @@ void main() {
       ),
     };
     final rooms2 = liveRooms();
-    final wz = (rooms2['rooms'] as List).firstWhere(
-      (r) => (r as Map)['area_id'] == 'salon',
-    ) as Map;
+    final wz =
+        (rooms2['rooms'] as List).firstWhere(
+              (r) => (r as Map)['area_id'] == 'salon',
+            )
+            as Map;
     wz['devices'] = [
       {
         'device_id': 'cam',

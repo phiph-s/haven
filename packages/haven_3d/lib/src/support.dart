@@ -11,12 +11,17 @@ import 'support_env_stub.dart'
 /// (nativ mit Impeller und eingeschaltetem Flutter GPU) oder WebGL2 (Web).
 ///
 /// Ohne GPU meldet flutter_scene den Fehler asynchron; die Prüfung fängt ihn
-/// ab, damit die App auf ihre 2D-Karte ausweichen kann.
+/// ab. [Scene3DView] zeigt dann nur Geräte, Beschriftungen und Overlays
+/// (ohne Bild, Treffertest auf der CPU), so laufen Widget-Tests weiter.
 abstract final class Scene3DSupport {
   static Future<bool>? _result;
 
   /// Erzwingt das Ergebnis (Tests). `null` prüft wirklich.
   static bool? debugOverride;
+
+  /// Läuft unter `flutter test` (ohne [debugOverride]): keine GPU, die
+  /// Ansicht arbeitet ohne Bild weiter.
+  static bool get headlessTest => debugOverride == null && env.isFlutterTest;
 
   static Future<bool> available() {
     final o = debugOverride;

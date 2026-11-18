@@ -367,15 +367,23 @@ void main() {
       final v1 = HavenFloorPlan.fromJson(
         Map<String, dynamic>.from(
           jsonDecode(
-            jsonEncode({
-              'version': 1,
-              'grid': {'cols': 20, 'rows': 26, 'cellMeters': 0.5},
-              'rooms': [
-                {'id': 'wz', 'name': 'Wohnen', 'x': 0, 'y': 0, 'w': 10, 'h': 8},
-              ],
-              'placements': <dynamic>[],
-            }),
-          ) as Map,
+                jsonEncode({
+                  'version': 1,
+                  'grid': {'cols': 20, 'rows': 26, 'cellMeters': 0.5},
+                  'rooms': [
+                    {
+                      'id': 'wz',
+                      'name': 'Wohnen',
+                      'x': 0,
+                      'y': 0,
+                      'w': 10,
+                      'h': 8,
+                    },
+                  ],
+                  'placements': <dynamic>[],
+                }),
+              )
+              as Map,
         ),
       );
       expect(v1.migratedFrom, 1);
@@ -410,38 +418,41 @@ void main() {
       expect(store.syncDirty('widgets'), isFalse);
     });
 
-    test('Handy mit altem Cache und dirty-Stempel nach Server-Zeit bekommt die Möbel', () async {
-      final old = kFakeFloorPlan.copyWith(furniture: const []);
-      expect(old.furniture, isEmpty);
-      expect(kFakeFloorPlan.furniture, isNotEmpty);
-      final (c, repo, store) = await make(localPlan: old);
-      // Server: Plan mit Möbeln aus dem Panel, 11:18.
-      await repo.storeAppData(AppDataKind.floorplan, {
-        'plan': kFakeFloorPlan.toJson(),
-      }, 1794827886440);
-      // Handy: lokal "geändert" nach 11:18 (Migration der alten Version),
-      // nie mit dem Server abgeglichen (kein baseStamp).
-      await store.setSync(
-        'floorplan',
-        stamp: 1794827886440 + 3600000,
-        dirty: true,
-      );
-      final before = repo.stores.length;
-      final sub = c.listen(floorPlanProvider, (_, _) {});
-      addTearDown(sub.close);
-      await c.read(floorPlanProvider.future);
-      await _settle();
-      expect(
-        c.read(floorPlanProvider).value!.furniture,
-        hasLength(kFakeFloorPlan.furniture.length),
-      );
-      expect(repo.stores.length, before, reason: 'nichts hochgeladen');
-      expect(store.syncDirty('floorplan'), isFalse);
-      expect(store.syncBase('floorplan'), 1794827886440);
-      final info = c.read(syncRegistryProvider).docs[AppDataKind.floorplan]!;
-      expect(info.info.value.state, SyncState.current);
-      expect(info.info.value.remoteSummary, contains('Möbel'));
-    });
+    test(
+      'Handy mit altem Cache und dirty-Stempel nach Server-Zeit bekommt die Möbel',
+      () async {
+        final old = kFakeFloorPlan.copyWith(furniture: const []);
+        expect(old.furniture, isEmpty);
+        expect(kFakeFloorPlan.furniture, isNotEmpty);
+        final (c, repo, store) = await make(localPlan: old);
+        // Server: Plan mit Möbeln aus dem Panel, 11:18.
+        await repo.storeAppData(AppDataKind.floorplan, {
+          'plan': kFakeFloorPlan.toJson(),
+        }, 1794827886440);
+        // Handy: lokal "geändert" nach 11:18 (Migration der alten Version),
+        // nie mit dem Server abgeglichen (kein baseStamp).
+        await store.setSync(
+          'floorplan',
+          stamp: 1794827886440 + 3600000,
+          dirty: true,
+        );
+        final before = repo.stores.length;
+        final sub = c.listen(floorPlanProvider, (_, _) {});
+        addTearDown(sub.close);
+        await c.read(floorPlanProvider.future);
+        await _settle();
+        expect(
+          c.read(floorPlanProvider).value!.furniture,
+          hasLength(kFakeFloorPlan.furniture.length),
+        );
+        expect(repo.stores.length, before, reason: 'nichts hochgeladen');
+        expect(store.syncDirty('floorplan'), isFalse);
+        expect(store.syncBase('floorplan'), 1794827886440);
+        final info = c.read(syncRegistryProvider).docs[AppDataKind.floorplan]!;
+        expect(info.info.value.state, SyncState.current);
+        expect(info.info.value.remoteSummary, contains('Möbel'));
+      },
+    );
 
     test(
       'Reihenfolge der Räume: sortiert, synchron, neue Räume ans Ende',

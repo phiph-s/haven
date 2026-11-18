@@ -1,11 +1,13 @@
 import 'dart:async';
 import 'dart:math' as math;
+import 'dart:ui' show PointMode;
 
 import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/gestures.dart' show DragStartBehavior;
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:haven_3d/haven_3d.dart' as h3;
 import 'package:material_ui/material_ui.dart';
 
 import '../../core/adaptive/breakpoints.dart';
@@ -24,10 +26,11 @@ import 'device_pool.dart';
 import 'floor_assign_sheet.dart';
 import 'floor_editor_ops.dart';
 import 'floor_plan_store.dart';
-import 'floor_plan_view.dart';
+import 'floor_geometry.dart';
 import 'furniture_library.dart';
 import 'furniture_ops.dart';
 import 'furniture_painter.dart';
+import 'map_3d.dart' show sceneOfPlan, spreadNodes;
 import 'map_markers.dart';
 
 enum _Mode { rooms, devices, furniture }
@@ -1493,13 +1496,13 @@ class _FloorEditorScreenState extends ConsumerState<FloorEditorScreen> {
     final selected = rooms && _sel != null ? plan.room(_sel!) : null;
     final furniture = _mode == _Mode.furniture;
     final fsel = furniture ? _selFurniture : null;
-    final view = FloorPlanView(
-      plan: plan,
-      interactive: false,
-      fitGrid: true,
-      fill: true,
-      showGrid: true,
-      furnitureInk: furniture ? FurnitureInk.editor(hv) : null,
+    // Während einer Geste zeigt die 3D-Szene den Stand davor (sie baut sich
+    // erst nach dem Loslassen neu auf); das gezogene Möbel zeichnet das
+    // Overlay. Möbel erscheinen nur im Modus „Einrichten“.
+    final stable = _fop?.base ?? _op?.base ?? plan;
+    final view = _EditorScene(
+      plan: stable,
+      geo: geo,
       nodes: nodes,
       nodeBuilder: (context, n) {
         final kind = plan.placementOf(n.id)!.resolvedKind;
@@ -1507,26 +1510,15 @@ class _FloorEditorScreenState extends ConsumerState<FloorEditorScreen> {
         if (rooms) return marker;
         return _drag(n.id, kind, marker);
       },
-      roomStyle: (r) {
-        final isSel = rooms && r.id == _sel;
-        final hovered = !rooms && r.id == _hover;
-        if (hovered) {
-          return FloorRoomStyle(
-            fill: Color.alphaBlend(hv.acc.withValues(alpha: 0.22), hv.s1),
-            border: hv.acc,
-            borderWidth: 2,
-          );
-        }
-        if (isSel) {
-          return FloorRoomStyle(
-            fill: Color.alphaBlend(hv.acc.withValues(alpha: 0.10), hv.s1),
-            border: hv.acc,
-            borderWidth: 2,
-          );
-        }
-        return null;
+      interactiveMarkers: _mode == _Mode.devices,
+      highlightRoomId: !rooms ? _hover : null,
+      hiddenObjects: {
+        if (!furniture)
+          for (final f in stable.furniture) f.id
+        else if (_fop != null && fsel != null)
+          fsel.id,
       },
-      overlayPainter: _EditorOverlay(
+      overlay: _EditorOverlay(
         hv: hv,
         selected: selected,
         active: active,
@@ -2537,4 +2529,173 @@ class _EditorOverlay extends FloorOverlayPainter {
       old.furniture != furniture ||
       old.handleRadius != handleRadius ||
       old.furnitureLabel != furnitureLabel;
+}
+
+/// Grundriss des Editors in 3D: Draufsicht, die Kamera folgt genau [geo]
+/// (Zellen ↔ Pixel), damit Griffe, Raster und Gesten des Editors passen.
+/// Ohne Baking ([h3.SceneQuality.draft]): ein Neuaufbau nach jeder Änderung
+/// kostet nur einige Millisekunden.
+class _EditorScene extends StatefulWidget {
+  const _EditorScene({
+    required this.plan,
+    required this.geo,
+    required this.overlay,
+    this.nodes = const [],
+    this.nodeBuilder,
+    this.interactiveMarkers = false,
+    this.highlightRoomId,
+    this.hiddenObjects = const {},
+  });
+
+  final HavenFloorPlan plan;
+  final FloorGeometry geo;
+  final FloorOverlayPainter overlay;
+  final List<FloorNode> nodes;
+  final FloorNodeBuilder? nodeBuilder;
+  final bool interactiveMarkers;
+  final String? highlightRoomId;
+  final Set<String> hiddenObjects;
+
+  @override
+  State<_EditorScene> createState() => _EditorSceneState();
+}
+
+class _EditorSceneState extends State<_EditorScene> {
+  final _c = h3.SceneController();
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  /// Draufsicht, die [g] genau trifft: Bildmitte und Pixel je Meter.
+  h3.OrbitCamera _cameraFor(FloorGeometry g, double m) {
+    final mid = g.pxToCell(g.size.center(Offset.zero)) * m;
+    return h3.OrbitCamera(target: h3.V3(mid.dx, mid.dy, 0), scale: g.scale / m);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final hv = context.hv;
+    final w = widget;
+    final m = w.plan.grid.cellMeters;
+    final cam = _cameraFor(w.geo, m);
+    if (_c.camera != cam) _c.preset(cam);
+    final byId = {for (final n in w.nodes) n.id: n};
+    final style = (hv.isDark ? h3.SceneStyle.dark() : h3.SceneStyle.light())
+        .copyWith(accent: hv.acc);
+    return h3.Scene3DView(
+      scene: sceneOfPlan(w.plan),
+      controller: _c,
+      style: style,
+      quality: h3.SceneQuality.draft,
+      gestures: h3.SceneGestures.none,
+      fitOnStart: false,
+      raisedRooms: const {},
+      selectedRoomId: w.highlightRoomId,
+      hiddenObjects: w.hiddenObjects,
+      interactiveMarkers: w.interactiveMarkers,
+      markerHitRadius: 22,
+      markers: [
+        for (final (n, at) in spreadNodes(w.nodes))
+          h3.SceneMarker(
+            id: n.id,
+            at: at * m,
+            roomId: n.point.isOutside || n.point.roomId.isEmpty
+                ? null
+                : n.point.roomId,
+          ),
+      ],
+      markerBuilder: w.nodeBuilder == null
+          ? null
+          : (context, mk) => switch (byId[mk.id]) {
+              final n? => SizedBox.square(
+                dimension: n.size,
+                child: Center(child: w.nodeBuilder!(context, n)),
+              ),
+              null => const SizedBox.shrink(),
+            },
+      roomLabelBuilder: (context, room, _) {
+        final r = w.plan.room(room.id);
+        if (r == null) return const SizedBox.shrink();
+        final rect = w.geo.roomCellRect(r.id, r.innerRect);
+        if (rect.width < 44 || rect.height < 26) return const SizedBox.shrink();
+        return SizedBox(
+          width: rect.width - 16,
+          child: Text(
+            r.name,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: HavenText.label.copyWith(
+              color: hv.tx,
+              fontSize: 12.5,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        );
+      },
+      overlayBuilder: (context, _) => RepaintBoundary(
+        child: CustomPaint(
+          painter: _GeoPainter(geo: w.geo, overlay: w.overlay, hv: hv),
+        ),
+      ),
+    );
+  }
+}
+
+/// Raster, „Draußen“ und das Overlay des Editors über der 3D-Szene.
+class _GeoPainter extends CustomPainter {
+  _GeoPainter({required this.geo, required this.overlay, required this.hv})
+    : super(repaint: overlay.repaint);
+  final FloorGeometry geo;
+  final FloorOverlayPainter overlay;
+  final HavenColors hv;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final o = geo.outside;
+    if (o != null) {
+      final green = hv.ok;
+      final rr = RRect.fromRectAndRadius(o, const Radius.circular(22));
+      canvas.drawRRect(
+        rr,
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1.2
+          ..color = green.withValues(alpha: hv.isDark ? 0.32 : 0.38),
+      );
+      final tp = TextPainter(
+        text: TextSpan(
+          text: kOutsideName,
+          style: HavenText.caption.copyWith(
+            color: Color.alphaBlend(green.withValues(alpha: 0.55), hv.tx3),
+            fontSize: 11,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        textDirection: TextDirection.ltr,
+      )..layout();
+      tp.paint(canvas, o.topLeft + const Offset(12, 7));
+    }
+    final g = geo.plan.grid;
+    final dots = <Offset>[
+      for (var y = 0; y <= g.rows; y++)
+        for (var x = 0; x <= g.cols; x++)
+          geo.cellToPx(Offset(x.toDouble(), y.toDouble())),
+    ];
+    canvas.drawPoints(
+      PointMode.points,
+      dots,
+      Paint()
+        ..color = hv.tx3.withValues(alpha: 0.35)
+        ..strokeWidth = 2.2
+        ..strokeCap = StrokeCap.round,
+    );
+    overlay.paint(canvas, size, geo);
+  }
+
+  @override
+  bool shouldRepaint(_GeoPainter old) =>
+      old.geo != geo || old.hv != hv || overlay.shouldRepaint(old.overlay);
 }

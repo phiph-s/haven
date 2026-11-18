@@ -1,13 +1,9 @@
 import 'dart:math' as math;
-import 'dart:typed_data';
-import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
 import 'package:material_ui/material_ui.dart';
 
-import '../../core/theme/tokens.dart';
 import '../../data/models/floor_plan.dart';
-import 'floor_plan_view.dart';
 
 /// Ein Messwert an einem Punkt (Zellen).
 @immutable
@@ -202,7 +198,7 @@ class HeatData {
 }
 
 /// Werte auf einem Gitter über dem Raum (Schritt [step] Zellen), nur aus den
-/// Sensoren des Raums. Für Tests und das Netz der Heatmap.
+/// Sensoren des Raums (für Tests).
 List<(Offset, double)> roomHeatGrid(
   FloorRoom room,
   List<HeatSample> samples, {
@@ -217,133 +213,6 @@ List<(Offset, double)> roomHeatGrid(
     }
   }
   return out;
-}
-
-/// Dreiecksnetz mit Farbe je Ecke über dem umschließenden Rechteck des
-/// Raums, in Zellen. Die Grafikkarte verläuft die Farben, der Aufrufer
-/// clippt auf das Polygon.
-ui.Vertices heatVertices(
-  FloorRoom room,
-  List<HeatSample> samples,
-  HeatScale scale,
-  HeatRamp ramp,
-  double alpha, {
-  double step = 0.5,
-}) {
-  final b = room.bounds;
-  final nx = math.max(1, (b.width / step).ceil());
-  final ny = math.max(1, (b.height / step).ceil());
-  final pos = Float32List((nx + 1) * (ny + 1) * 2);
-  final colors = Int32List((nx + 1) * (ny + 1));
-  var k = 0;
-  for (var j = 0; j <= ny; j++) {
-    for (var i = 0; i <= nx; i++) {
-      final p = Offset(b.left + b.width * i / nx, b.top + b.height * j / ny);
-      pos[k * 2] = p.dx;
-      pos[k * 2 + 1] = p.dy;
-      final c = ramp.at(scale.t(idw(samples, p)));
-      colors[k] = c.withValues(alpha: alpha).toARGB32();
-      k++;
-    }
-  }
-  final idx = Uint16List(nx * ny * 6);
-  var q = 0;
-  for (var j = 0; j < ny; j++) {
-    for (var i = 0; i < nx; i++) {
-      final a = j * (nx + 1) + i;
-      final c = a + nx + 1;
-      idx
-        ..[q++] = a
-        ..[q++] = a + 1
-        ..[q++] = c
-        ..[q++] = a + 1
-        ..[q++] = c + 1
-        ..[q++] = c;
-    }
-  }
-  return ui.Vertices.raw(
-    ui.VertexMode.triangles,
-    pos,
-    colors: colors,
-    indices: idx,
-  );
-}
-
-/// Merkt sich das Netz je Raum. Neu gerechnet wird nur, wenn sich Werte,
-/// Skala, Form oder Modus ändern, nicht pro Frame.
-class HeatCache {
-  final _m = <String, (int, ui.Vertices)>{};
-
-  ui.Vertices get(
-    FloorRoom room,
-    List<HeatSample> samples,
-    HeatScale scale,
-    HeatRamp ramp,
-    double alpha,
-  ) {
-    final key = Object.hash(
-      Object.hashAll(room.points),
-      Object.hashAll(samples),
-      scale,
-      ramp,
-      alpha,
-    );
-    final hit = _m[room.id];
-    if (hit != null && hit.$1 == key) return hit.$2;
-    hit?.$2.dispose();
-    final v = heatVertices(room, samples, scale, ramp, alpha);
-    _m[room.id] = (key, v);
-    return v;
-  }
-
-  void dispose() {
-    for (final v in _m.values) {
-      v.$2.dispose();
-    }
-    _m.clear();
-  }
-}
-
-/// Heatmap: jeder Raum aus seinen eigenen Sensoren, auf sein Polygon
-/// geclippt, Farben nach der gemeinsamen Skala.
-class HeatmapPainter extends FloorOverlayPainter {
-  const HeatmapPainter({
-    required this.plan,
-    required this.data,
-    required this.cache,
-    required this.hv,
-  });
-
-  final HavenFloorPlan plan;
-  final HeatData data;
-  final HeatCache cache;
-  final HavenColors hv;
-
-  @override
-  void paint(Canvas canvas, Size size, FloorGeometry geo) {
-    final scale = data.scale;
-    if (scale == null) return;
-    final alpha = hv.isDark ? 0.74 : 0.46;
-    for (final room in plan.rooms) {
-      final samples = data.rooms[room.id];
-      if (samples == null || !geo.polygons.containsKey(room.id)) continue;
-      final v = cache.get(room, samples, scale, data.kind.ramp, alpha);
-      canvas.save();
-      canvas.clipPath(geo.roomPath(room.id));
-      final o = geo.roomOffsets[room.id] ?? Offset.zero;
-      canvas.translate(
-        geo.origin.dx + o.dx * geo.scale,
-        geo.origin.dy + o.dy * geo.scale,
-      );
-      canvas.scale(geo.scale);
-      canvas.drawVertices(v, BlendMode.dst, Paint());
-      canvas.restore();
-    }
-  }
-
-  @override
-  bool shouldRepaint(HeatmapPainter old) =>
-      old.plan != plan || old.data != data || old.hv != hv;
 }
 
 String heatValue(double v, HeatKind k) => k == HeatKind.temperature

@@ -9,9 +9,7 @@ import '../../core/state/providers.dart';
 import '../../core/theme/tokens.dart';
 import '../../data/models/floor_plan.dart';
 import '../../data/models/state_history.dart';
-import 'floor_plan_view.dart';
 import 'heatmap.dart';
-import 'map_readings.dart';
 
 Color onFill(Color c) => colorOf(onColorFor(rgbOf(c)));
 
@@ -228,97 +226,6 @@ class _RipplePainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_RipplePainter old) => old.color != color || old.on != on;
-}
-
-/// Räume leuchten bei Bewegung und klingen ab.
-class PresencePainter extends FloorOverlayPainter {
-  const PresencePainter({
-    required this.plan,
-    required this.levels,
-    required this.sensors,
-    required this.hv,
-  });
-
-  final HavenFloorPlan plan;
-  final Map<String, RoomPresence> levels;
-
-  /// Melder mit ihrer Leuchtkraft (Zellen).
-  final List<(Offset, double)> sensors;
-  final HavenColors hv;
-
-  @override
-  void paint(Canvas canvas, Size size, FloorGeometry geo) {
-    final color = presenceColor(hv);
-    for (final room in plan.rooms) {
-      final l = levels[room.id];
-      if (l == null || l.level <= 0.01) continue;
-      final path = geo.roomPath(room.id);
-      canvas.save();
-      canvas.clipPath(path);
-      canvas.drawPath(
-        path,
-        Paint()
-          ..color = color.withValues(
-            alpha: (hv.isDark ? 0.10 : 0.08) + 0.22 * l.level,
-          ),
-      );
-      final b = geo.rooms[room.id]!;
-      for (final (at, lv) in sensors) {
-        if (lv <= 0.01 || plan.roomAt(at)?.id != room.id) continue;
-        final c = geo.pointToPx(PlanPoint(at.dx, at.dy, room.id));
-        final r = b.longestSide * 0.7;
-        canvas.drawCircle(
-          c,
-          r,
-          Paint()
-            ..shader = RadialGradient(
-              colors: [
-                color.withValues(alpha: 0.42 * lv),
-                color.withValues(alpha: 0.12 * lv),
-                color.withValues(alpha: 0),
-              ],
-              stops: const [0, 0.5, 1],
-            ).createShader(Rect.fromCircle(center: c, radius: r)),
-        );
-      }
-      canvas.restore();
-      if (l.active) {
-        canvas.drawPath(
-          path,
-          Paint()
-            ..style = PaintingStyle.stroke
-            ..strokeWidth = 2
-            ..color = color.withValues(alpha: 0.8),
-        );
-      }
-    }
-  }
-
-  @override
-  bool shouldRepaint(PresencePainter old) =>
-      old.plan != plan ||
-      old.hv != hv ||
-      old.sensors.length != sensors.length ||
-      !_sameLevels(old.levels, levels) ||
-      !_sameSensors(old.sensors, sensors);
-
-  static bool _sameLevels(
-    Map<String, RoomPresence> a,
-    Map<String, RoomPresence> b,
-  ) {
-    if (a.length != b.length) return false;
-    for (final e in a.entries) {
-      if (b[e.key] != e.value) return false;
-    }
-    return true;
-  }
-
-  static bool _sameSensors(List<(Offset, double)> a, List<(Offset, double)> b) {
-    for (var i = 0; i < a.length; i++) {
-      if (a[i] != b[i]) return false;
-    }
-    return true;
-  }
 }
 
 /// Batteriestand als Ring mit Zahl, schwache Batterien rot hervorgehoben.

@@ -88,6 +88,13 @@ void main() {
     await tester.tapAt(const Offset(200, 60));
     await tester.pumpAndSettle();
 
+    // Karte: Perspektive und Qualität der 3D-Karte.
+    await tester.scrollUntilVisible(
+      find.text('Ausgewogen'),
+      200,
+      scrollable: find.byType(Scrollable).first,
+    );
+    expect(find.text('Perspektive'), findsOneWidget);
     await tester.ensureVisible(find.text('Home Assistant öffnen'));
     await tester.tap(find.text('Home Assistant öffnen'));
     await tester.pumpAndSettle();

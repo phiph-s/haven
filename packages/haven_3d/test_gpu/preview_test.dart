@@ -135,6 +135,8 @@ Future<void> preview(WidgetTester tester, String kind) async {
 }
 
 void main() {
+  // Echte GPU (flutter test --enable-flutter-gpu), nicht ohne Bild.
+  Scene3DSupport.debugOverride = true;
   for (final kind in kPreviewSizes.keys) {
     testWidgets(kind, (tester) async {
       addTearDown(tester.view.reset);

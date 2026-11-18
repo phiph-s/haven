@@ -1,9 +1,12 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/rendering.dart';
 import 'package:go_router/go_router.dart';
-import 'package:haven_3d/haven_3d.dart' as h3 show SceneHeatmap;
+import 'package:haven_3d/haven_3d.dart'
+    as h3
+    show SceneController, SceneHeatmap, SceneProjection;
 import 'package:material_ui/material_ui.dart';
 
 import '../../core/adaptive/breakpoints.dart';
@@ -33,7 +36,7 @@ import '../zigbee/mesh/mesh_screen.dart' show zigbeeMeshPath;
 import '../zigbee/zigbee_providers.dart';
 import '../zigbee/zigbee_screen.dart' show zigbeeDevicePath;
 import 'floor_plan_store.dart';
-import 'floor_plan_view.dart';
+import 'floor_geometry.dart';
 import 'heatmap.dart';
 import 'map_data.dart';
 import 'map_actions.dart';
@@ -45,7 +48,6 @@ import 'map_3d.dart';
 import 'map_light_controls.dart';
 import 'map_markers.dart';
 import 'map_panels.dart';
-import 'map_painters.dart';
 import 'map_readings.dart';
 import 'map_thermostat.dart';
 import 'map_routes.dart';
@@ -262,7 +264,6 @@ class _MapBody extends ConsumerStatefulWidget {
 class _MapBodyState extends ConsumerState<_MapBody> {
   String? _info;
   Timer? _infoTimer;
-  final _heat = HeatCache();
   final _mesh = ValueNotifier(const MeshViewState());
   String? _meshSel;
 
@@ -290,7 +291,6 @@ class _MapBodyState extends ConsumerState<_MapBody> {
   /// Zählt Fokuswechsel: ein spät geschlossenes Panel stellt nichts zurück,
   /// wenn inzwischen etwas anderes passiert ist.
   int _focusTick = 0;
-  double _mapH = 800;
 
   /// Desktop: Raum des offenen Geräte-Panels und zuletzt angefahrener Raum.
   String? _panelRoom;
@@ -329,7 +329,6 @@ class _MapBodyState extends ConsumerState<_MapBody> {
     _powerTimer?.cancel();
     _clock?.cancel();
     _measureClock?.cancel();
-    _heat.dispose();
     _mesh.dispose();
     super.dispose();
   }
@@ -414,13 +413,24 @@ class _MapBodyState extends ConsumerState<_MapBody> {
 
   bool get _use3d =>
       ref.read(mapLayerProvider) != MapLayer.network &&
-      ref.read(map3dSettingsProvider).enabled &&
       (ref.read(map3dSupportedProvider).value ?? false);
 
   Future<void> _panel3d(MapPanelSpec spec, String? roomId) async {
     final tick = ++_focusTick;
-    if (roomId != null) _focus3d(roomId, panel: true);
-    await showMapPanel(context, spec, overMap: true);
+    double? shown;
+    // Die Kamera passt den Raum über das Sheet, sobald seine Höhe feststeht:
+    // ein kurzes Panel lässt dem Raum mehr Platz, er rückt tiefer und näher.
+    await showMapPanel(
+      context,
+      spec,
+      overMap: true,
+      onHeight: (h) {
+        if (!mounted || tick != _focusTick || roomId == null) return;
+        if (shown != null && (h - shown!).abs() < 24) return;
+        shown = h;
+        _focus3d(roomId, bottom: h + 12);
+      },
+    );
     if (!mounted || tick != _focusTick) return;
     final room = _focusRoom;
     if (room != null) {
@@ -432,14 +442,10 @@ class _MapBodyState extends ConsumerState<_MapBody> {
 
   /// Freie Fläche der Karte (Handy): unter dem Kopf, über der Leiste oder
   /// über dem Panel.
-  EdgeInsets _mapInsets({bool panel = false}) => EdgeInsets.fromLTRB(
-    8,
-    _topH + 8,
-    8,
-    panel ? _mapH * kMapPanelShare : _bottomH,
-  );
+  EdgeInsets _mapInsets({double? bottom}) =>
+      EdgeInsets.fromLTRB(8, _topH + 8, 8, bottom ?? _bottomH);
 
-  void _focus3d(String roomId, {bool panel = false}) {
+  void _focus3d(String roomId, {double? bottom}) {
     final s = ref.read(map3dSettingsProvider);
     setState(() => _raised = roomId);
     unawaited(
@@ -449,7 +455,7 @@ class _MapBodyState extends ConsumerState<_MapBody> {
             roomId: roomId,
             yaw: s.tilt ? null : kMapFocusYaw,
             pitch: s.tilt ? null : kMapFocusPitch,
-            insets: _mapInsets(panel: panel),
+            insets: _mapInsets(bottom: bottom),
           ),
     );
   }
@@ -796,10 +802,11 @@ class _MapBodyState extends ConsumerState<_MapBody> {
     });
     final readings = ref.watch(mapReadingsProvider(plan));
     _ensureClock(layer == MapLayer.presence);
-    final mode3d = watchMap3d(ref, layer);
-    final use3d = mode3d ?? false;
-    // Die Prüfung auf 3D läuft noch: Ladeanimation statt 2D-Karte.
-    final probing = mode3d == null;
+    final supported = watchMap3d(ref);
+    // Fokus, Raumkarte und Panels über der Karte gibt es nicht im Funknetz.
+    final use3d = supported == true && layer != MapLayer.network;
+    // Die Prüfung auf 3D läuft noch: Ladeanimation.
+    final probing = supported == null;
 
     final _LayerView v = switch (layer) {
       MapLayer.combo => _lightView(plan),
@@ -812,7 +819,15 @@ class _MapBodyState extends ConsumerState<_MapBody> {
     };
 
     if (context.isDesktopLayout) {
-      return _desktop(context, plan, layer, v, use3d: use3d, probing: probing);
+      return _desktop(
+        context,
+        plan,
+        layer,
+        v,
+        use3d: use3d,
+        probing: probing,
+        supported: supported,
+      );
     }
 
     final focus = use3d && _focusRoom != null ? plan.room(_focusRoom!) : null;
@@ -825,7 +840,6 @@ class _MapBodyState extends ConsumerState<_MapBody> {
       child: LayoutBuilder(
         builder: (context, box) {
           final h = box.maxHeight;
-          _mapH = h;
           // Oben blendet die Karte hinter dem Kopf aus, unten am Rand.
           final fadeTop = (_topH / h).clamp(0.0, 0.5);
           final fadeBottom = (24 / h).clamp(0.0, 0.2);
@@ -847,14 +861,19 @@ class _MapBodyState extends ConsumerState<_MapBody> {
                       ],
                       stops: [fadeTop * 0.55, fadeTop, 1 - fadeBottom, 1],
                     ).createShader(rect),
-                    child: use3d
-                        ? Map3DView(
+                    child: supported == false
+                        ? const Map3DUnsupported()
+                        : probing
+                        ? Map3DLoader(plan: v.plan, insets: _mapInsets())
+                        : Map3DView(
                             key: const ValueKey('map3d'),
                             plan: v.plan,
                             nodes: v.nodes,
                             nodeBuilder: v.nodeBuilder,
                             subtitle: v.subtitle,
                             heatmap: v.heatmap3d,
+                            controller: v.controller,
+                            overlayBuilder: v.overlay3d,
                             onNodeTap: v.onNodeTap,
                             onNodeLongPress: _holdNode,
                             onNodeSecondaryTap: _secondaryNode,
@@ -866,34 +885,6 @@ class _MapBodyState extends ConsumerState<_MapBody> {
                             selectedRoomId: _focusRoom ?? _raised,
                             raisedRoomId: _raised,
                             insets: _mapInsets(),
-                          )
-                        : probing
-                        ? Map3DLoader(plan: v.plan, insets: _mapInsets())
-                        : FloorPlanView(
-                            key: const ValueKey('map'),
-                            plan: v.plan,
-                            gap: v.gap,
-                            reserveGap: 2,
-                            fill: true,
-                            maxScale: 6,
-                            insets: EdgeInsets.fromLTRB(
-                              8,
-                              _topH + 8,
-                              8,
-                              _bottomH,
-                            ),
-                            nodes: v.nodes,
-                            nodeBuilder: v.nodeBuilder,
-                            underlayPainter: v.underlay,
-                            overlayPainter: v.overlay,
-                            roomStyle: v.roomStyle,
-                            roomSubtitle: v.subtitle,
-                            onNodeTap: v.onNodeTap,
-                            onNodeLongPress: _holdNode,
-                            onNodeSecondaryTap: _secondaryNode,
-                            onRoomTap: v.onRoomTap,
-                            onOutsideTap: v.onOutsideTap,
-                            showOutside: v.showOutside,
                           ),
                   ),
                 ),
@@ -1012,8 +1003,8 @@ class _MapBodyState extends ConsumerState<_MapBody> {
     _LayerView v, {
     required bool use3d,
     required bool probing,
+    required bool? supported,
   }) {
-    final hv = context.hv;
     final inspect = _inspect != null && plan.room(_inspect!) != null
         ? _inspect
         : null;
@@ -1061,14 +1052,19 @@ class _MapBodyState extends ConsumerState<_MapBody> {
                   padding: const EdgeInsets.fromLTRB(16, 4, 8, 76),
                   child: EntryAnimation(
                     index: 1,
-                    child: use3d
-                        ? Map3DView(
+                    child: supported == false
+                        ? const Map3DUnsupported()
+                        : probing
+                        ? Map3DLoader(plan: v.plan)
+                        : Map3DView(
                             key: const ValueKey('map3d'),
                             plan: v.plan,
                             nodes: v.nodes,
                             nodeBuilder: v.nodeBuilder,
                             subtitle: v.subtitle,
                             heatmap: v.heatmap3d,
+                            controller: v.controller,
+                            overlayBuilder: v.overlay3d,
                             onNodeTap: v.onNodeTap,
                             onNodeLongPress: _holdNode,
                             onNodeSecondaryTap: _secondaryNode,
@@ -1077,37 +1073,6 @@ class _MapBodyState extends ConsumerState<_MapBody> {
                             onRoomSecondaryTap: _secondaryRoom,
                             selectedRoomId: want,
                             raisedRoomId: want,
-                          )
-                        : probing
-                        ? Map3DLoader(plan: v.plan)
-                        : FloorPlanView(
-                            key: const ValueKey('map'),
-                            plan: v.plan,
-                            gap: v.gap,
-                            reserveGap: 2,
-                            fill: true,
-                            maxScale: 6,
-                            nodes: v.nodes,
-                            nodeBuilder: v.nodeBuilder,
-                            underlayPainter: v.underlay,
-                            overlayPainter: v.overlay,
-                            roomStyle: (r) {
-                              final base = v.roomStyle?.call(r);
-                              if (r.id != inspect) return base;
-                              return FloorRoomStyle(
-                                fill: base?.fill,
-                                border: hv.acc,
-                                borderWidth: 2,
-                              );
-                            },
-                            roomSubtitle: v.subtitle,
-                            onNodeTap: v.onNodeTap,
-                            onNodeLongPress: _holdNode,
-                            onNodeSecondaryTap: _secondaryNode,
-                            onRoomTap: v.onRoomTap,
-                            onOutsideTap: outside,
-                            onRoomSecondaryTap: _secondaryRoom,
-                            showOutside: v.showOutside,
                           ),
                   ),
                 ),
@@ -1171,7 +1136,6 @@ class _MapBodyState extends ConsumerState<_MapBody> {
   // ---- Licht ----------------------------------------------------------------
 
   _LayerView _lightView(HavenFloorPlan plan) {
-    final hv = context.hv;
     final lights = ref.watch(mapLightsProvider(plan));
     return _LayerView(
       plan: plan,
@@ -1181,7 +1145,6 @@ class _MapBodyState extends ConsumerState<_MapBody> {
       ],
       nodeBuilder: (context, n) =>
           MapMarker(entityId: n.id, kind: plan.placementOf(n.id)!.resolvedKind),
-      underlay: MapLightPainter(plan: plan, lights: lights, hv: hv),
       subtitle: (r) {
         final v = lights.rooms[r.id];
         if (v == null) return null;
@@ -1202,7 +1165,6 @@ class _MapBodyState extends ConsumerState<_MapBody> {
   /// steuern. Ausgenommene Lichter bleiben gedimmt sichtbar: Sie leuchten
   /// trotzdem und gehören auf den Grundriss, nur Haven-Abläufe lassen sie aus.
   _LayerView _lampsView(HavenFloorPlan plan) {
-    final hv = context.hv;
     final lights = ref.watch(mapLightsProvider(plan));
     final controls = ref.watch(mapLightControlsProvider(plan)).rooms;
     final excluded = ref.watch(
@@ -1232,7 +1194,6 @@ class _MapBodyState extends ConsumerState<_MapBody> {
             ? Opacity(opacity: 0.45, child: marker)
             : marker;
       },
-      underlay: MapLightPainter(plan: plan, lights: lights, hv: hv),
       onNodeTap: _tapNode,
       onRoomTap: _tapRoom,
       card: _StatusCard(lights: lights),
@@ -1281,7 +1242,6 @@ class _MapBodyState extends ConsumerState<_MapBody> {
           color: scale == null ? hv.s2 : kind.ramp.at(scale.t(v)),
         );
       },
-      underlay: HeatmapPainter(plan: plan, data: data, cache: _heat, hv: hv),
       heatmap3d: heatmapOf(data, plan.grid.cellMeters),
       subtitle: (r) {
         final range = data.roomRange(r.id);
@@ -1290,9 +1250,6 @@ class _MapBodyState extends ConsumerState<_MapBody> {
         if ((a - b).abs() < 0.05) return text(a);
         return '${heatValue(a, kind)} bis ${text(b)}';
       },
-      roomStyle: (r) => data.rooms.containsKey(r.id)
-          ? null
-          : FloorRoomStyle(fill: hv.s1.withValues(alpha: 0.7)),
       onNodeTap: _tapNode,
       onRoomTap: _tapRoom,
       card: HeatLegend(data: data),
@@ -1339,14 +1296,6 @@ class _MapBodyState extends ConsumerState<_MapBody> {
         historic: past ? (sensorLevels[n.id] ?? 0) >= 1 : null,
       ),
       heatmap3d: presenceHeatmapOf(plan, levels, presenceColor(hv)),
-      underlay: PresencePainter(
-        plan: plan,
-        levels: levels,
-        sensors: [
-          for (final m in motion) (m.center, sensorLevels[m.entityId] ?? 0),
-        ],
-        hv: hv,
-      ),
       subtitle: (r) {
         final l = levels[r.id];
         if (l == null) return null;
@@ -1406,7 +1355,6 @@ class _MapBodyState extends ConsumerState<_MapBody> {
     if (scene == null || map == null) {
       return _LayerView(
         plan: plan,
-        gap: 2,
         card: _NetworkCard(
           text: data.refreshing
               ? _measureText(data)
@@ -1434,21 +1382,21 @@ class _MapBodyState extends ConsumerState<_MapBody> {
     final lqi = _meshSel == null ? null : map.lqiToParent(_meshSel!);
     return _LayerView(
       plan: scene.plan,
-      gap: 2,
-      showOutside: !scene.autoLayout,
+      controller: ref.watch(meshControllerProvider),
       nodes: MeshGraph.floorNodes(scene, map),
+      overlay3d: (context, p) => RepaintBoundary(
+        child: CustomPaint(
+          painter: MeshEdgePainter(
+            edges: map.edges,
+            scene: scene,
+            state: _mesh,
+            hv: hv,
+            nodes: p.markers,
+          ),
+        ),
+      ),
       nodeBuilder: (context, node) =>
           MeshNodeDot(info: scene.infos[node.id]!, map: map, state: _mesh),
-      overlay: MeshEdgePainter(
-        edges: map.edges,
-        scene: scene,
-        state: _mesh,
-        hv: hv,
-      ),
-      roomStyle: (room) => FloorRoomStyle(
-        fill: room.id == kNoRoomId ? hv.s2.withValues(alpha: 0.55) : null,
-        border: hv.ln2,
-      ),
       onNodeTap: _tapNode,
       onRoomTap: _tapRoom,
       onOutsideTap: () {
@@ -1527,40 +1475,38 @@ class _MapBodyState extends ConsumerState<_MapBody> {
   }
 }
 
-/// Alles, was eine Kartenart der `FloorPlanView` übergibt.
+/// Alles, was eine Kartenart der 3D-Karte übergibt.
 class _LayerView {
   const _LayerView({
     required this.plan,
     required this.card,
-    this.gap = 0,
     this.nodes = const [],
     this.nodeBuilder,
-    this.underlay,
-    this.overlay,
-    this.roomStyle,
     this.subtitle,
     this.onNodeTap,
     this.onRoomTap,
     this.onOutsideTap,
-    this.showOutside = true,
     this.heatmap3d,
+    this.controller,
+    this.overlay3d,
   });
   final HavenFloorPlan plan;
   final Widget card;
-  final double gap;
   final List<FloorNode> nodes;
   final FloorNodeBuilder? nodeBuilder;
-  final FloorOverlayPainter? underlay;
-  final FloorOverlayPainter? overlay;
-  final FloorRoomStyle? Function(FloorRoom)? roomStyle;
   final String? Function(FloorRoom)? subtitle;
   final ValueChanged<FloorNode>? onNodeTap;
   final ValueChanged<FloorRoom>? onRoomTap;
   final VoidCallback? onOutsideTap;
-  final bool showOutside;
 
-  /// Färbung der Böden in 3D (statt [underlay]).
+  /// Färbung der Böden (Temperatur, Feuchte, Bewegung).
   final h3.SceneHeatmap? heatmap3d;
+
+  /// Eigene Szene und Kamera (Funknetz), sonst die Karte der App.
+  final h3.SceneController? controller;
+
+  /// Zeichenebene über der Szene (Funkverbindungen).
+  final Widget Function(BuildContext context, h3.SceneProjection p)? overlay3d;
 }
 
 class _PresenceCard extends StatelessWidget {
@@ -2063,18 +2009,8 @@ class _EmptyMap extends StatelessWidget {
               children: [
                 SizedBox(
                   height: 190,
-                  child: FloorPlanView(
-                    plan: _sample,
-                    interactive: false,
-                    showLabels: false,
-                    fill: true,
-                    gap: 0.6,
-                    padding: 4,
-                    showOutside: false,
-                    roomStyle: (r) => FloorRoomStyle(
-                      fill: hv.acc.withValues(alpha: r.id == 'a' ? 0.28 : 0.12),
-                      border: hv.acc.withValues(alpha: 0.5),
-                    ),
+                  child: CustomPaint(
+                    painter: _SamplePlanPainter(_sample, hv.acc),
                   ),
                 ),
                 const SizedBox(height: 24),
@@ -2104,6 +2040,47 @@ class _EmptyMap extends StatelessWidget {
       ],
     );
   }
+}
+
+/// Skizze eines Grundrisses für den Leerzustand: Räume mit Abstand,
+/// einer davon betont.
+class _SamplePlanPainter extends CustomPainter {
+  const _SamplePlanPainter(this.plan, this.accent);
+  final HavenFloorPlan plan;
+  final Color accent;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    var b = Rect.zero;
+    for (final r in plan.rooms) {
+      b = b.isEmpty ? r.bounds : b.expandToInclude(r.bounds);
+    }
+    if (b.isEmpty) return;
+    final k = math.min(size.width / b.width, size.height / b.height) * 0.92;
+    final o = size.center(Offset.zero) - b.center * k;
+    for (final r in plan.rooms) {
+      final c = r.bounds.center;
+      // Jeder Raum rückt etwas zu seiner Mitte: Spalt wie auf der Karte.
+      final pts = [for (final p in r.offsets) o + (c + (p - c) * 0.92) * k];
+      final path = Path()..addPolygon(pts, true);
+      canvas.drawPath(
+        path,
+        Paint()..color = accent.withValues(alpha: r.id == 'a' ? 0.28 : 0.12),
+      );
+      canvas.drawPath(
+        path,
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1.2
+          ..strokeJoin = StrokeJoin.round
+          ..color = accent.withValues(alpha: 0.5),
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(_SamplePlanPainter old) =>
+      old.plan != plan || old.accent != accent;
 }
 
 /// Meldet die Größe des Kinds nach dem Layout (nur bei Änderung).

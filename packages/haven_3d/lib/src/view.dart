@@ -16,6 +16,7 @@ import 'picking.dart';
 import 'quality.dart';
 import 'scene.dart';
 import 'style.dart';
+import 'support.dart';
 
 /// Blickrichtungen für [SceneController.show].
 class SceneViews {
@@ -39,6 +40,33 @@ enum SceneGestures {
   /// Wie eine Karte: in der Draufsicht verschiebt Ziehen, geneigt dreht es.
   /// Rechte oder mittlere Maustaste (oder Strg) dreht immer.
   map,
+
+  /// Keine eigenen Gesten (z. B. ein Editor mit eigener Bedienung darüber).
+  /// Tippen, Halten und Rechtsklick melden trotzdem ihre Treffer.
+  none,
+}
+
+/// Projektion der Szene für Overlays: Weltpunkte (Meter) → Bildschirm.
+@immutable
+class SceneProjection {
+  const SceneProjection(this.camera, this.size, this.markers);
+  final OrbitCamera camera;
+  final Size size;
+
+  /// Bildpunkte der angezeigten Geräte (auf der Höhe ihres Raums).
+  final Map<String, Offset> markers;
+
+  /// Punkt auf dem Boden (Meter) → Bildschirm.
+  Offset floor(Offset m) => camera.project(V3(m.dx, m.dy, 0), size).offset;
+
+  /// Weltpunkt → Bildschirm.
+  Offset project(V3 p) => camera.project(p, size).offset;
+
+  /// Bildschirm → Punkt auf dem Boden (Meter), `null` ohne Treffer.
+  Offset? toFloor(Offset screen) => camera.unprojectOnPlane(screen, size)?.xy;
+
+  /// Pixel je Meter (auf Höhe des Ziels).
+  double get scale => camera.scale;
 }
 
 /// Rückmeldung mit Bildschirmposition (lange drücken, Rechtsklick).
@@ -244,6 +272,10 @@ class Scene3DView extends StatefulWidget {
     this.roomLabelBuilder,
     this.insets = EdgeInsets.zero,
     this.placeholder,
+    this.overlayBuilder,
+    this.foregroundBuilder,
+    this.interactiveMarkers = false,
+    this.hiddenObjects = const {},
   });
 
   final Scene scene;
@@ -298,6 +330,21 @@ class Scene3DView extends StatefulWidget {
   /// Danach blendet die Szene über. Ohne: bis dahin leer.
   final Widget? placeholder;
 
+  /// Zeichnet über der Szene, unter den Geräten (z. B. Verbindungslinien).
+  final Widget Function(BuildContext context, SceneProjection p)?
+  overlayBuilder;
+
+  /// Gerät-Widgets bekommen selbst Zeiger-Ereignisse (z. B. zum Ziehen).
+  /// Sonst gehen alle Gesten an die Ansicht (Treffertest über die Szene).
+  final bool interactiveMarkers;
+
+  /// Möbel, die nicht gezeichnet werden (z. B. während ein Editor sie zieht).
+  final Set<String> hiddenObjects;
+
+  /// Zeichnet über allem (z. B. Griffe eines Editors).
+  final Widget Function(BuildContext context, SceneProjection p)?
+  foregroundBuilder;
+
   @override
   State<Scene3DView> createState() => _Scene3DViewState();
 }
@@ -338,6 +385,9 @@ class _Scene3DViewState extends State<Scene3DView>
   Size _size = Size.zero;
   bool _fitted = false;
   bool _ready = false;
+
+  /// Keine GPU (Tests): Geräte, Beschriftungen und Overlays ohne Bild.
+  bool _headless = false;
   GpuScene? get _gpu =>
       _ready ? _c._gpuFor(widget.scene, widget.style, widget.quality) : null;
 
@@ -372,9 +422,18 @@ class _Scene3DViewState extends State<Scene3DView>
         };
       });
     });
-    fs.Scene.initializeStaticResources().then((_) {
+    Scene3DSupport.available().then((ok) async {
+      if (ok) await fs.Scene.initializeStaticResources();
       if (!mounted) return;
-      setState(() => _ready = true);
+      setState(() {
+        if (ok) {
+          _ready = true;
+        } else {
+          // Ohne GPU: Geräte, Beschriftungen und Overlays ohne Bild.
+          _headless = true;
+          _shown = true;
+        }
+      });
     });
   }
 
@@ -573,7 +632,7 @@ class _Scene3DViewState extends State<Scene3DView>
         keys.isControlPressed;
     final pan = switch (widget.gestures) {
       SceneGestures.orbit => keys.isShiftPressed,
-      SceneGestures.map =>
+      SceneGestures.map || SceneGestures.none =>
         keys.isShiftPressed || (!orbitButton && s.pitch < 0.05),
     };
     if (pan) {
@@ -622,7 +681,7 @@ class _Scene3DViewState extends State<Scene3DView>
         final gpu = _gpu;
         // Jeder Neuaufbau heißt: Kamera, Animation, Auswahl oder Stil hat
         // sich geändert. Dann rendern, bis es wieder ruhig ist.
-        _wake(inBuild: true);
+        if (!_headless) _wake(inBuild: true);
         _syncStats();
         gpu?.sync(
           cam,
@@ -632,7 +691,11 @@ class _Scene3DViewState extends State<Scene3DView>
           size: size,
           selectedRoomId: widget.selectedRoomId,
           heatmap: widget.heatmap,
+          hiddenObjects: widget.hiddenObjects,
         );
+        // Gebakenes Licht in Scheiben mischen; was übrig bleibt, im
+        // nächsten Bild.
+        if (gpu != null && gpu.flushLight()) _later(() {});
         final dpr = MediaQuery.maybeDevicePixelRatioOf(context) ?? 1.0;
         final maxDpr = widget.quality.maxPixelRatio;
         final markers = [
@@ -647,21 +710,27 @@ class _Scene3DViewState extends State<Scene3DView>
           _size,
           p,
           focusRoomId: widget.focusRoomId,
-          hidden: gpu?.hidden ?? const {},
+          hidden: gpu?.hidden ?? widget.hiddenObjects,
           heightOf: _heightOf,
           markers: widget.markers,
           markerRadius: widget.markerHitRadius,
         );
         final labels = widget.roomLabelBuilder;
         if (gpu != null && !_shown) _showSoon();
+        final lifted = {for (final m in markers) m.id: _lifted(m)};
+        final proj = SceneProjection(cam, size, {
+          for (final e in lifted.entries)
+            e.key: cam.project(e.value, size).offset,
+        });
+        final own = widget.gestures != SceneGestures.none;
         final view = Listener(
-          onPointerSignal: _onScroll,
+          onPointerSignal: own ? _onScroll : null,
           onPointerDown: (e) => _buttons = e.buttons,
           child: GestureDetector(
             behavior: HitTestBehavior.opaque,
-            onScaleStart: _onScaleStart,
-            onScaleUpdate: _onScaleUpdate,
-            onScaleEnd: (_) => _startCam = null,
+            onScaleStart: own ? _onScaleStart : null,
+            onScaleUpdate: own ? _onScaleUpdate : null,
+            onScaleEnd: own ? (_) => _startCam = null : null,
             onTapUp: widget.onTap == null
                 ? null
                 : (d) => widget.onTap!(hit(d.localPosition)),
@@ -699,15 +768,21 @@ class _Scene3DViewState extends State<Scene3DView>
                         labels(context, r, cam),
                         center: false,
                       ),
+                if (widget.overlayBuilder != null)
+                  Positioned.fill(child: widget.overlayBuilder!(context, proj)),
                 CustomPaint(
                   painter: _MarkerStems(
-                    [for (final m in markers) _lifted(m)],
+                    lifted.values.toList(),
                     cam,
                     widget.style,
                   ),
                 ),
                 for (final m in markers)
-                  _place(context, m, cam.project(_lifted(m), size).offset),
+                  _place(context, m, proj.markers[m.id]!),
+                if (widget.foregroundBuilder != null)
+                  Positioned.fill(
+                    child: widget.foregroundBuilder!(context, proj),
+                  ),
                 if (widget.showStats)
                   Positioned(
                     left: 8,
@@ -790,26 +865,33 @@ class _Scene3DViewState extends State<Scene3DView>
   }
 
   /// Widget an einem Bildpunkt: mittig oder mit der oberen linken Ecke.
-  Widget _at(ViewPoint p, Widget child, {bool center = true, Key? key}) =>
-      Positioned(
-        key: key,
-        left: p.x,
-        top: p.y,
-        child: IgnorePointer(
-          child: center
-              ? FractionalTranslation(
-                  translation: const Offset(-0.5, -0.5),
-                  child: child,
-                )
-              : child,
-        ),
-      );
+  Widget _at(
+    ViewPoint p,
+    Widget child, {
+    bool center = true,
+    Key? key,
+    bool interactive = false,
+  }) => Positioned(
+    key: key,
+    left: p.x,
+    top: p.y,
+    child: IgnorePointer(
+      ignoring: !interactive,
+      child: center
+          ? FractionalTranslation(
+              translation: const Offset(-0.5, -0.5),
+              child: child,
+            )
+          : child,
+    ),
+  );
 
   Widget _place(BuildContext context, SceneMarker m, Offset at) {
     final b = widget.markerBuilder;
     return _at(
       ViewPoint(at.dx, at.dy, 0),
       key: ValueKey('m:${m.id}'),
+      interactive: widget.interactiveMarkers,
       b != null
           ? b(context, m)
           : SizedBox.square(

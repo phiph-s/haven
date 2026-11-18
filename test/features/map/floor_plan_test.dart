@@ -5,7 +5,7 @@ import 'package:haven/data/models/floor_plan.dart';
 import 'package:haven/data/models/polygon.dart';
 import 'package:haven/dev/fake_floor_plan.dart';
 import 'package:haven/features/map/floor_editor_ops.dart';
-import 'package:haven/features/map/floor_plan_view.dart';
+import 'package:haven/features/map/floor_geometry.dart';
 
 GridPoint g(int x, int y) => GridPoint(x, y);
 

@@ -233,36 +233,6 @@ void main() {
       expect(HeatRamp.temperature.at(0), HeatRamp.temperature.colors.first);
       expect(HeatRamp.temperature.at(1), HeatRamp.temperature.colors.last);
     });
-
-    test('Netz der Heatmap: Ecken über dem Raum, Cache rechnet nur neu', () {
-      final room = kFakeFloorPlan.room('salon')!;
-      const s = [HeatSample(Offset(5, 5), 20), HeatSample(Offset(14, 10), 23)];
-      final cache = HeatCache();
-      final v1 = cache.get(
-        room,
-        s,
-        const HeatScale(18, 24),
-        HeatRamp.temperature,
-        0.5,
-      );
-      final v2 = cache.get(
-        room,
-        s,
-        const HeatScale(18, 24),
-        HeatRamp.temperature,
-        0.5,
-      );
-      expect(identical(v1, v2), isTrue);
-      final v3 = cache.get(
-        room,
-        const [HeatSample(Offset(5, 5), 21)],
-        const HeatScale(18, 24),
-        HeatRamp.temperature,
-        0.5,
-      );
-      expect(identical(v1, v3), isFalse);
-      cache.dispose();
-    });
   });
 
   group('Bewegung', () {
@@ -456,15 +426,15 @@ void main() {
           .length;
       expect(
         find.byType(MapMarker),
-        findsNWidgets(lamps + 2),
-        reason: 'Lampen, ein Regler, Koordinator',
+        findsNWidgets(lamps + 1),
+        reason: 'Lampen und ein Regler',
       );
       expect(find.byType(PresenceMarker), findsNothing);
       expect(find.textContaining('Licht'), findsWidgets);
       await tester.tap(find.bySemanticsLabel('Kartenart Kombi'));
       await tester.pumpAndSettle();
       expect(store.mapLayer, 'combo');
-      expect(find.byType(MapMarker), findsNWidgets(plan.placements.length + 1));
+      expect(find.byType(MapMarker), findsNWidgets(plan.placements.length));
     });
 
     testWidgets('Batterie: schwache hervorgehoben', (tester) async {

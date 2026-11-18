@@ -14,7 +14,6 @@ import '../../../core/widgets/section_header.dart';
 import '../../../data/models/floor_plan.dart';
 import '../../../data/models/zigbee_network.dart';
 import '../../map/floor_plan_store.dart';
-import '../../map/floor_plan_view.dart';
 import '../../map/map_routes.dart';
 import '../widgets/zb_common.dart';
 import '../zigbee_model.dart';
@@ -43,8 +42,7 @@ class ZigbeeMeshScreen extends ConsumerStatefulWidget {
 
 class _ZigbeeMeshScreenState extends ConsumerState<ZigbeeMeshScreen> {
   final _state = ValueNotifier(const MeshViewState());
-  final _zoom = TransformationController();
-  double _gap = 0;
+  final _proj = MeshProjection();
   MeshFilter _filter = MeshFilter.tree;
   bool _cancelled = false;
   String? _selected;
@@ -57,16 +55,11 @@ class _ZigbeeMeshScreenState extends ConsumerState<ZigbeeMeshScreen> {
     super.initState();
     _selected = widget.select;
     _filter = widget.filter ?? MeshFilter.tree;
-    // Nach dem ersten Bild auseinanderfahren.
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) setState(() => _gap = 2);
-    });
   }
 
   @override
   void dispose() {
     _state.dispose();
-    _zoom.dispose();
     super.dispose();
   }
 
@@ -140,7 +133,9 @@ class _ZigbeeMeshScreenState extends ConsumerState<ZigbeeMeshScreen> {
       _placing = !_placing;
       _draft = null;
       if (_placing) {
-        _zoom.value = Matrix4.identity();
+        unawaited(
+          ref.read(meshControllerProvider).show(yaw: 0, pitch: 0, fov: 0),
+        );
         _selected = null;
         _recompute(ref.read(zigbeeMeshProvider).map);
       }
@@ -149,9 +144,12 @@ class _ZigbeeMeshScreenState extends ConsumerState<ZigbeeMeshScreen> {
 
   /// Punkt zu einem Pixel: die Rasterzelle darunter (Raum oder Draußen),
   /// im Raster gehalten, nie im Bereich „Ohne Raum“.
-  PlanPoint? _pointAt(FloorGeometry geo, MeshScene scene, Offset px) {
+  PlanPoint? _pointAt(MeshScene scene, Offset px) {
     final g = scene.plan.grid;
-    final c = geo.planCellAt(px);
+    final m = _proj.current?.toFloor(px);
+    if (m == null) return null;
+    final f = m / g.cellMeters;
+    final c = GridPoint(f.dx.floor(), f.dy.floor());
     final cell = GridPoint(c.x.clamp(0, g.cols - 1), c.y.clamp(0, g.rows - 1));
     final p = scene.plan.pointOfCell(cell);
     if (p.roomId == kNoRoomId) return null;
@@ -277,27 +275,14 @@ class _ZigbeeMeshScreenState extends ConsumerState<ZigbeeMeshScreen> {
       builder: (context, cons) {
         final cid = scene.coordinatorIeee;
         MeshCoordinatorDrag? drag;
-        // Endlage der Räume (Abstand 2), für Ziehen und Platz des Sheets.
-        final geo = FloorGeometry.compute(
-          plan: scene.plan,
-          size: FloorPlanView.canvasSize(
-            plan: scene.plan,
-            constraints: cons,
-            gap: 2,
-            fill: true,
-            withOutside: !scene.autoLayout,
-          ),
-          gap: 2,
-          withOutside: !scene.autoLayout,
-          nodes: MeshGraph.floorNodes(scene, map),
-        );
         if (_placing && cid != null) {
           drag = MeshCoordinatorDrag(
-            onStart: () => _dragPx = geo.nodes[cid],
+            onStart: () => _dragPx = _proj.current?.markers[cid],
             onUpdate: (d) {
-              final at = (_dragPx ?? geo.nodes[cid] ?? Offset.zero) + d;
+              final at =
+                  (_dragPx ?? _proj.current?.markers[cid] ?? Offset.zero) + d;
               _dragPx = at;
-              final p = _pointAt(geo, scene, at);
+              final p = _pointAt(scene, at);
               if (p != null && p != _draft) setState(() => _draft = p);
             },
             onEnd: _dropCoordinator,
@@ -311,9 +296,8 @@ class _ZigbeeMeshScreenState extends ConsumerState<ZigbeeMeshScreen> {
                   scene: scene,
                   map: map,
                   state: _state,
-                  gap: _gap,
+                  projection: _proj,
                   interactive: !_placing,
-                  transformationController: _zoom,
                   coordinatorDrag: drag,
                   onNodeTap: _placing ? null : (id) => _select(map, id),
                   onRoomTap: () {
@@ -332,7 +316,7 @@ class _ZigbeeMeshScreenState extends ConsumerState<ZigbeeMeshScreen> {
                   // der unteren Hälfte.
                   final y = st.selected == null
                       ? null
-                      : geo.nodes[st.selected!]?.dy;
+                      : _proj.current?.markers[st.selected!]?.dy;
                   final top = y != null && y > cons.maxHeight * 0.5;
                   return Align(
                     alignment: top

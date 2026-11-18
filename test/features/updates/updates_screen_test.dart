@@ -72,7 +72,8 @@ final _storedRelease = <String, Object>{
       tag: 'v0.6.0',
       notes: '## Neu\n\n- Schnellere **Raumansicht**',
       pageUrl: 'https://github.com/phiph-s/haven/releases/tag/v0.6.0',
-      apkUrl: 'https://github.com/phiph-s/haven/releases/download/v0.6.0/haven-0.6.0.apk',
+      apkUrl:
+          'https://github.com/phiph-s/haven/releases/download/v0.6.0/haven-0.6.0.apk',
       apkSize: 1000,
     ).toJson(),
   ),

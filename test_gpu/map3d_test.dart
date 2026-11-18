@@ -95,6 +95,8 @@ Future<void> shot(
 }
 
 void main() {
+  // Echte GPU (flutter test --enable-flutter-gpu), nicht ohne Bild.
+  Scene3DSupport.debugOverride = true;
   testWidgets('3D-Karte der App', (tester) async {
     addTearDown(tester.view.reset);
     final lamps = {

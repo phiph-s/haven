@@ -1,4 +1,5 @@
 import 'package:material_ui/material_ui.dart';
+import 'package:flutter/rendering.dart';
 
 import '../../../core/widgets/haven_sheet.dart';
 
@@ -235,6 +236,7 @@ Future<T?> showZbSheet<T>(
   bool scroll = true,
   double maxHeight = 0.88,
   Color? barrier,
+  ValueChanged<double>? onHeight,
 }) {
   return showHavenModalSheet<T>(
     context,
@@ -242,7 +244,7 @@ Future<T?> showZbSheet<T>(
     builder: (ctx) {
       final hv = ctx.hv;
       final media = MediaQuery.of(ctx);
-      return Padding(
+      final sheet = Padding(
         padding: EdgeInsets.only(bottom: media.viewInsets.bottom),
         child: ConstrainedBox(
           constraints: BoxConstraints(maxHeight: media.size.height * maxHeight),
@@ -285,8 +287,40 @@ Future<T?> showZbSheet<T>(
           ),
         ),
       );
+      return onHeight == null
+          ? sheet
+          : _HeightReport(onHeight: onHeight, child: sheet);
     },
   );
+}
+
+/// Meldet die Höhe des Kinds nach dem Layout (nur bei Änderung).
+class _HeightReport extends SingleChildRenderObjectWidget {
+  const _HeightReport({required this.onHeight, super.child});
+  final ValueChanged<double> onHeight;
+
+  @override
+  RenderObject createRenderObject(BuildContext context) =>
+      _RenderHeightReport(onHeight);
+
+  @override
+  void updateRenderObject(BuildContext context, _RenderHeightReport r) =>
+      r.onHeight = onHeight;
+}
+
+class _RenderHeightReport extends RenderProxyBox {
+  _RenderHeightReport(this.onHeight);
+  ValueChanged<double> onHeight;
+  double? _last;
+
+  @override
+  void performLayout() {
+    super.performLayout();
+    final h = size.height;
+    if (h == _last) return;
+    _last = h;
+    WidgetsBinding.instance.addPostFrameCallback((_) => onHeight(h));
+  }
 }
 
 /// Zeile mit Auswahlmarke für Sheets.

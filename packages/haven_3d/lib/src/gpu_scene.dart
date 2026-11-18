@@ -189,23 +189,24 @@ class GpuScene {
             .putIfAbsent(f.mat, () => _MeshAcc())
             .addFace(f, twoSided: f.twoSided);
       }
+      final parts = [
+        for (final e in byMat.entries)
+          if (!e.value.isEmpty) (e.value.geometry(), e.key),
+      ];
       final mesh = fs.Mesh.primitives(
         primitives: [
-          for (final e in byMat.entries)
-            if (!e.value.isEmpty)
-              fs.MeshPrimitive(e.value.geometry(), _mat.surface(e.key)),
+          for (final (g, m) in parts) fs.MeshPrimitive(g, _mat.surface(m)),
         ],
       );
       node.mesh = mesh;
+      final topPolys = <List<V3>>[];
       for (final f in tops) {
         final z =
             f.points.map((p) => p.z).reduce((a, b) => a + b) / f.points.length;
+        final poly = [for (final p in f.points) V3(p.x, p.y, z)];
+        topPolys.add(poly);
         _roomReceivers[roomId]!.add(_receivers.length);
-        node.add(
-          _receiverNode('top:${o.id}', [
-            for (final p in f.points) V3(p.x, p.y, z),
-          ], (s) => s.base(f.mat)),
-        );
+        node.add(_receiverNode('top:${o.id}', poly, (s) => s.base(f.mat)));
       }
       // Keine Echtzeit-Schatten: Sonne und Lampen sind auf Böden und
       // Oberseiten gebaken (mit voller Möbelhöhe, auch in flachen Räumen).
@@ -223,7 +224,10 @@ class GpuScene {
         node.add(_edgesNode('details', details, lines.detail));
       }
       (parent ?? scene.root).add(node);
-      _objects[o.id] = _ObjectNode(o, roomId, node, normal, accent);
+      _objects[o.id] = _ObjectNode(o, roomId, node, normal, accent)
+        ..mesh = mesh
+        ..parts = parts
+        ..tops = topPolys;
     }
 
     // Leuchten.
@@ -250,8 +254,10 @@ class GpuScene {
       scene.add(node);
     }
 
-    for (final e in _roomReceivers.entries) {
-      _bakeRoom(e.key, [for (final i in e.value) _receivers[i]]);
+    if (quality.bakes) {
+      for (final e in _roomReceivers.entries) {
+        _bakeRoom(e.key, [for (final i in e.value) _receivers[i]]);
+      }
     }
   }
 
@@ -269,16 +275,48 @@ class GpuScene {
 
   /// Leuchte [id] umschalten (an/aus, Helligkeit, Farbe): Echtzeitlicht
   /// für Wände und Möbelseiten, gebakenes Licht auf Böden und Oberseiten.
+  ///
+  /// Das Echtzeitlicht wechselt sofort. Die gebakenen Flächen werden nur
+  /// vorgemerkt und in [flushLight] neu gemischt: mehrere Lampen im selben
+  /// Bild kosten so je Fläche nur ein Mischen.
   void setLamp(String id, LampState s) {
     final l = _lamps[id];
     if (l == null) return;
+    if (_lampState[id] == s) return;
     _lampState[id] = s;
-    l.light = _pointLight(s, _lampMask[id] ?? 0xFF);
-    final bulb = _bulbs[id]!;
-    bulb.mesh = fs.Mesh(fs.SphereGeometry(radius: 0.07), _mat.bulb(s));
+    _applyLamp(id, s);
     for (final r in _receivers) {
-      if (r.lamps.containsKey(id)) _relight(r);
+      if (r.lamps.containsKey(id)) _dirty.add(r);
     }
+  }
+
+  /// Echtzeitlicht und Glühbirne einer Lampe (ohne Baking).
+  void _applyLamp(String id, LampState s) {
+    _lamps[id]!.light = _pointLight(s, _lampMask[id] ?? 0xFF);
+    _bulbs[id]!.mesh = fs.Mesh(_bulbGeometry, _mat.bulb(s));
+  }
+
+  late final fs.Geometry _bulbGeometry = fs.SphereGeometry(radius: 0.07);
+
+  /// Vorgemerkte Flächen, die neu gemischt werden müssen (Reihenfolge der
+  /// Anmeldung).
+  final Set<_Receiver> _dirty = <_Receiver>{};
+
+  /// Gibt es noch vorgemerkte Flächen?
+  bool get lightPending => _dirty.isNotEmpty;
+
+  /// Vorgemerkte Flächen neu mischen, höchstens etwa [budget] lang (der
+  /// Rest folgt im nächsten Bild). `true`: es bleibt noch etwas übrig.
+  bool flushLight({Duration budget = const Duration(milliseconds: 5)}) {
+    if (_dirty.isEmpty) return false;
+    final sw = Stopwatch()..start();
+    while (_dirty.isNotEmpty) {
+      final r = _dirty.first;
+      _dirty.remove(r);
+      _relight(r);
+      if (sw.elapsed >= budget) break;
+    }
+    return _dirty.isNotEmpty;
   }
 
   /// Gebakene Beleuchtung einer Fläche neu zusammensetzen.
@@ -346,42 +384,97 @@ class GpuScene {
       _roomNodes[e.key]?.remove(e.value);
     }
     _heatNodes.clear();
+    for (final o in _objects.values) {
+      for (final n in o.heat) {
+        o.node.remove(n);
+      }
+      o.heat.clear();
+      if (o.mesh != null) o.node.mesh = o.mesh;
+    }
     if (h == null) return;
     for (final r in source.rooms) {
       final samples = h.byRoom[r.id];
       if (samples == null || samples.isEmpty) continue;
       final shape = _shapes[r.id]!;
-      final rec = LightReceiver(
-        [for (final o in shape) V3(o.dx, o.dy, 0.004)],
-        texel: 0.1,
-        maxSide: 96,
-      );
-      final px = Uint8List(rec.width * rec.height * 4);
-      for (var iy = 0; iy < rec.height; iy++) {
-        for (var ix = 0; ix < rec.width; ix++) {
-          final c = rec.texelCenter(ix, iy);
-          final v = h.valueAt(r.id, Offset(c.x, c.y));
-          if (!v.isFinite) continue;
-          final col = h.colorOf(v);
-          final i = (iy * rec.width + ix) * 4;
-          px[i] = (col.r * 255).round();
-          px[i + 1] = (col.g * 255).round();
-          px[i + 2] = (col.b * 255).round();
-          px[i + 3] = (col.a * 255).round();
-        }
-      }
-      final mat = fs.UnlitMaterial()
-        ..baseColorTexture = fs.Texture2D.fromPixels(px, rec.width, rec.height)
-        ..baseColorFactor = vm.Vector4(1, 1, 1, h.opacity)
-        ..alphaMode = fs.AlphaMode.blend
-        ..depthLayer = 1;
-      final node = fs.Node(
-        name: 'heat:${r.id}',
-        mesh: fs.Mesh(_receiverGeometry(rec), mat),
-      )..shadowCastingMode = fs.ShadowCastingMode.off;
+      final node = _heatNode('heat:${r.id}', h, r.id, [
+        for (final o in shape) V3(o.dx, o.dy, 0.004),
+      ]);
+      if (node == null) continue;
       _roomNodes[r.id]!.add(node);
       _heatNodes[r.id] = node;
+      // Möbel färben mit: Oberseiten mit derselben Fläche wie der Boden,
+      // die Seiten in der Farbe an ihrer Mitte.
+      for (final o in _objects.values) {
+        if (o.roomId != r.id) continue;
+        for (final top in o.tops) {
+          final n = _heatNode('heat-top:${o.object.id}', h, r.id, [
+            for (final p in top) V3(p.x, p.y, p.z + 0.003),
+          ]);
+          if (n == null) continue;
+          o.node.add(n);
+          o.heat.add(n);
+        }
+        final v = h.valueAt(r.id, o.object.center.xy);
+        if (!v.isFinite || o.parts.isEmpty) continue;
+        final heat = h.colorOf(v);
+        final mix = h.opacity * heat.a * 0.85;
+        o.node.mesh = fs.Mesh.primitives(
+          primitives: [
+            for (final (g, m) in o.parts)
+              fs.MeshPrimitive(
+                g,
+                m == Mat.glass ? _mat.surface(m) : _tinted(m, heat, mix),
+              ),
+          ],
+        );
+      }
     }
+  }
+
+  fs.PhysicallyBasedMaterial _tinted(Mat m, Color heat, double mix) {
+    final base = m == Mat.dark ? style.dark : style.base(m);
+    final c = Color.lerp(base, heat.withValues(alpha: 1), mix)!;
+    return fs.PhysicallyBasedMaterial()
+      ..metallicFactor = 0
+      ..roughnessFactor = 0.9
+      ..baseColorFactor = linearColor(c, 1)
+      // Etwas Eigenleuchten, damit die Farbe auch im Dunkeln trägt.
+      ..emissiveFactor = (() {
+        final l = linearColor(heat.withValues(alpha: 1), 1);
+        return vm.Vector4(l.x, l.y, l.z, 1);
+      })()
+      ..emissiveStrength = 0.18 * mix;
+  }
+
+  /// Unbeleuchtete, eingefärbte Fläche über [polygon] (Heatmap).
+  fs.Node? _heatNode(
+    String name,
+    SceneHeatmap h,
+    String roomId,
+    List<V3> polygon,
+  ) {
+    final rec = LightReceiver(polygon, texel: 0.1, maxSide: 96);
+    final px = Uint8List(rec.width * rec.height * 4);
+    for (var iy = 0; iy < rec.height; iy++) {
+      for (var ix = 0; ix < rec.width; ix++) {
+        final c = rec.texelCenter(ix, iy);
+        final v = h.valueAt(roomId, Offset(c.x, c.y));
+        if (!v.isFinite) continue;
+        final col = h.colorOf(v);
+        final i = (iy * rec.width + ix) * 4;
+        px[i] = (col.r * 255).round();
+        px[i + 1] = (col.g * 255).round();
+        px[i + 2] = (col.b * 255).round();
+        px[i + 3] = (col.a * 255).round();
+      }
+    }
+    final mat = fs.UnlitMaterial()
+      ..baseColorTexture = fs.Texture2D.fromPixels(px, rec.width, rec.height)
+      ..baseColorFactor = vm.Vector4(1, 1, 1, h.opacity)
+      ..alphaMode = fs.AlphaMode.blend
+      ..depthLayer = 1;
+    return fs.Node(name: name, mesh: fs.Mesh(_receiverGeometry(rec), mat))
+      ..shadowCastingMode = fs.ShadowCastingMode.off;
   }
 
   /// Fläche als eigener Knoten mit UVs und eigenem Material (für die
@@ -399,7 +492,8 @@ class GpuScene {
     _paintReceiver(r);
     _receivers.add(r);
     return fs.Node(name: name, mesh: fs.Mesh(_receiverGeometry(bake), mat))
-      ..lightChannelMask = kBakedChannel;
+      // Ohne Baking (Entwurf) bescheint die Sonne die Fläche in Echtzeit.
+      ..lightChannelMask = quality.bakes ? kBakedChannel : 0xFF;
   }
 
   void _paintReceiver(_Receiver r) {
@@ -478,6 +572,13 @@ class GpuScene {
   /// Neuer Stil: Materialien und Licht tauschen, Geometrie bleibt.
   void restyle(SceneStyle s) {
     if (s == style) return;
+    // Nur der Akzent (folgt in der App animiert der Lichtfarbe): Umrandung
+    // umfärben, kein neues Baking.
+    if (s.copyWith(accent: style.accent) == style) {
+      style = s;
+      _mat.setAccent(s);
+      return;
+    }
     style = s;
     _edgeScale = -1;
     _lastFadeKey = null;
@@ -485,13 +586,15 @@ class GpuScene {
     _applyLighting();
     for (final r in _receivers) {
       _paintReceiver(r);
-      _relight(r);
+      _dirty.add(r);
     }
     // Aktuellen Lampenzustand behalten (nicht den aus der Szene: sonst
     // ginge eine ausgeschaltete Lampe bei jeder Stiländerung wieder an).
-    for (final id in _lamps.keys.toList()) {
-      setLamp(id, _lampState[id]!);
+    for (final e in _lampState.entries) {
+      _applyLamp(e.key, e.value);
     }
+    // Getönte Möbel hängen am Stil.
+    if (_heat != null) _setHeatmap(_heat);
   }
 
   fs.Node _edgesNode(
@@ -520,6 +623,7 @@ class GpuScene {
     Size? size,
     String? selectedRoomId,
     SceneHeatmap? heatmap,
+    Set<String> hiddenObjects = const {},
   }) {
     if (selectedRoomId != _selectedRoom) {
       _roomOutlines[_selectedRoom]?.visible = false;
@@ -609,7 +713,23 @@ class GpuScene {
       }
       o.node.visible = !hide && (_focus == null || room == _focus);
     }
+    // Ausgeblendete Möbel (z. B. gerade gezogen, ein Overlay zeigt sie).
+    if (!_setEquals(hiddenObjects, _hiddenObjects)) {
+      for (final id in {...hiddenObjects, ..._hiddenObjects}) {
+        final o = _objects[id];
+        if (o == null || o.object.wallMounted) continue;
+        o.node.visible =
+            !hiddenObjects.contains(id) &&
+            (_focus == null || o.roomId == _focus);
+      }
+      _hiddenObjects = {...hiddenObjects};
+    }
+    for (final id in hiddenObjects) {
+      _objects[id]?.node.visible = false;
+    }
   }
+
+  Set<String> _hiddenObjects = const {};
 
   static bool _onWall(SceneObject o, Face3 wall) {
     final a = wall.points[0].xy, b = wall.points[1].xy;
@@ -689,6 +809,16 @@ class _ObjectNode {
   final fs.Node node;
   final fs.Node edges;
   final fs.Node accentEdges;
+
+  /// Körper mit den gemeinsamen Materialien (ohne Heatmap-Tönung).
+  fs.Mesh? mesh;
+  List<(fs.Geometry, Mat)> parts = const [];
+
+  /// Waagerechte Oberseiten (gebakene Flächen), für die Heatmap-Färbung.
+  List<List<V3>> tops = const [];
+
+  /// Heatmap-Flächen über den Oberseiten.
+  final List<fs.Node> heat = [];
 }
 
 /// Sammelt Dreiecke mit Normalen. Runde Flächen ([Face3.smooth]) bekommen
@@ -847,6 +977,11 @@ class _Materials {
           ? fs.AlphaMode.blend
           : fs.AlphaMode.opaque;
     _applyLineColors();
+  }
+
+  void setAccent(SceneStyle s) {
+    _style = s;
+    accentEdge.baseColorFactor = linearColor(s.accent, 1);
   }
 
   void _applyLineColors() {

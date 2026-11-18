@@ -10,7 +10,9 @@ import '../../../core/state/providers.dart';
 import '../../../core/theme/tokens.dart';
 import '../../../data/models/lamp.dart';
 import '../../../data/models/zigbee_network.dart';
-import '../../map/floor_plan_view.dart';
+import '../../map/floor_geometry.dart' show FloorNode;
+import '../../map/map_3d.dart';
+import 'package:haven_3d/haven_3d.dart' as h3;
 import 'mesh_painter.dart';
 import 'mesh_scene.dart';
 
@@ -27,36 +29,52 @@ class MeshCoordinatorDrag {
   final VoidCallback onEnd;
 }
 
-/// Der Netz-Graph auf dem Grundriss: `FloorPlanView` mit Abstand, Kanten als
-/// ein Overlay-Painter, Knoten als Widgets. Gleiche Ansicht für Vollbild und
-/// Miniatur ([mini]: ohne Beschriftung, ohne Interaktion).
-class MeshGraph extends StatelessWidget {
+/// Bildschirm-Projektion der Netzkarte zum Zeitpunkt des letzten Bildes
+/// (für Ziehen und Ausweichen). Ändert sich ohne Benachrichtigung.
+class MeshProjection {
+  h3.SceneProjection? current;
+}
+
+/// Kamera und Szene der Netzkarte (Vollbild und Kartenart Funknetz): eigene
+/// Szene, weil der Netzplan den Bereich „Ohne Raum“ enthält.
+final meshControllerProvider = Provider<h3.SceneController>((ref) {
+  final c = h3.SceneController();
+  ref.onDispose(c.dispose);
+  return c;
+});
+
+/// Der Netz-Graph auf der 3D-Karte: Kanten als Overlay, Knoten als Widgets.
+/// Gleiche Ansicht für Vollbild und Miniatur ([mini]: ohne Beschriftung,
+/// ohne Interaktion, eigene kleine Szene).
+class MeshGraph extends ConsumerStatefulWidget {
   const MeshGraph({
     super.key,
     required this.scene,
     required this.map,
     required this.state,
-    this.gap = 2,
     this.mini = false,
     this.interactive = true,
     this.onNodeTap,
     this.onRoomTap,
     this.coordinatorDrag,
-    this.transformationController,
+    this.projection,
+    this.insets = EdgeInsets.zero,
   });
 
   final MeshScene scene;
   final ZbNetworkMap map;
   final ValueListenable<MeshViewState> state;
-  final double gap;
   final bool mini;
   final bool interactive;
   final ValueChanged<String>? onNodeTap;
   final VoidCallback? onRoomTap;
   final MeshCoordinatorDrag? coordinatorDrag;
-  final TransformationController? transformationController;
 
-  /// Knoten für den `FloorPlanView`: Endgeräte unten, Koordinator oben.
+  /// Bekommt die Projektion jedes Bildes (Knotenpunkte, Boden ↔ Schirm).
+  final MeshProjection? projection;
+  final EdgeInsets insets;
+
+  /// Knoten für die Karte: Endgeräte unten, Koordinator oben.
   static List<FloorNode> floorNodes(
     MeshScene scene,
     ZbNetworkMap map, {
@@ -82,41 +100,63 @@ class MeshGraph extends StatelessWidget {
   }
 
   @override
+  ConsumerState<MeshGraph> createState() => _MeshGraphState();
+}
+
+class _MeshGraphState extends ConsumerState<MeshGraph> {
+  /// Miniatur: eigene, kleine Szene (die große Netzkarte behält ihre).
+  h3.SceneController? _own;
+
+  @override
+  void dispose() {
+    _own?.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final hv = context.hv;
-    return FloorPlanView(
-      plan: scene.plan,
-      gap: gap,
-      reserveGap: 2,
-      nodes: floorNodes(scene, map, mini: mini),
+    final w = widget;
+    final c = w.mini
+        ? (_own ??= h3.SceneController())
+        : ref.watch(meshControllerProvider);
+    return Map3DView(
+      key: ValueKey(w.mini ? 'mesh-mini' : 'mesh'),
+      plan: w.scene.plan,
+      controller: c,
+      nodes: MeshGraph.floorNodes(w.scene, w.map, mini: w.mini),
       nodeBuilder: (context, node) => MeshNodeDot(
-        info: scene.infos[node.id]!,
-        map: map,
-        state: state,
-        mini: mini,
-        drag: node.id == scene.coordinatorIeee ? coordinatorDrag : null,
+        info: w.scene.infos[node.id]!,
+        map: w.map,
+        state: w.state,
+        mini: w.mini,
+        drag: node.id == w.scene.coordinatorIeee ? w.coordinatorDrag : null,
       ),
-      overlayPainter: MeshEdgePainter(
-        edges: map.edges,
-        scene: scene,
-        state: state,
-        hv: hv,
-        mini: mini,
-      ),
-      roomStyle: (room) => FloorRoomStyle(
-        fill: room.id == kNoRoomId
-            ? hv.s2.withValues(alpha: 0.55)
-            : (mini ? hv.s2 : null),
-        border: hv.ln2,
-      ),
-      onNodeTap: onNodeTap == null ? null : (n) => onNodeTap!(n.id),
-      onRoomTap: onRoomTap == null ? null : (_) => onRoomTap!(),
-      interactive: interactive,
-      showLabels: !mini,
-      showOutside: !scene.autoLayout,
-      fill: true,
-      padding: mini ? 6 : 12,
-      transformationController: transformationController,
+      markerKind: (_) => h3.MarkerKind.device,
+      overlayBuilder: (context, p) {
+        w.projection?.current = p;
+        return RepaintBoundary(
+          child: CustomPaint(
+            painter: MeshEdgePainter(
+              edges: w.map.edges,
+              scene: w.scene,
+              state: w.state,
+              hv: hv,
+              mini: w.mini,
+              nodes: p.markers,
+            ),
+          ),
+        );
+      },
+      onNodeTap: w.onNodeTap == null ? null : (n) => w.onNodeTap!(n.id),
+      onRoomTap: w.onRoomTap == null ? null : (_) => w.onRoomTap!(),
+      onOutsideTap: w.onRoomTap,
+      interactive: w.interactive && !w.mini,
+      interactiveMarkers: w.coordinatorDrag != null,
+      showLabels: !w.mini,
+      quality: w.mini ? h3.SceneQuality.low : null,
+      followSettings: !w.mini,
+      insets: w.insets,
     );
   }
 }

@@ -225,10 +225,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                       ],
                     ),
             ),
-            if (ref.watch(map3dSupportedProvider).value ?? false) ...[
-              section('Karte'),
-              pad(const _Map3DSettings()),
-            ],
             section('Zuhause'),
             pad(
               SettingsGroup(
@@ -284,6 +280,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 ],
               ),
             ),
+            if (ref.watch(map3dSupportedProvider).value ?? false) ...[
+              section('Karte'),
+              pad(const _Map3DSettings()),
+            ],
             section('Updates'),
             pad(
               SettingsGroup(
@@ -450,7 +450,7 @@ class _AboutSheet extends StatelessWidget {
   }
 }
 
-/// 3D-Karte: an/aus, Qualität, Perspektive.
+/// 3D-Karte: Qualität und Perspektive.
 class _Map3DSettings extends ConsumerWidget {
   const _Map3DSettings();
 
@@ -465,52 +465,36 @@ class _Map3DSettings extends ConsumerWidget {
         SettingsGroup(
           children: [
             SettingsRow(
-              icon: Icons.view_in_ar_rounded,
-              title: '3D-Karte',
-              subtitle: s.enabled
-                  ? 'Räume mit Höhe, Möbeln und echtem Licht'
-                  : 'Flacher Grundriss',
+              icon: Icons.photo_camera_outlined,
+              title: 'Perspektive',
+              subtitle: 'In der Schrägansicht wie mit einer Kamera',
               trailing: HavenSwitch(
-                value: s.enabled,
-                onChanged: n.setEnabled,
-                semanticLabel: '3D-Karte',
+                value: s.perspective,
+                onChanged: n.setPerspective,
+                semanticLabel: 'Perspektive',
               ),
-              onTap: () => n.setEnabled(!s.enabled),
+              onTap: () => n.setPerspective(!s.perspective),
             ),
-            if (s.enabled)
-              SettingsRow(
-                icon: Icons.photo_camera_outlined,
-                title: 'Perspektive',
-                subtitle: 'In der Schrägansicht wie mit einer Kamera',
-                trailing: HavenSwitch(
-                  value: s.perspective,
-                  onChanged: n.setPerspective,
-                  semanticLabel: 'Perspektive',
-                ),
-                onTap: () => n.setPerspective(!s.perspective),
-              ),
           ],
         ),
-        if (s.enabled) ...[
-          const SizedBox(height: 12),
-          HavenSegmented<SceneQuality>(
-            options: const [
-              (SceneQuality.low, 'Sparsam'),
-              (SceneQuality.medium, 'Ausgewogen'),
-              (SceneQuality.high, 'Hoch'),
-            ],
-            selected: s.quality,
-            onChanged: n.setQuality,
+        const SizedBox(height: 12),
+        HavenSegmented<SceneQuality>(
+          options: const [
+            (SceneQuality.low, 'Sparsam'),
+            (SceneQuality.medium, 'Ausgewogen'),
+            (SceneQuality.high, 'Hoch'),
+          ],
+          selected: s.quality,
+          onChanged: n.setQuality,
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(4, 10, 4, 0),
+          child: Text(
+            'Sparsam schont Akku und ältere Geräte, Hoch glättet Kanten und '
+            'rechnet das Licht feiner.',
+            style: HavenText.caption.copyWith(color: hv.tx2),
           ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(4, 10, 4, 0),
-            child: Text(
-              'Sparsam schont Akku und ältere Geräte, Hoch glättet Kanten und '
-              'rechnet das Licht feiner.',
-              style: HavenText.caption.copyWith(color: hv.tx2),
-            ),
-          ),
-        ],
+        ),
       ],
     );
   }

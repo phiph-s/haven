@@ -75,8 +75,9 @@ void main() {
         UpdateGroup.homeAssistant,
       );
       expect(
-        HaUpdate.fromEntity(_u('update.home_assistant_core_update', {}))
-            .restartsHa,
+        HaUpdate.fromEntity(
+          _u('update.home_assistant_core_update', {}),
+        ).restartsHa,
         isTrue,
       );
     });

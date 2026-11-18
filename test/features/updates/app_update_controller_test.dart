@@ -122,8 +122,9 @@ void main() {
         httpClientProvider.overrideWithValue(
           MockClient.streaming((req, _) async {
             if (req.url.host == 'api.github.com') {
-              final r = await buildFakeReleaseClient(apkSize: 5000)
-                  .get(req.url);
+              final r = await buildFakeReleaseClient(
+                apkSize: 5000,
+              ).get(req.url);
               return http.StreamedResponse(Stream.value(r.bodyBytes), 200);
             }
             return http.StreamedResponse(Stream.value([1, 2, 3]), 200);

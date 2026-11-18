@@ -10,32 +10,29 @@ import '../../core/theme/tokens.dart';
 import '../../core/widgets/haptics.dart';
 import '../../data/models/floor_plan.dart';
 import '../../data/models/lamp.dart';
-import 'floor_plan_view.dart';
+import 'floor_geometry.dart';
 import 'heatmap.dart';
 import 'map_data.dart';
-import 'map_layers.dart';
 import 'map_readings.dart';
 
 // ---- Einstellungen und Zustand ---------------------------------------------
 
 /// Kann dieses Gerät die 3D-Karte zeigen (Flutter GPU, WebGL2)? In Tests
-/// immer `false`: dort bleibt die 2D-Karte.
+/// ohne GPU: die Ansicht läuft dort ohne Bild weiter (Treffertest auf der CPU).
 final map3dSupportedProvider = FutureProvider<bool>(
-  (ref) => h3.Scene3DSupport.available(),
+  (ref) async =>
+      await h3.Scene3DSupport.available() || h3.Scene3DSupport.headlessTest,
 );
 
 /// Einstellungen der 3D-Karte (lokal gemerkt).
 @immutable
 class Map3DSettings {
   const Map3DSettings({
-    this.enabled = true,
     this.quality = h3.SceneQuality.medium,
     this.perspective = false,
     this.tilt = false,
   });
 
-  /// 3D-Karte statt 2D (wo unterstützt).
-  final bool enabled;
   final h3.SceneQuality quality;
 
   /// Perspektive in der Schrägansicht.
@@ -45,12 +42,10 @@ class Map3DSettings {
   final bool tilt;
 
   Map3DSettings copyWith({
-    bool? enabled,
     h3.SceneQuality? quality,
     bool? perspective,
     bool? tilt,
   }) => Map3DSettings(
-    enabled: enabled ?? this.enabled,
     quality: quality ?? this.quality,
     perspective: perspective ?? this.perspective,
     tilt: tilt ?? this.tilt,
@@ -59,13 +54,12 @@ class Map3DSettings {
   @override
   bool operator ==(Object other) =>
       other is Map3DSettings &&
-      other.enabled == enabled &&
       other.quality == quality &&
       other.perspective == perspective &&
       other.tilt == tilt;
 
   @override
-  int get hashCode => Object.hash(enabled, quality, perspective, tilt);
+  int get hashCode => Object.hash(quality, perspective, tilt);
 }
 
 class Map3DSettingsNotifier extends Notifier<Map3DSettings> {
@@ -73,7 +67,6 @@ class Map3DSettingsNotifier extends Notifier<Map3DSettings> {
   Map3DSettings build() {
     final s = ref.read(settingsStoreProvider);
     return Map3DSettings(
-      enabled: s.map3d,
       quality: h3.SceneQuality.values.firstWhere(
         (q) => q.name == s.map3dQuality,
         orElse: () => const Map3DSettings().quality,
@@ -81,11 +74,6 @@ class Map3DSettingsNotifier extends Notifier<Map3DSettings> {
       perspective: s.map3dPerspective,
       tilt: s.map3dTilt,
     );
-  }
-
-  void setEnabled(bool v) {
-    state = state.copyWith(enabled: v);
-    unawaited(ref.read(settingsStoreProvider).setMap3d(v));
   }
 
   void setQuality(h3.SceneQuality q) {
@@ -117,16 +105,13 @@ final map3dControllerProvider = Provider<h3.SceneController>((ref) {
   return c;
 });
 
-/// Zeigt die Karte gerade 3D? `null`: die Prüfung auf 3D läuft noch (dann
-/// [Map3DLoader] zeigen). Das Funknetz bleibt 2D (Linien zwischen den
-/// Geräten brauchen die flache Karte).
-bool? watchMap3d(WidgetRef ref, MapLayer layer) {
-  if (layer == MapLayer.network) return false;
-  if (!ref.watch(map3dSettingsProvider.select((s) => s.enabled))) return false;
+/// Kann die Karte erscheinen? `null`: die Prüfung läuft noch (dann
+/// [Map3DLoader] zeigen), `false`: das Gerät kann kein 3D
+/// ([Map3DUnsupported]).
+bool? watchMap3d(WidgetRef ref) {
   final supported = ref.watch(map3dSupportedProvider);
-  return supported.hasValue
-      ? supported.value!
-      : (supported.hasError ? false : null);
+  if (supported.hasError) return false;
+  return supported.hasValue ? supported.value! : null;
 }
 
 // ---- Blickwinkel -------------------------------------------------------------
@@ -153,15 +138,15 @@ Future<void> showMapOverview(
 
 // ---- Grundriss → Szene -------------------------------------------------------
 
-HavenFloorPlan? _lastPlan;
-h3.Scene? _lastScene;
+final _scenes = Expando<h3.Scene>('scene');
 
 /// 3D-Szene zum Grundriss (Meter statt Zellen). Leuchten sind Lichtquellen
 /// (Zustand über [syncMapLamps]), alle übrigen Geräte legt die Karte als
 /// Overlay darüber. Gemerkt, solange sich der Plan nicht ändert, damit die
 /// gebackene Beleuchtung bleibt.
 h3.Scene sceneOfPlan(HavenFloorPlan plan) {
-  if (identical(plan, _lastPlan)) return _lastScene!;
+  final cached = _scenes[plan];
+  if (cached != null) return cached;
   final m = plan.grid.cellMeters;
   final scene = h3.Scene(
     rooms: [
@@ -195,9 +180,31 @@ h3.Scene sceneOfPlan(HavenFloorPlan plan) {
           ),
     ],
   );
-  _lastPlan = plan;
-  _lastScene = scene;
+  _scenes[plan] = scene;
   return scene;
+}
+
+/// Knoten mit Punkt in Zellen. Mehrere Knoten auf derselben Zelle rücken
+/// im Kreis auseinander (statt sich zu decken).
+List<(FloorNode, Offset)> spreadNodes(List<FloorNode> nodes) {
+  final byCell = <GridPoint, List<FloorNode>>{};
+  for (final n in nodes) {
+    (byCell[n.point.cell] ??= []).add(n);
+  }
+  return [
+    for (final n in nodes)
+      switch (byCell[n.point.cell]!) {
+        final same when same.length > 1 => (
+          n,
+          n.point.offset +
+              Offset.fromDirection(
+                    -math.pi / 2 + 2 * math.pi * same.indexOf(n) / same.length,
+                  ) *
+                  0.8,
+        ),
+        _ => (n, n.point.offset),
+      },
+  ];
 }
 
 /// Höhe und Farbe eines Geräts in 3D nach seiner Art.
@@ -231,7 +238,7 @@ void syncMapLamps(h3.SceneController c, h3.Scene scene, MapLights lights) {
   }
 }
 
-/// Heatmap (Temperatur, Feuchte) aus den Messwerten der 2D-Karte.
+/// Heatmap (Temperatur, Feuchte) aus den Messwerten der Karte.
 h3.SceneHeatmap? heatmapOf(HeatData d, double cellMeters) {
   final s = d.scale;
   if (s == null) return null;
@@ -272,7 +279,7 @@ h3.SceneHeatmap presenceHeatmapOf(
 // ---- Karte -----------------------------------------------------------------
 
 /// Die 3D-Karte mit den Knoten einer Kartenart darüber. Nimmt dieselben
-/// Knoten, Builder und Rückrufe wie `FloorPlanView`, so bleibt jede
+/// Knoten, Builder und Rückrufe wie früher die 2D-Karte, so bleibt jede
 /// Kartenart unverändert und bekommt zusätzlich Licht, Höhe und Fokus.
 class Map3DView extends ConsumerStatefulWidget {
   const Map3DView({
@@ -291,6 +298,15 @@ class Map3DView extends ConsumerStatefulWidget {
     this.selectedRoomId,
     this.raisedRoomId,
     this.insets = EdgeInsets.zero,
+    this.controller,
+    this.overlayBuilder,
+    this.foregroundBuilder,
+    this.interactive = true,
+    this.interactiveMarkers = false,
+    this.showLabels = true,
+    this.quality,
+    this.followSettings = true,
+    this.markerKind,
   });
 
   final HavenFloorPlan plan;
@@ -316,6 +332,34 @@ class Map3DView extends ConsumerStatefulWidget {
   /// Verdeckte Ränder (Kopf, Leisten) fürs erste Einpassen.
   final EdgeInsets insets;
 
+  /// Eigene Kamera und Szene (z. B. Funknetz, Miniatur). Sonst die eine
+  /// Karte der App ([map3dControllerProvider]).
+  final h3.SceneController? controller;
+
+  /// Zeichenebenen über der Szene (unter bzw. über den Geräten).
+  final Widget Function(BuildContext context, h3.SceneProjection p)?
+  overlayBuilder;
+  final Widget Function(BuildContext context, h3.SceneProjection p)?
+  foregroundBuilder;
+
+  /// Ohne eigene Gesten und Treffer (Miniatur, Editor mit eigener
+  /// Bedienung).
+  final bool interactive;
+
+  /// Gerät-Widgets bekommen selbst Zeiger-Ereignisse (Ziehen).
+  final bool interactiveMarkers;
+  final bool showLabels;
+
+  /// Qualität, sonst die aus den Einstellungen.
+  final h3.SceneQuality? quality;
+
+  /// Blickwinkel und aufgerichtete Räume folgen der Einstellung
+  /// Draufsicht/Schrägansicht. Sonst immer Draufsicht, alles flach.
+  final bool followSettings;
+
+  /// Art (Höhe) eines Knotens, sonst aus der Platzierung im Plan.
+  final h3.MarkerKind Function(FloorNode node)? markerKind;
+
   @override
   ConsumerState<Map3DView> createState() => _Map3DViewState();
 }
@@ -328,19 +372,21 @@ class _Map3DViewState extends ConsumerState<Map3DView> {
     super.initState();
     // Neu auf der Seite: Übersicht in der gemerkten Ansicht (das erste
     // Einpassen übernimmt die Blickrichtung der Kamera).
-    final c = ref.read(map3dControllerProvider);
-    final st = ref.read(map3dSettingsProvider);
+    final c = _c;
+    final tilt = widget.followSettings && ref.read(map3dSettingsProvider).tilt;
+    final persp = ref.read(map3dSettingsProvider).perspective;
     c.forgetFocus();
     c.preset(
       c.camera.copyWith(
-        yaw: st.tilt ? kMapTiltYaw : 0,
-        pitch: st.tilt ? kMapTiltPitch : 0,
-        fov: st.tilt && st.perspective ? h3.OrbitCamera.perspectiveFov : 0,
+        yaw: tilt ? kMapTiltYaw : 0,
+        pitch: tilt ? kMapTiltPitch : 0,
+        fov: tilt && persp ? h3.OrbitCamera.perspectiveFov : 0,
       ),
     );
   }
 
-  h3.SceneController get _c => ref.read(map3dControllerProvider);
+  h3.SceneController get _c =>
+      widget.controller ?? ref.read(map3dControllerProvider);
 
   FloorRoom? _roomOfHit(h3.SceneHit? hit) {
     if (hit == null) return null;
@@ -387,7 +433,9 @@ class _Map3DViewState extends ConsumerState<Map3DView> {
     final plan = widget.plan;
     final scene = sceneOfPlan(plan);
     final settings = ref.watch(map3dSettingsProvider);
-    final c = ref.watch(map3dControllerProvider);
+    final h3.SceneController c =
+        widget.controller ?? ref.watch(map3dControllerProvider);
+    final tilt = widget.followSettings && settings.tilt;
     // Lichtzustand live in die Szene (gebackenes Licht wird nur für die
     // geänderte Lampe neu gemischt).
     ref.listen(mapLightsProvider(plan), (_, l) => syncMapLamps(_c, scene, l));
@@ -406,51 +454,68 @@ class _Map3DViewState extends ConsumerState<Map3DView> {
       scene: scene,
       controller: c,
       style: style,
-      quality: settings.quality,
-      gestures: h3.SceneGestures.map,
+      quality: widget.quality ?? settings.quality,
+      gestures: widget.interactive
+          ? h3.SceneGestures.map
+          : h3.SceneGestures.none,
       insets: widget.insets,
       placeholder: Map3DLoader(plan: plan, insets: widget.insets),
-      raisedRooms: settings.tilt
+      raisedRooms: tilt
           ? null
           : {if (widget.raisedRoomId != null) widget.raisedRoomId!},
+      overlayBuilder: widget.overlayBuilder,
+      foregroundBuilder: widget.foregroundBuilder,
+      interactiveMarkers: widget.interactiveMarkers,
       selectedRoomId: widget.selectedRoomId,
       heatmap: widget.heatmap,
       markerHitRadius: 22,
       markers: [
-        for (final n in widget.nodes)
+        for (final (n, at) in spreadNodes(widget.nodes))
           h3.SceneMarker(
             id: n.id,
-            at: n.point.offset * m,
-            roomId: n.point.isOutside ? null : n.point.roomId,
-            kind: markerKindOf(
-              plan.placementOf(n.id)?.resolvedKind ?? FloorKind.ofEntity(n.id),
-            ),
+            at: at * m,
+            roomId: n.point.isOutside || n.point.roomId.isEmpty
+                ? null
+                : n.point.roomId,
+            kind:
+                widget.markerKind?.call(n) ??
+                markerKindOf(
+                  plan.placementOf(n.id)?.resolvedKind ??
+                      FloorKind.ofEntity(n.id),
+                ),
           ),
       ],
       markerBuilder: widget.nodeBuilder == null
           ? null
           : (context, mk) => switch (byId[mk.id]) {
-              final n? => widget.nodeBuilder!(context, n),
+              // Wie in 2D: das Widget mittig in seiner Trefferfläche.
+              final n? => SizedBox.square(
+                dimension: n.size,
+                child: Center(child: widget.nodeBuilder!(context, n)),
+              ),
               null => const SizedBox.shrink(),
             },
-      roomLabelBuilder: (context, room, cam) {
-        final r = plan.room(room.id);
-        if (r == null) return const SizedBox.shrink();
-        final b = r.bounds;
-        // Wie in 2D: nur wenn der Raum groß genug auf dem Schirm ist.
-        if (b.width * m * cam.scale < 64 || b.height * m * cam.scale < 40) {
-          return const SizedBox.shrink();
-        }
-        return _RoomLabel(
-          name: r.name,
-          subtitle: widget.subtitle?.call(r),
-          maxWidth: math.max(40, b.width * m * cam.scale - 18),
-          selected: r.id == widget.selectedRoomId,
-        );
-      },
-      onTap: _tap,
-      onLongPress: _hold,
-      onSecondaryTap: _secondary,
+      roomLabelBuilder: !widget.showLabels
+          ? null
+          : (context, room, cam) {
+              final r = plan.room(room.id);
+              if (r == null) return const SizedBox.shrink();
+              final b = r.bounds;
+              // Wie in 2D: nur wenn der Raum groß genug auf dem Schirm ist.
+              if (b.width * m * cam.scale < 64 ||
+                  b.height * m * cam.scale < 40) {
+                return const SizedBox.shrink();
+              }
+              return _RoomLabel(
+                name: r.name,
+                subtitle: widget.subtitle?.call(r),
+                maxWidth: math.max(40, b.width * m * cam.scale - 18),
+                selected: r.id == widget.selectedRoomId,
+              );
+            },
+      onTap: widget.interactive ? _tap : null,
+      onLongPress: widget.interactive ? _hold : null,
+      onSecondaryTap: widget.interactive ? _secondary : null,
     );
   }
 }
@@ -771,4 +836,43 @@ class _TracePainter extends CustomPainter {
       old.area != area ||
       old.line != line ||
       old.glow != glow;
+}
+
+/// Statt der Karte, wenn das Gerät kein 3D kann (kein WebGL2 im Browser,
+/// kein Flutter GPU).
+class Map3DUnsupported extends StatelessWidget {
+  const Map3DUnsupported({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final hv = context.hv;
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 340),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.view_in_ar_rounded, size: 40, color: hv.tx3),
+              const SizedBox(height: 14),
+              Text(
+                'Die Karte braucht 3D',
+                textAlign: TextAlign.center,
+                style: HavenText.section.copyWith(color: hv.tx),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                'Dieses Gerät oder dieser Browser kann keine 3D-Grafik '
+                'anzeigen. Im Browser hilft es meist, WebGL bzw. die '
+                'Hardwarebeschleunigung einzuschalten.',
+                textAlign: TextAlign.center,
+                style: HavenText.body.copyWith(color: hv.tx2),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }

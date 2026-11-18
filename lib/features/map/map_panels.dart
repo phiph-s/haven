@@ -69,13 +69,17 @@ class MapPanelScope extends InheritedWidget {
 ///
 /// [overMap]: das Sheet nimmt höchstens [kMapPanelShare] der Höhe ein und
 /// dunkelt kaum ab, darüber bleibt die Karte (mit dem Gerät im Blick) sichtbar.
+/// [onHeight] meldet die tatsächliche Höhe des Sheets (kurze Panels lassen
+/// der Karte mehr Platz).
 Future<void> showMapPanel(
   BuildContext context,
   MapPanelSpec spec, {
   bool overMap = false,
+  ValueChanged<double>? onHeight,
 }) {
   return showZbSheet<void>(
     context,
+    onHeight: onHeight,
     maxHeight: overMap ? kMapPanelShare : 0.88,
     barrier: overMap ? const Color(0x1A000000) : null,
     builder: (ctx) => MapPanelScope(sheet: true, child: spec.builder(ctx)),

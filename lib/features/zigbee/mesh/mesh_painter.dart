@@ -5,7 +5,6 @@ import 'package:material_ui/material_ui.dart';
 
 import '../../../core/theme/tokens.dart';
 import '../../../data/models/zigbee_network.dart';
-import '../../map/floor_plan_view.dart';
 import '../zigbee_model.dart';
 import 'mesh_scene.dart';
 
@@ -16,7 +15,8 @@ double meshNodeRadius(ZbNodeKind k, {bool mini = false}) => switch (k) {
   ZbNodeKind.endDevice => mini ? 2.8 : 7.5,
 };
 
-/// Alle Kanten des Graphen in einem Painter (Overlay des `FloorPlanView`).
+/// Alle Kanten des Graphen in einem Painter (Overlay der 3D-Karte, die
+/// Knotenpunkte kommen als Bildschirmpunkte über [nodes]).
 ///
 /// - Quadratische Bézierkurven, deren Ausschlag je Kante wechselt, damit
 ///   parallele Kanten sich nicht decken. Pfeil zum Elternknoten.
@@ -26,14 +26,18 @@ double meshNodeRadius(ZbNodeKind k, {bool mini = false}) => switch (k) {
 ///   (bei wenigen Kanten an allen).
 /// - Auswahl und Filter kommen über [state]. Sie lösen nur ein Neuzeichnen
 ///   dieses Painters aus.
-class MeshEdgePainter extends FloorOverlayPainter {
+class MeshEdgePainter extends CustomPainter {
   MeshEdgePainter({
     required this.edges,
     required this.scene,
     required this.state,
     required this.hv,
+    required this.nodes,
     this.mini = false,
-  });
+  }) : super(repaint: state);
+
+  /// Knoten-IEEE → Bildschirmpunkt.
+  final Map<String, Offset> nodes;
 
   final List<ZbMeshEdge> edges;
   final MeshScene scene;
@@ -42,9 +46,6 @@ class MeshEdgePainter extends FloorOverlayPainter {
   final bool mini;
 
   final _text = <String, TextPainter>{};
-
-  @override
-  Listenable? get repaint => state;
 
   Color _levelColor(int lqi) => switch (LqiLevel.of(lqi)) {
     LqiLevel.good => hv.ok,
@@ -77,7 +78,7 @@ class MeshEdgePainter extends FloorOverlayPainter {
   });
 
   @override
-  void paint(Canvas canvas, Size size, FloorGeometry g) {
+  void paint(Canvas canvas, Size size) {
     final st = state.value;
     final infos = scene.infos;
     final shown = [
@@ -103,8 +104,8 @@ class MeshEdgePainter extends FloorOverlayPainter {
     final ordered = [...shown]..sort((a, b) => rank(a).compareTo(rank(b)));
     final labels = <_Label>[];
     for (final e in ordered) {
-      final pa = g.nodes[e.a];
-      final pb = g.nodes[e.b];
+      final pa = nodes[e.a];
+      final pb = nodes[e.b];
       if (pa == null || pb == null) continue;
       final d = pb - pa;
       final len = d.distance;
@@ -207,7 +208,7 @@ class MeshEdgePainter extends FloorOverlayPainter {
 
     // Name des gewählten Knotens unter dem Knoten.
     final sel = st.selected;
-    final at = sel == null ? null : g.nodes[sel];
+    final at = sel == null ? null : nodes[sel];
     if (!mini && sel != null && at != null) {
       final info = infos[sel];
       final tp = _label(
@@ -246,7 +247,8 @@ class MeshEdgePainter extends FloorOverlayPainter {
       !identical(old.edges, edges) ||
       old.scene != scene ||
       old.hv != hv ||
-      old.mini != mini;
+      old.mini != mini ||
+      !mapEquals(old.nodes, nodes);
 }
 
 class _Label {
