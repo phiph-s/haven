@@ -10,6 +10,7 @@ import 'package:haven/dev/fake_floor_plan.dart';
 import 'package:haven/dev/fake_repository.dart';
 import 'package:haven/features/map/floor_plan_store.dart';
 import 'package:haven/features/map/map_layer_widgets.dart';
+import 'package:haven/features/map/map_layers.dart';
 import 'package:haven/features/map/map_markers.dart';
 import 'package:haven/features/map/map_panels.dart';
 import 'package:haven/features/zigbee/zigbee_device_screen.dart';
@@ -181,10 +182,38 @@ void main() {
     await tester.tap(marker.first);
     await _settle(tester);
     expect(find.byType(SensorPanel), findsOneWidget);
-    expect(find.bySemanticsLabel('Schließen'), findsWidgets);
-    await tester.tap(find.bySemanticsLabel('Schließen').first);
+    expect(find.bySemanticsLabel('Zurück zur Raumliste'), findsOneWidget);
+    await tester.tap(find.bySemanticsLabel('Zurück zur Raumliste'));
     await _settle(tester);
     expect(find.byType(SensorPanel), findsNothing);
+    expect(find.text('Räume'), findsOneWidget);
+  });
+
+  testWidgets('Desktop: Raum-Details folgen der Kartenart, zurück zur Liste', (
+    tester,
+  ) async {
+    final c = await _pump(tester, 'presence', desktop: true);
+    expect(find.text('Räume'), findsOneWidget);
+    final m = find.byWidgetPredicate(
+      (w) =>
+          w is PresenceMarker &&
+          w.entityId == 'binary_sensor.prasenz_waschraum_presence',
+    );
+    await tester.tapAt(tester.getCenter(m) + const Offset(-60, 30));
+    await _settle(tester);
+    expect(find.byType(RoomMotionPanel), findsOneWidget);
+    expect(find.text('Räume'), findsNothing);
+
+    // Kartenart wechseln: derselbe Raum zeigt die Details der neuen Art.
+    c.read(mapLayerProvider.notifier).set(MapLayer.temperature);
+    await _settle(tester);
+    expect(find.byType(RoomMotionPanel), findsNothing);
+    expect(find.byType(RoomClimatePanel), findsOneWidget);
+
+    await tester.tap(find.bySemanticsLabel('Zurück zur Raumliste'));
+    await _settle(tester);
+    expect(find.byType(RoomClimatePanel), findsNothing);
+    expect(find.text('Räume'), findsOneWidget);
   });
 
   testWidgets('Licht: langes Drücken öffnet das Licht-Sheet', (tester) async {

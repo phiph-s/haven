@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter/rendering.dart';
 import 'package:go_router/go_router.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -52,15 +53,13 @@ import 'map_routes.dart';
 class MapScreen extends ConsumerWidget {
   const MapScreen({
     super.key,
-    this.startMenu = false,
     this.startMinutes,
     this.startInspect,
     this.startTap,
   });
 
-  /// Nur für Screenshots: Auswahl aufgeklappt, Zeitstrahl verschoben,
+  /// Nur für Screenshots: Zeitstrahl verschoben,
   /// Raum im Inspektor (Desktop), angetippter Knoten oder Raum (`room:<ID>`).
-  final bool startMenu;
   final double? startMinutes;
   final String? startInspect;
   final String? startTap;
@@ -85,24 +84,36 @@ class MapScreen extends ConsumerWidget {
               child: MeshGlow(palette: palette, style: MeshStyle.ambient),
             ),
           ),
-          Column(
-            children: [
-              _MapHeader(plan: has ? p : null),
-              Expanded(
-                child: !plan.hasValue
-                    ? const SizedBox.shrink()
-                    : has
-                    ? _MapBody(
-                        plan: p,
-                        startMenu: startMenu,
-                        startMinutes: startMinutes,
-                        startInspect: startInspect,
-                        startTap: startTap,
-                      )
-                    : const _EmptyMap(),
+          if (has && !context.isDesktopLayout)
+            // Handy: die Karte nutzt die ganze Fläche bis zum unteren Rand
+            // (auch unter der Navigation), der Kopf liegt über ihr.
+            Positioned.fill(
+              child: _MapBody(
+                plan: p,
+                header: _MapHeader(plan: p),
+                startMinutes: startMinutes,
+                startInspect: startInspect,
+                startTap: startTap,
               ),
-            ],
-          ),
+            )
+          else
+            Column(
+              children: [
+                _MapHeader(plan: has ? p : null),
+                Expanded(
+                  child: !plan.hasValue
+                      ? const SizedBox.shrink()
+                      : has
+                      ? _MapBody(
+                          plan: p,
+                          startMinutes: startMinutes,
+                          startInspect: startInspect,
+                          startTap: startTap,
+                        )
+                      : const _EmptyMap(),
+                ),
+              ],
+            ),
         ],
       ),
     );
@@ -228,16 +239,18 @@ String _locName(HavenFloorPlan plan, String id) =>
 class _MapBody extends ConsumerStatefulWidget {
   const _MapBody({
     required this.plan,
-    this.startMenu = false,
+    this.header,
     this.startMinutes,
     this.startInspect,
     this.startTap,
   });
   final HavenFloorPlan plan;
-  final bool startMenu;
   final double? startMinutes;
   final String? startInspect;
   final String? startTap;
+
+  /// Handy: Kopf der Seite, liegt über der Karte.
+  final Widget? header;
 
   @override
   ConsumerState<_MapBody> createState() => _MapBodyState();
@@ -249,7 +262,6 @@ class _MapBodyState extends ConsumerState<_MapBody> {
   final _heat = HeatCache();
   final _mesh = ValueNotifier(const MeshViewState());
   String? _meshSel;
-  late bool _menuOpen = widget.startMenu;
 
   /// Raum im Inspektor (nur Desktop).
   late String? _inspect = widget.startInspect;
@@ -258,7 +270,11 @@ class _MapBodyState extends ConsumerState<_MapBody> {
   MapPanelSpec? _panel;
   Timer? _powerTimer;
   Timer? _startTapTimer;
-  final _pickerKey = GlobalKey<MapLayerPickerState>();
+
+  /// Handy: Höhe von Kopf und unterer Leiste (Legende plus Navigation). Der
+  /// Grundriss wird dazwischen eingepasst, gezeichnet wird bis an den Rand.
+  double _topH = 96;
+  double _bottomH = 200;
 
   // Bewegung: Zeitstrahl und Takt fürs Abklingen.
   late double _minutes = widget.startMinutes ?? 0;
@@ -356,11 +372,15 @@ class _MapBodyState extends ConsumerState<_MapBody> {
     return mapTargetOf(kind, zbType: zb?.deviceType);
   }
 
-  /// Zeigt ein Panel: auf dem Handy als Sheet, auf dem Desktop im Inspektor.
+  /// Zeigt ein Panel: auf dem Handy als Sheet, auf dem Desktop im Inspektor
+  /// als Details eines Geräts (zweite Ebene, zurück führt zur Raumliste).
   void _openPanel(MapPanelSpec spec) {
     Haptics.tick();
     if (context.isDesktopLayout) {
-      setState(() => _panel = spec);
+      setState(() {
+        _panel = spec;
+        _inspect = null;
+      });
     } else {
       unawaited(showMapPanel(context, spec));
     }
@@ -526,60 +546,67 @@ class _MapBodyState extends ConsumerState<_MapBody> {
 
   void _tapRoom(FloorRoom r) {
     final layer = ref.read(mapLayerProvider);
+    if (context.isDesktopLayout) {
+      // Desktop: zwei Ebenen im Inspektor. Der Raum öffnet seine Details in der
+      // aktuellen Kartenart, nochmal Klicken führt zurück zur Raumliste.
+      if (layer == MapLayer.network && _meshSel != null) {
+        setState(() => _meshSel = null);
+      }
+      Haptics.tick();
+      setState(() {
+        _inspect = _inspect == r.id && _panel == null ? null : r.id;
+        _panel = null;
+      });
+      return;
+    }
     final sr = snapshotRoomFor(ref.read(snapshotProvider), r);
     switch (mapTapAction(layer, MapTarget.room)) {
       case MapTapAction.openRoomSheet:
-        _closePanel();
-        // Desktop: der Inspektor rechts zeigt den Raum, geöffnet wird von dort.
-        if (context.isDesktopLayout) {
-          Haptics.tick();
-          setState(() => _inspect = _inspect == r.id ? null : r.id);
-        } else if (sr != null && sr.lightIds.isNotEmpty) {
+        if (sr != null && sr.lightIds.isNotEmpty) {
           Haptics.tick();
           context.push(Routes.room(sr.id));
         } else {
           _say('${r.name} hat noch keine Lichter');
         }
-      case MapTapAction.openRoomClimate:
-        final kind = layer == MapLayer.humidity
-            ? HeatKind.humidity
-            : HeatKind.temperature;
-        _openRoomPanel(
-          r,
-          MapPanelSpec(
-            key: 'room-climate-${kind.name}-${r.id}',
-            builder: (_) =>
-                RoomClimatePanel(plan: widget.plan, room: r, kind: kind),
-          ),
-        );
-      case MapTapAction.openRoomMotion:
-        _openRoomPanel(
-          r,
-          MapPanelSpec(
-            key: 'room-motion-${r.id}',
-            builder: (_) => RoomMotionPanel(
-              room: r,
-              areaIds: [r.areaId, sr?.areaId, sr?.id],
-            ),
-          ),
-        );
-      case MapTapAction.openRoomBatteries:
-        _openRoomPanel(
-          r,
-          MapPanelSpec(
-            key: 'room-battery-${r.id}',
-            builder: (_) => RoomBatteriesPanel(plan: widget.plan, room: r),
-          ),
-        );
+      case MapTapAction.openRoomClimate ||
+          MapTapAction.openRoomMotion ||
+          MapTapAction.openRoomBatteries:
+        final spec = _roomPanel(layer, r);
+        if (spec != null) _openPanel(spec);
       default:
         // Funknetz: Auswahl aufheben.
         if (_meshSel != null) setState(() => _meshSel = null);
     }
   }
 
-  void _openRoomPanel(FloorRoom r, MapPanelSpec spec) {
-    if (context.isDesktopLayout) setState(() => _inspect = r.id);
-    _openPanel(spec);
+  /// Details eines Raums in der Kartenart [layer]. `null`: die Lichtansicht
+  /// des Inspektors (Kombi, Licht, Funknetz).
+  MapPanelSpec? _roomPanel(MapLayer layer, FloorRoom r) {
+    final sr = snapshotRoomFor(ref.read(snapshotProvider), r);
+    switch (mapTapAction(layer, MapTarget.room)) {
+      case MapTapAction.openRoomClimate:
+        final kind = layer == MapLayer.humidity
+            ? HeatKind.humidity
+            : HeatKind.temperature;
+        return MapPanelSpec(
+          key: 'room-climate-${kind.name}-${r.id}',
+          builder: (_) =>
+              RoomClimatePanel(plan: widget.plan, room: r, kind: kind),
+        );
+      case MapTapAction.openRoomMotion:
+        return MapPanelSpec(
+          key: 'room-motion-${r.id}',
+          builder: (_) =>
+              RoomMotionPanel(room: r, areaIds: [r.areaId, sr?.areaId, sr?.id]),
+        );
+      case MapTapAction.openRoomBatteries:
+        return MapPanelSpec(
+          key: 'room-battery-${r.id}',
+          builder: (_) => RoomBatteriesPanel(plan: widget.plan, room: r),
+        );
+      default:
+        return null;
+    }
   }
 
   /// Rechtsklick auf die Karte (Desktop).
@@ -588,7 +615,10 @@ class _MapBodyState extends ConsumerState<_MapBody> {
     if (r != null) {
       final sr = snapshotRoomFor(ref.read(snapshotProvider), r);
       final view = sr == null ? null : ref.read(roomViewProvider(sr.id));
-      setState(() => _inspect = r.id);
+      setState(() {
+        _inspect = r.id;
+        _panel = null;
+      });
       if (sr != null && sr.lightIds.isNotEmpty) {
         items.add(
           HavenMenuItem(
@@ -631,7 +661,6 @@ class _MapBodyState extends ConsumerState<_MapBody> {
   void _setLayer(MapLayer l) {
     ref.read(mapLayerProvider.notifier).set(l);
     setState(() {
-      _menuOpen = false;
       _meshSel = null;
       _panel = null;
     });
@@ -669,115 +698,139 @@ class _MapBodyState extends ConsumerState<_MapBody> {
 
     if (context.isDesktopLayout) return _desktop(context, plan, layer, v);
 
-    return Stack(
-      children: [
-        Column(
+    return LayoutBuilder(
+      builder: (context, box) {
+        final h = box.maxHeight;
+        // Oben blendet die Karte hinter dem Kopf aus, unten am Rand.
+        final fadeTop = (_topH / h).clamp(0.0, 0.5);
+        final fadeBottom = (24 / h).clamp(0.0, 0.2);
+        return Stack(
           children: [
-            const SizedBox(height: 4),
-            Expanded(
+            Positioned.fill(
               child: EntryAnimation(
                 index: 1,
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 8),
-                  // Etwas unter der Mitte: oben bleibt Platz für die Auswahl
-                  // der Kartenart, die Karte sitzt nah an ihrer Legende.
-                  child: Align(
-                    alignment: const Alignment(0, 0.4),
-                    child: FloorPlanView(
-                      key: const ValueKey('map'),
-                      plan: v.plan,
-                      gap: v.gap,
-                      reserveGap: 2,
-                      nodes: v.nodes,
-                      nodeBuilder: v.nodeBuilder,
-                      underlayPainter: v.underlay,
-                      overlayPainter: v.overlay,
-                      roomStyle: v.roomStyle,
-                      roomSubtitle: v.subtitle,
-                      onNodeTap: v.onNodeTap,
-                      onNodeLongPress: _holdNode,
-                      onNodeSecondaryTap: _secondaryNode,
-                      onRoomTap: v.onRoomTap,
-                      onOutsideTap: v.onOutsideTap,
-                      showOutside: v.showOutside,
+                child: ShaderMask(
+                  blendMode: BlendMode.dstIn,
+                  shaderCallback: (rect) => LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: const [
+                      Color(0x00000000),
+                      Color(0xFF000000),
+                      Color(0xFF000000),
+                      Color(0x00000000),
+                    ],
+                    stops: [fadeTop * 0.55, fadeTop, 1 - fadeBottom, 1],
+                  ).createShader(rect),
+                  child: FloorPlanView(
+                    key: const ValueKey('map'),
+                    plan: v.plan,
+                    gap: v.gap,
+                    reserveGap: 2,
+                    fill: true,
+                    maxScale: 6,
+                    insets: EdgeInsets.fromLTRB(8, _topH + 8, 8, _bottomH),
+                    nodes: v.nodes,
+                    nodeBuilder: v.nodeBuilder,
+                    underlayPainter: v.underlay,
+                    overlayPainter: v.overlay,
+                    roomStyle: v.roomStyle,
+                    roomSubtitle: v.subtitle,
+                    onNodeTap: v.onNodeTap,
+                    onNodeLongPress: _holdNode,
+                    onNodeSecondaryTap: _secondaryNode,
+                    onRoomTap: v.onRoomTap,
+                    onOutsideTap: v.onOutsideTap,
+                    showOutside: v.showOutside,
+                  ),
+                ),
+              ),
+            ),
+            // Kopf und Legende liegen über der Karte. Der leere Raum dazwischen
+            // lässt Gesten zur Karte durch.
+            Column(
+              children: [
+                if (widget.header != null)
+                  _SizeReport(
+                    onSize: (s) => _setInsets(top: s.height),
+                    child: widget.header!,
+                  ),
+                const Spacer(),
+                _SizeReport(
+                  onSize: (s) => _setInsets(bottom: s.height),
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(
+                      HavenSpace.page,
+                      8,
+                      HavenSpace.page,
+                      HavenSpace.navClearance,
+                    ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        MapLayerTabs(
+                          layer: layer,
+                          compact: true,
+                          onChanged: _setLayer,
+                        ),
+                        const SizedBox(height: 10),
+                        HavenCard(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 12,
+                          ),
+                          radius: HavenRadii.m,
+                          child: AnimatedSize(
+                            duration: context.motion(HavenMotion.d3),
+                            curve: HavenMotion.out,
+                            alignment: Alignment.topCenter,
+                            child: AnimatedSwitcher(
+                              duration: context.motion(HavenMotion.d2),
+                              child: _info != null
+                                  ? SizedBox(
+                                      key: ValueKey(_info),
+                                      height: 44,
+                                      width: double.infinity,
+                                      child: Align(
+                                        alignment: Alignment.centerLeft,
+                                        child: Text(
+                                          _info!,
+                                          maxLines: 2,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: HavenText.body.copyWith(
+                                            color: hv.tx,
+                                          ),
+                                        ),
+                                      ),
+                                    )
+                                  : KeyedSubtree(
+                                      key: ValueKey('card-${layer.name}'),
+                                      child: v.card,
+                                    ),
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ),
-              ),
+              ],
             ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(
-                HavenSpace.page,
-                8,
-                HavenSpace.page,
-                0,
-              ),
-              child: HavenCard(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 12,
-                ),
-                radius: HavenRadii.m,
-                child: AnimatedSize(
-                  duration: context.motion(HavenMotion.d3),
-                  curve: HavenMotion.out,
-                  alignment: Alignment.topCenter,
-                  child: AnimatedSwitcher(
-                    duration: context.motion(HavenMotion.d2),
-                    child: _info != null
-                        ? SizedBox(
-                            key: ValueKey(_info),
-                            height: 44,
-                            width: double.infinity,
-                            child: Align(
-                              alignment: Alignment.centerLeft,
-                              child: Text(
-                                _info!,
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                                style: HavenText.body.copyWith(color: hv.tx),
-                              ),
-                            ),
-                          )
-                        : KeyedSubtree(
-                            key: ValueKey('card-${layer.name}'),
-                            child: v.card,
-                          ),
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(height: HavenSpace.navClearance),
           ],
-        ),
-        // Schleier hinter der aufgeklappten Auswahl, Tippen klappt zu.
-        Positioned.fill(
-          child: IgnorePointer(
-            ignoring: !_menuOpen,
-            child: AnimatedOpacity(
-              opacity: _menuOpen ? 1 : 0,
-              duration: context.motion(HavenMotion.d2),
-              child: GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onTap: () => _pickerKey.currentState?.close(),
-                child: ColoredBox(color: hv.bg.withValues(alpha: 0.55)),
-              ),
-            ),
-          ),
-        ),
-        Positioned(
-          top: 2,
-          right: 14,
-          child: MapLayerPicker(
-            key: _pickerKey,
-            layer: layer,
-            startOpen: widget.startMenu,
-            onChanged: _setLayer,
-            onOpenChanged: (o) => setState(() => _menuOpen = o),
-          ),
-        ),
-      ],
+        );
+      },
     );
+  }
+
+  void _setInsets({double? top, double? bottom}) {
+    if ((top == null || top == _topH) &&
+        (bottom == null || bottom == _bottomH)) {
+      return;
+    }
+    setState(() {
+      _topH = top ?? _topH;
+      _bottomH = bottom ?? _bottomH;
+    });
   }
 
   /// Desktop: Karte mit viel Fläche (Mausrad zoomt), rechts der Inspektor.
@@ -799,7 +852,7 @@ class _MapBodyState extends ConsumerState<_MapBody> {
             children: [
               Positioned.fill(
                 child: Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 4, 8, 20),
+                  padding: const EdgeInsets.fromLTRB(16, 4, 8, 76),
                   child: EntryAnimation(
                     index: 1,
                     child: FloorPlanView(
@@ -842,30 +895,11 @@ class _MapBodyState extends ConsumerState<_MapBody> {
                   ),
                 ),
               ),
-              Positioned.fill(
-                child: IgnorePointer(
-                  ignoring: !_menuOpen,
-                  child: AnimatedOpacity(
-                    opacity: _menuOpen ? 1 : 0,
-                    duration: context.motion(HavenMotion.d2),
-                    child: GestureDetector(
-                      behavior: HitTestBehavior.opaque,
-                      onTap: () => _pickerKey.currentState?.close(),
-                      child: ColoredBox(color: hv.bg.withValues(alpha: 0.55)),
-                    ),
-                  ),
-                ),
-              ),
               Positioned(
-                top: 2,
-                right: 14,
-                child: MapLayerPicker(
-                  key: _pickerKey,
-                  layer: layer,
-                  startOpen: widget.startMenu,
-                  onChanged: _setLayer,
-                  onOpenChanged: (o) => setState(() => _menuOpen = o),
-                ),
+                bottom: 20,
+                left: 16,
+                right: 8,
+                child: MapLayerTabs(layer: layer, onChanged: _setLayer),
               ),
             ],
           ),
@@ -876,11 +910,15 @@ class _MapBodyState extends ConsumerState<_MapBody> {
             width: DesktopMetrics.sideColumn,
             child: MapInspector(
               plan: plan,
+              layer: layer,
               selected: inspect,
               onSelect: (id) => setState(() {
                 _inspect = id;
                 _panel = null;
               }),
+              roomPanel: inspect == null
+                  ? null
+                  : _roomPanel(layer, plan.room(inspect)!),
               panel: _panel,
               onClosePanel: _closePanel,
               layerCard: KeyedSubtree(
@@ -1714,5 +1752,34 @@ class _EmptyMap extends StatelessWidget {
         ),
       ],
     );
+  }
+}
+
+/// Meldet die Größe des Kinds nach dem Layout (nur bei Änderung).
+class _SizeReport extends SingleChildRenderObjectWidget {
+  const _SizeReport({required this.onSize, required super.child});
+  final ValueChanged<Size> onSize;
+
+  @override
+  RenderObject createRenderObject(BuildContext context) =>
+      _RenderSizeReport(onSize);
+
+  @override
+  void updateRenderObject(BuildContext context, _RenderSizeReport r) =>
+      r.onSize = onSize;
+}
+
+class _RenderSizeReport extends RenderProxyBox {
+  _RenderSizeReport(this.onSize);
+  ValueChanged<Size> onSize;
+  Size? _last;
+
+  @override
+  void performLayout() {
+    super.performLayout();
+    if (size == _last) return;
+    _last = size;
+    final s = size;
+    WidgetsBinding.instance.addPostFrameCallback((_) => onSize(s));
   }
 }

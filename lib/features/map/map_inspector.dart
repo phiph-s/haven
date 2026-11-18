@@ -13,25 +13,35 @@ import '../../core/widgets/haven_card.dart';
 import '../../core/widgets/haven_switch.dart';
 import '../../data/models/floor_plan.dart';
 import 'map_data.dart';
+import 'map_layers.dart';
 import 'map_panels.dart';
 import 'map_routes.dart';
 
-/// Inspektor rechts neben der Desktop-Karte: oben die Ansicht (Legende,
-/// Status der Kartenart, Hinweise), darunter der gewählte Raum mit Lampen
-/// oder die Liste der Räume.
+/// Inspektor rechts neben der Desktop-Karte: oben die Karte der Kartenart
+/// (Legende, Status, Zeitstrahl), darunter genau zwei Ebenen:
+///
+/// 1. die Raumliste,
+/// 2. Details: ein gewählter Raum in der aktuellen Kartenart ([roomPanel],
+///    ohne Panel die Lichtansicht) oder ein angetipptes Gerät ([panel]).
+///
+/// Der Pfeil im Kopf der Details führt zurück zur Liste. Wechselt die
+/// Kartenart, zeigt der gewählte Raum gleich seine Details der neuen Art.
 class MapInspector extends ConsumerWidget {
   const MapInspector({
     super.key,
     required this.plan,
+    required this.layer,
     required this.selected,
     required this.onSelect,
     required this.layerCard,
     this.info,
+    this.roomPanel,
     this.panel,
     this.onClosePanel,
   });
 
   final HavenFloorPlan plan;
+  final MapLayer layer;
 
   /// Plan-Raum-ID oder `null`.
   final String? selected;
@@ -43,8 +53,11 @@ class MapInspector extends ConsumerWidget {
   /// Kurzer Hinweis nach einer Aktion (ersetzt die Karte kurz).
   final String? info;
 
-  /// Info-Panel zu einem angetippten Gerät oder Raum (ersetzt die
-  /// Raumansicht, bis es geschlossen wird).
+  /// Details des gewählten Raums in der aktuellen Kartenart. `null`: die
+  /// Lichtansicht (Kombi, Licht, Funknetz).
+  final MapPanelSpec? roomPanel;
+
+  /// Details eines angetippten Geräts. Hat Vorrang vor dem Raum.
   final MapPanelSpec? panel;
   final VoidCallback? onClosePanel;
 
@@ -52,6 +65,7 @@ class MapInspector extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final hv = context.hv;
     final room = selected == null ? null : plan.room(selected!);
+    final detail = panel ?? (room == null ? null : roomPanel);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -84,27 +98,30 @@ class MapInspector extends ConsumerWidget {
             radius: HavenRadii.m,
             child: AnimatedSwitcher(
               duration: context.motion(HavenMotion.d2),
-              child: panel != null
+              child: detail != null
                   ? MapPanelScope(
-                      key: ValueKey('panel-${panel!.key}'),
+                      key: ValueKey('panel-${detail.key}'),
                       sheet: false,
-                      onClose: onClosePanel,
+                      onClose: panel != null
+                          ? onClosePanel
+                          : () => onSelect(null),
                       child: Builder(
                         builder: (context) =>
-                            ListView(children: [panel!.builder(context)]),
+                            ListView(children: [detail.builder(context)]),
                       ),
                     )
                   : room == null
                   ? _RoomList(
                       key: const ValueKey('list'),
                       plan: plan,
+                      layer: layer,
                       onSelect: onSelect,
                     )
-                  : _RoomDetail(
+                  : MapPanelScope(
                       key: ValueKey('room-${room.id}'),
-                      plan: plan,
-                      room: room,
+                      sheet: false,
                       onClose: () => onSelect(null),
+                      child: _RoomDetail(plan: plan, room: room),
                     ),
             ),
           ),
@@ -113,6 +130,15 @@ class MapInspector extends ConsumerWidget {
     );
   }
 }
+
+/// Was ein Klick auf einen Raum in der Kartenart zeigt (Hinweis der Liste).
+String _detailsHint(MapLayer layer) => switch (layer) {
+  MapLayer.combo || MapLayer.light || MapLayer.network => 'seine Lampen',
+  MapLayer.temperature => 'seine Temperatur',
+  MapLayer.humidity => 'seine Luftfeuchte',
+  MapLayer.presence => 'sein Bewegungslicht',
+  MapLayer.battery => 'seine Batterien',
+};
 
 String _m2(FloorRoom r, double cellMeters) {
   final v = r.area * cellMeters * cellMeters;
@@ -125,8 +151,14 @@ String _values(RoomValues? v) => [
 ].join(' · ');
 
 class _RoomList extends ConsumerWidget {
-  const _RoomList({super.key, required this.plan, required this.onSelect});
+  const _RoomList({
+    super.key,
+    required this.plan,
+    required this.layer,
+    required this.onSelect,
+  });
   final HavenFloorPlan plan;
+  final MapLayer layer;
   final ValueChanged<String?> onSelect;
 
   @override
@@ -139,8 +171,8 @@ class _RoomList extends ConsumerWidget {
         Text('Räume', style: HavenText.headline.copyWith(color: hv.tx)),
         const SizedBox(height: 2),
         Text(
-          'Klick auf einen Raum zeigt ihn hier. Mausrad zoomt, Ziehen '
-          'verschiebt die Karte.',
+          'Klick auf einen Raum zeigt hier ${_detailsHint(layer)}, ein Gerät '
+          'seine Details. Mausrad zoomt, Ziehen verschiebt die Karte.',
           style: HavenText.caption.copyWith(color: hv.tx3),
         ),
         const SizedBox(height: 10),
@@ -252,15 +284,9 @@ class _Row extends StatelessWidget {
 }
 
 class _RoomDetail extends ConsumerWidget {
-  const _RoomDetail({
-    super.key,
-    required this.plan,
-    required this.room,
-    required this.onClose,
-  });
+  const _RoomDetail({required this.plan, required this.room});
   final HavenFloorPlan plan;
   final FloorRoom room;
-  final VoidCallback onClose;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -283,31 +309,17 @@ class _RoomDetail extends ConsumerWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Row(
-          children: [
-            Expanded(
-              child: Text(
-                room.name,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: HavenText.section.copyWith(color: hv.tx, fontSize: 22),
-              ),
-            ),
-            if (view != null && lamps.isNotEmpty)
-              HavenSwitch(
-                value: view.anyOn,
-                semanticLabel: 'Raum ${room.name}',
-                onChanged: (_) => repo.toggleRoom(view.id),
-              ),
-            RoundIconButton(
-              icon: Icons.close_rounded,
-              label: 'Auswahl aufheben',
-              onTap: onClose,
-            ),
-          ],
+        MapPanelHead(
+          title: room.name,
+          subtitle: facts,
+          trailing: view != null && lamps.isNotEmpty
+              ? HavenSwitch(
+                  value: view.anyOn,
+                  semanticLabel: 'Raum ${room.name}',
+                  onChanged: (_) => repo.toggleRoom(view.id),
+                )
+              : null,
         ),
-        Text(facts, style: HavenText.caption.copyWith(color: hv.tx2)),
-        const SizedBox(height: 14),
         Expanded(
           child: lamps.isEmpty
               ? Text(

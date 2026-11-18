@@ -175,6 +175,7 @@ class FloorGeometry {
     bool fitGrid = false,
     bool withOutside = false,
     double padding = 12,
+    EdgeInsets insets = EdgeInsets.zero,
     String? openGroup,
     double fan = 0,
   }) {
@@ -184,16 +185,18 @@ class FloorGeometry {
         : plan.layoutBounds(gap: gap, withOutside: withOutside);
     final bw = math.max(bounds.width, 1.0);
     final bh = math.max(bounds.height, 1.0);
+    // Eingepasst wird in die Fläche ohne [insets]; gezeichnet wird überall.
+    final free = insets.deflateSize(size);
     final s = math.max(
       1.0,
       math.min(
-        (size.width - 2 * padding) / bw,
-        (size.height - 2 * padding) / bh,
+        (free.width - 2 * padding) / bw,
+        (free.height - 2 * padding) / bh,
       ),
     );
     final origin = Offset(
-      size.width / 2 - bounds.center.dx * s,
-      size.height / 2 - bounds.center.dy * s,
+      insets.left + free.width / 2 - bounds.center.dx * s,
+      insets.top + free.height / 2 - bounds.center.dy * s,
     );
     Offset px(Offset c) => origin + c * s;
     final polys = <String, List<Offset>>{};
@@ -365,6 +368,7 @@ class FloorPlanView extends StatefulWidget {
     this.showLabels = true,
     this.showOutside = true,
     this.padding = 12,
+    this.insets = EdgeInsets.zero,
     this.minScale = 1,
     this.maxScale = 4,
     this.transformationController,
@@ -429,6 +433,11 @@ class FloorPlanView extends StatefulWidget {
   /// Außenbereich „Draußen“ um die Wohnung zeigen.
   final bool showOutside;
   final double padding;
+
+  /// Ränder, in die der Grundriss beim Einpassen nicht gelegt wird (z. B.
+  /// ein Kopf, der über der Karte liegt). Gezeichnet und verschoben wird
+  /// trotzdem über die ganze Fläche. Nur sinnvoll mit [fill].
+  final EdgeInsets insets;
   final double minScale;
   final double maxScale;
   final TransformationController? transformationController;
@@ -487,6 +496,7 @@ class _FloorPlanViewState extends State<FloorPlanView>
   double _geoFan = -1;
   String? _geoOpen;
   Size _geoSize = Size.zero;
+  EdgeInsets _geoInsets = EdgeInsets.zero;
   HavenFloorPlan? _geoPlan;
   List<FloorNode>? _geoNodes;
   double _geoFrom = 0;
@@ -545,6 +555,7 @@ class _FloorPlanViewState extends State<FloorPlanView>
         _geoFan == f &&
         _geoOpen == _open &&
         _geoSize == size &&
+        _geoInsets == widget.insets &&
         identical(_geoPlan, widget.plan) &&
         identical(_geoNodes, widget.nodes) &&
         _geoFrom == _from &&
@@ -555,6 +566,7 @@ class _FloorPlanViewState extends State<FloorPlanView>
     _geoFan = f;
     _geoOpen = _open;
     _geoSize = size;
+    _geoInsets = widget.insets;
     _geoPlan = widget.plan;
     _geoNodes = widget.nodes;
     _geoFrom = _from;
@@ -567,6 +579,7 @@ class _FloorPlanViewState extends State<FloorPlanView>
       fitGrid: widget.fitGrid,
       withOutside: _withOutside || (widget.fitGrid && widget.showOutside),
       padding: widget.padding,
+      insets: widget.insets,
       openGroup: _open,
       fan: f,
     );

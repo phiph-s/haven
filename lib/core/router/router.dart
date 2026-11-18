@@ -159,7 +159,6 @@ GoRouter buildRouter(Ref ref, {String? initialLocation}) {
                   c,
                   MapScreen(
                     // Nur für Screenshots (debug_launch.dart).
-                    startMenu: s.uri.queryParameters['menu'] == '1',
                     startMinutes: double.tryParse(
                       s.uri.queryParameters['t'] ?? '',
                     ),

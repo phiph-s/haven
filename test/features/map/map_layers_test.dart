@@ -387,17 +387,16 @@ void main() {
       }
     });
 
-    testWidgets('Auswahl klappt auf, wechselt und merkt sich die Art', (
+    testWidgets('ein Tipp auf den Tab wechselt und merkt sich die Art', (
       tester,
     ) async {
       final (c, store) = await _pump(tester);
       expect(c.read(mapLayerProvider), MapLayer.combo);
-      expect(find.text('Temperatur'), findsNothing);
-      await tester.tap(find.bySemanticsLabel('Kartenart: Kombi'));
-      await tester.pumpAndSettle();
-      expect(find.text('Temperatur'), findsOneWidget);
-      expect(find.text('Funknetz'), findsOneWidget);
-      await tester.tap(find.text('Temperatur'));
+      // Alle Arten sind sofort da, ohne Aufklappen.
+      for (final l in MapLayer.values) {
+        expect(find.bySemanticsLabel('Kartenart ${l.label}'), findsOneWidget);
+      }
+      await tester.tap(find.bySemanticsLabel('Kartenart Temperatur'));
       await tester.pumpAndSettle();
       expect(c.read(mapLayerProvider), MapLayer.temperature);
       expect(store.mapLayer, 'temperature');
@@ -405,7 +404,6 @@ void main() {
       expect(find.byType(HeatLegend), findsOneWidget);
       expect(find.text('Temperatur innen'), findsOneWidget);
       expect(find.byType(HeatValueMarker), findsWidgets);
-      expect(find.text('Luftfeuchte'), findsNothing, reason: 'zugeklappt');
     });
 
     testWidgets('gemerkte Art gilt beim Start, Bewegung zeigt die Melder', (
@@ -424,7 +422,10 @@ void main() {
     testWidgets('gemerkte alte Art „light“ startet als Kombi', (tester) async {
       final (c, _) = await _pump(tester, prefs: {'map_layer': 'light'});
       expect(c.read(mapLayerProvider), MapLayer.combo);
-      expect(find.bySemanticsLabel('Kartenart: Kombi'), findsOneWidget);
+      expect(
+        tester.getSemantics(find.bySemanticsLabel('Kartenart Kombi')),
+        isSemantics(isSelected: true, isButton: true),
+      );
     });
 
     testWidgets('Licht: nur Lampen und Lichtschalter, Rest ausgeblendet', (
@@ -460,10 +461,7 @@ void main() {
       );
       expect(find.byType(PresenceMarker), findsNothing);
       expect(find.textContaining('Licht'), findsWidgets);
-      await tester.tap(find.bySemanticsLabel('Kartenart: Licht'));
-      await tester.pumpAndSettle();
-      expect(find.text('Kombi'), findsOneWidget);
-      await tester.tap(find.text('Kombi'));
+      await tester.tap(find.bySemanticsLabel('Kartenart Kombi'));
       await tester.pumpAndSettle();
       expect(store.mapLayer, 'combo');
       expect(find.byType(MapMarker), findsNWidgets(plan.placements.length + 1));

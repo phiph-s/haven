@@ -43,6 +43,8 @@ class MapPanelSpec {
 }
 
 /// Wo ein Panel steckt: im Sheet (schließen = Sheet zu) oder im Inspektor.
+/// Im Inspektor ist ein Panel die zweite Ebene, [onClose] führt dort zurück
+/// zur Raumliste (Pfeil links im Kopf).
 class MapPanelScope extends InheritedWidget {
   const MapPanelScope({
     super.key,
@@ -201,20 +203,40 @@ String _num(double v, {int digits = 1}) =>
 
 // ---- Bausteine ----------------------------------------------------------------
 
-/// Kopf eines Panels. Im Inspektor mit Schließen-Knopf.
+/// Kopf eines Panels. Im Inspektor mit Zurück-Pfeil zur Raumliste.
 class MapPanelHead extends StatelessWidget {
-  const MapPanelHead({super.key, required this.title, this.subtitle});
+  const MapPanelHead({
+    super.key,
+    required this.title,
+    this.subtitle,
+    this.trailing,
+  });
   final String title;
   final String? subtitle;
+
+  /// Rechts im Kopf, z. B. ein Schalter.
+  final Widget? trailing;
 
   @override
   Widget build(BuildContext context) {
     final hv = context.hv;
-    final close = MapPanelScope.maybeOf(context)?.onClose;
+    final back = MapPanelScope.maybeOf(context)?.onClose;
     return Padding(
       padding: const EdgeInsets.only(bottom: 14),
       child: Row(
         children: [
+          if (back != null) ...[
+            // Eigener Knoten: sonst verschmilzt er in manchen Panels mit dem Titel.
+            Semantics(
+              container: true,
+              child: RoundIconButton(
+                icon: Icons.arrow_back_rounded,
+                label: 'Zurück zur Raumliste',
+                onTap: back,
+              ),
+            ),
+            const SizedBox(width: 10),
+          ],
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -235,12 +257,7 @@ class MapPanelHead extends StatelessWidget {
               ],
             ),
           ),
-          if (close != null)
-            RoundIconButton(
-              icon: Icons.close_rounded,
-              label: 'Schließen',
-              onTap: close,
-            ),
+          ?trailing,
         ],
       ),
     );

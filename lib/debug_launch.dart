@@ -18,8 +18,7 @@ import 'package:material_ui/material_ui.dart';
 /// `screen=room&extent=0.5` öffnet das Raum-Sheet halb gezogen.
 /// `screen=map&layer=temperature` wählt die Kartenart (`combo`, `lamps`,
 /// `temperature`, `humidity`, `presence`, `network`, `battery`),
-/// `menu=1` klappt die Auswahl der Kartenarten auf, `t=-20` stellt den
-/// Zeitstrahl der Bewegung auf vor 20 min.
+/// `t=-20` stellt den Zeitstrahl der Bewegung auf vor 20 min.
 /// `screen=map&layer=temperature&tap=<Entity>` tippt nach dem Start einen
 /// Knoten an, `tap=room:<Raum-ID>` einen Raum (öffnet das Info-Sheet).
 /// `screen=floorplan_editor&drag=<Entity>` zeigt das Ziehen-Label.
@@ -45,7 +44,6 @@ class LaunchOverrides {
     this.extent,
     this.filter,
     this.layer,
-    this.menu = false,
     this.drag,
     this.time,
     this.furniture,
@@ -69,7 +67,6 @@ class LaunchOverrides {
       extent: q['extent'],
       filter: q['filter'],
       layer: q['layer'],
-      menu: q['menu'] == '1',
       drag: q['drag'],
       time: q['t'],
       furniture: q['fsel'],
@@ -98,7 +95,6 @@ class LaunchOverrides {
   final String? layer;
 
   /// Auswahl der Kartenarten aufgeklappt (Screenshot).
-  final bool menu;
 
   /// Entity, deren Ziehen-Label der Editor zeigt (Screenshot).
   final String? drag;
@@ -125,10 +121,9 @@ class LaunchOverrides {
     'sheet' => '/room/$room?sheet=1',
     'map' => Uri(
       path: '/map',
-      queryParameters: !menu && time == null && inspect == null && tap == null
+      queryParameters: time == null && inspect == null && tap == null
           ? null
           : {
-              if (menu) 'menu': '1',
               't': ?time,
               'inspect': ?inspect,
               'tap': ?tap,

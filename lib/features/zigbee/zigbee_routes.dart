@@ -1,6 +1,7 @@
 import 'package:go_router/go_router.dart';
 import 'package:material_ui/material_ui.dart';
 
+import '../../core/adaptive/breakpoints.dart';
 import '../../core/router/router.dart';
 import '../../core/theme/tokens.dart';
 import '../../core/widgets/system_bars.dart';
@@ -35,18 +36,23 @@ final List<RouteBase> zigbeeRoutes = <RouteBase>[
     pageBuilder: (context, state) =>
         _slide(state, ZigbeeDeviceScreen(ieee: state.pathParameters['ieee']!)),
   ),
+  // Funknetz: am Handy Vollbild (`/zigbee/mesh`), am Desktop im Zigbee-Bereich
+  // mit Navigation (`/zigbee/network`). Die Weiterleitung wählt je nach Layout,
+  // Links auf `/zigbee/mesh` gelten also überall.
   GoRoute(
     path: 'mesh',
     parentNavigatorKey: rootNavigatorKey,
-    pageBuilder: (context, state) => _slide(
-      state,
-      ZigbeeMeshScreen(
-        select: state.uri.queryParameters['select'],
-        filter: MeshFilter.values
-            .where((f) => f.name == state.uri.queryParameters['filter'])
-            .firstOrNull,
-      ),
-    ),
+    redirect: (context, state) => context.isDesktopLayout
+        ? state.uri.replace(path: zigbeeMeshDesktopPath).toString()
+        : null,
+    pageBuilder: (context, state) => _slide(state, _mesh(state)),
+  ),
+  GoRoute(
+    path: 'network',
+    redirect: (context, state) => context.isDesktopLayout
+        ? null
+        : state.uri.replace(path: zigbeeMeshPath).toString(),
+    pageBuilder: (context, state) => _slide(state, _mesh(state)),
   ),
   GoRoute(
     path: 'pair',
@@ -54,6 +60,16 @@ final List<RouteBase> zigbeeRoutes = <RouteBase>[
     pageBuilder: (context, state) => _slide(state, const ZigbeePairScreen()),
   ),
 ];
+
+/// Pfad des Funknetzes am Desktop (im Zigbee-Bereich, mit Navigation).
+const String zigbeeMeshDesktopPath = '/zigbee/network';
+
+Widget _mesh(GoRouterState state) => ZigbeeMeshScreen(
+  select: state.uri.queryParameters['select'],
+  filter: MeshFilter.values
+      .where((f) => f.name == state.uri.queryParameters['filter'])
+      .firstOrNull,
+);
 
 class _Bg extends StatelessWidget {
   const _Bg({required this.child});
