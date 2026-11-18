@@ -9,6 +9,11 @@
 
 // ignore_for_file: prefer_single_quotes, unnecessary_const
 
+import 'fake_thermostats.dart';
+
+export 'fake_thermostats.dart'
+    show kFakeThermostatStates, kFakeThermostatSchedule, kFakeThermostatWeekend;
+
 /// Räume, Geräte (mit HA-Entities), Z2M-Gruppen mit Szenen und sonstige HA-Entities.
 const Map<String, dynamic> kFakeInventory = {
   'rooms': [
@@ -643,6 +648,7 @@ const Map<String, dynamic> kFakeInventory = {
       },
       'room': null,
     },
+    ...kFakeThermostatInventory,
   ],
   'z2m_groups': [
     {
@@ -926,7 +932,8 @@ const Map<String, dynamic> kFakeZigbee = {
           {
             'property': 'color_temp_startup',
             'label': 'Farbtemperatur beim Einschalten',
-            'help': 'Mit welcher Farbtemperatur das Licht nach Stromzufuhr startet.',
+            'help':
+                'Mit welcher Farbtemperatur das Licht nach Stromzufuhr startet.',
             'area': 'settings',
             'group': 'Verhalten nach Stromausfall',
             'type': 'numeric',
@@ -972,7 +979,8 @@ const Map<String, dynamic> kFakeZigbee = {
           {
             'property': 'power_on_behavior',
             'label': 'Zustand nach Stromausfall',
-            'help': 'Ob das Gerät nach einem Stromausfall an, aus oder im letzten Zustand startet.',
+            'help':
+                'Ob das Gerät nach einem Stromausfall an, aus oder im letzten Zustand startet.',
             'area': 'settings',
             'group': 'Verhalten nach Stromausfall',
             'type': 'enum',
@@ -1415,7 +1423,8 @@ const Map<String, dynamic> kFakeZigbee = {
           {
             'property': 'do_not_disturb',
             'label': 'Nicht stören',
-            'help': 'Schaltet den Nicht-stören-Modus des Geräts ein (Verhalten laut Hersteller, ungeprüft).',
+            'help':
+                'Schaltet den Nicht-stören-Modus des Geräts ein (Verhalten laut Hersteller, ungeprüft).',
             'area': 'settings',
             'group': 'Verhalten',
             'type': 'binary',
@@ -1512,7 +1521,8 @@ const Map<String, dynamic> kFakeZigbee = {
           {
             'property': 'sensitivity',
             'label': 'Empfindlichkeit',
-            'help': 'Wie schnell der Sensor Bewegung erkennt. Hoch reagiert auch auf kleine Bewegungen.',
+            'help':
+                'Wie schnell der Sensor Bewegung erkennt. Hoch reagiert auch auf kleine Bewegungen.',
             'area': 'settings',
             'group': 'Erkennung',
             'type': 'enum',
@@ -1527,7 +1537,8 @@ const Map<String, dynamic> kFakeZigbee = {
           {
             'property': 'keep_time',
             'label': 'Haltezeit',
-            'help': 'Wie lange der Sensor nach der letzten Bewegung noch \'Bewegung\' meldet.',
+            'help':
+                'Wie lange der Sensor nach der letzten Bewegung noch \'Bewegung\' meldet.',
             'area': 'settings',
             'group': 'Erkennung',
             'type': 'enum',
@@ -1543,7 +1554,8 @@ const Map<String, dynamic> kFakeZigbee = {
           {
             'property': 'illuminance_interval',
             'label': 'Messintervall Helligkeit',
-            'help': 'Wie oft der Sensor die Umgebungshelligkeit meldet (in Minuten).',
+            'help':
+                'Wie oft der Sensor die Umgebungshelligkeit meldet (in Minuten).',
             'area': 'settings',
             'group': 'Messung',
             'type': 'numeric',
@@ -1830,7 +1842,8 @@ const Map<String, dynamic> kFakeZigbee = {
           {
             'property': 'operation_mode',
             'label': 'Tastenmodus',
-            'help': 'Befehle: Der Taster steuert verbundene Lampen direkt. Ereignisse: Er meldet nur, was gedrückt wurde.',
+            'help':
+                'Befehle: Der Taster steuert verbundene Lampen direkt. Ereignisse: Er meldet nur, was gedrückt wurde.',
             'area': 'settings',
             'group': 'Tasten',
             'type': 'enum',
@@ -2094,7 +2107,8 @@ const Map<String, dynamic> kFakeZigbee = {
           {
             'property': 'color_temp_startup',
             'label': 'Farbtemperatur beim Einschalten',
-            'help': 'Mit welcher Farbtemperatur das Licht nach Stromzufuhr startet.',
+            'help':
+                'Mit welcher Farbtemperatur das Licht nach Stromzufuhr startet.',
             'area': 'settings',
             'group': 'Verhalten nach Stromausfall',
             'type': 'numeric',
@@ -2140,7 +2154,8 @@ const Map<String, dynamic> kFakeZigbee = {
           {
             'property': 'power_on_behavior',
             'label': 'Zustand nach Stromausfall',
-            'help': 'Ob das Gerät nach einem Stromausfall an, aus oder im letzten Zustand startet.',
+            'help':
+                'Ob das Gerät nach einem Stromausfall an, aus oder im letzten Zustand startet.',
             'area': 'settings',
             'group': 'Verhalten nach Stromausfall',
             'type': 'enum',
@@ -2404,7 +2419,8 @@ const Map<String, dynamic> kFakeZigbee = {
           {
             'property': 'color_temp_startup',
             'label': 'Farbtemperatur beim Einschalten',
-            'help': 'Mit welcher Farbtemperatur das Licht nach Stromzufuhr startet.',
+            'help':
+                'Mit welcher Farbtemperatur das Licht nach Stromzufuhr startet.',
             'area': 'settings',
             'group': 'Verhalten nach Stromausfall',
             'type': 'numeric',
@@ -2450,7 +2466,8 @@ const Map<String, dynamic> kFakeZigbee = {
           {
             'property': 'power_on_behavior',
             'label': 'Zustand nach Stromausfall',
-            'help': 'Ob das Gerät nach einem Stromausfall an, aus oder im letzten Zustand startet.',
+            'help':
+                'Ob das Gerät nach einem Stromausfall an, aus oder im letzten Zustand startet.',
             'area': 'settings',
             'group': 'Verhalten nach Stromausfall',
             'type': 'enum',
@@ -2701,7 +2718,8 @@ const Map<String, dynamic> kFakeZigbee = {
           {
             'property': 'do_not_disturb',
             'label': 'Nicht stören',
-            'help': 'Schaltet den Nicht-stören-Modus des Geräts ein (Verhalten laut Hersteller, ungeprüft).',
+            'help':
+                'Schaltet den Nicht-stören-Modus des Geräts ein (Verhalten laut Hersteller, ungeprüft).',
             'area': 'settings',
             'group': 'Verhalten',
             'type': 'binary',
@@ -2906,7 +2924,8 @@ const Map<String, dynamic> kFakeZigbee = {
           {
             'property': 'color_temp_startup',
             'label': 'Farbtemperatur beim Einschalten',
-            'help': 'Mit welcher Farbtemperatur das Licht nach Stromzufuhr startet.',
+            'help':
+                'Mit welcher Farbtemperatur das Licht nach Stromzufuhr startet.',
             'area': 'settings',
             'group': 'Verhalten nach Stromausfall',
             'type': 'numeric',
@@ -2952,7 +2971,8 @@ const Map<String, dynamic> kFakeZigbee = {
           {
             'property': 'power_on_behavior',
             'label': 'Zustand nach Stromausfall',
-            'help': 'Ob das Gerät nach einem Stromausfall an, aus oder im letzten Zustand startet.',
+            'help':
+                'Ob das Gerät nach einem Stromausfall an, aus oder im letzten Zustand startet.',
             'area': 'settings',
             'group': 'Verhalten nach Stromausfall',
             'type': 'enum',
@@ -3201,7 +3221,8 @@ const Map<String, dynamic> kFakeZigbee = {
           {
             'property': 'operation_mode',
             'label': 'Tastenmodus',
-            'help': 'Befehle: Der Taster steuert verbundene Lampen direkt. Ereignisse: Er meldet nur, was gedrückt wurde.',
+            'help':
+                'Befehle: Der Taster steuert verbundene Lampen direkt. Ereignisse: Er meldet nur, was gedrückt wurde.',
             'area': 'settings',
             'group': 'Tasten',
             'type': 'enum',
@@ -3316,7 +3337,8 @@ const Map<String, dynamic> kFakeZigbee = {
           {
             'property': 'do_not_disturb',
             'label': 'Nicht stören',
-            'help': 'Schaltet den Nicht-stören-Modus des Geräts ein (Verhalten laut Hersteller, ungeprüft).',
+            'help':
+                'Schaltet den Nicht-stören-Modus des Geräts ein (Verhalten laut Hersteller, ungeprüft).',
             'area': 'settings',
             'group': 'Verhalten',
             'type': 'binary',
@@ -3416,7 +3438,8 @@ const Map<String, dynamic> kFakeZigbee = {
           {
             'property': 'do_not_disturb',
             'label': 'Nicht stören',
-            'help': 'Schaltet den Nicht-stören-Modus des Geräts ein (Verhalten laut Hersteller, ungeprüft).',
+            'help':
+                'Schaltet den Nicht-stören-Modus des Geräts ein (Verhalten laut Hersteller, ungeprüft).',
             'area': 'settings',
             'group': 'Verhalten',
             'type': 'binary',
@@ -3552,7 +3575,8 @@ const Map<String, dynamic> kFakeZigbee = {
           {
             'property': 'power_outage_memory',
             'label': 'Zustand nach Stromausfall',
-            'help': 'Ob die Steckdose nach einem Stromausfall an, aus oder im letzten Zustand startet.',
+            'help':
+                'Ob die Steckdose nach einem Stromausfall an, aus oder im letzten Zustand startet.',
             'area': 'settings',
             'group': 'Verhalten nach Stromausfall',
             'type': 'enum',
@@ -3568,7 +3592,8 @@ const Map<String, dynamic> kFakeZigbee = {
           {
             'property': 'switch_type_button',
             'label': 'Tasterauslösung',
-            'help': 'Wann der Taster am Gerät auslöst (ungeprüft: Bedeutung laut Hersteller).',
+            'help':
+                'Wann der Taster am Gerät auslöst (ungeprüft: Bedeutung laut Hersteller).',
             'area': 'settings',
             'group': 'Verhalten',
             'type': 'enum',
@@ -3583,7 +3608,8 @@ const Map<String, dynamic> kFakeZigbee = {
           {
             'property': 'indicator_mode',
             'label': 'LED-Modus',
-            'help': 'Wann die LED am Gerät leuchtet. Bedeutung der Zwischenwerte laut Hersteller, ungeprüft.',
+            'help':
+                'Wann die LED am Gerät leuchtet. Bedeutung der Zwischenwerte laut Hersteller, ungeprüft.',
             'area': 'settings',
             'group': 'Anzeige',
             'type': 'enum',
@@ -3796,7 +3822,8 @@ const Map<String, dynamic> kFakeZigbee = {
           {
             'property': 'do_not_disturb',
             'label': 'Nicht stören',
-            'help': 'Schaltet den Nicht-stören-Modus des Geräts ein (Verhalten laut Hersteller, ungeprüft).',
+            'help':
+                'Schaltet den Nicht-stören-Modus des Geräts ein (Verhalten laut Hersteller, ungeprüft).',
             'area': 'settings',
             'group': 'Verhalten',
             'type': 'binary',
@@ -3903,7 +3930,8 @@ const Map<String, dynamic> kFakeZigbee = {
           {
             'property': 'power_on_behavior',
             'label': 'Zustand nach Stromausfall',
-            'help': 'Ob das Gerät nach einem Stromausfall an, aus oder im letzten Zustand startet.',
+            'help':
+                'Ob das Gerät nach einem Stromausfall an, aus oder im letzten Zustand startet.',
             'area': 'settings',
             'group': 'Verhalten nach Stromausfall',
             'type': 'enum',
@@ -3959,7 +3987,8 @@ const Map<String, dynamic> kFakeZigbee = {
           {
             'property': 'delayed_power_on_time',
             'label': 'Wartezeit bis Einschalten',
-            'help': 'Wie lange nach Stromzufuhr gewartet wird, bevor das Gerät einschaltet.',
+            'help':
+                'Wie lange nach Stromzufuhr gewartet wird, bevor das Gerät einschaltet.',
             'area': 'settings',
             'group': 'Verhalten nach Stromausfall',
             'type': 'numeric',
@@ -3974,7 +4003,8 @@ const Map<String, dynamic> kFakeZigbee = {
           {
             'property': 'detach_relay_mode',
             'label': 'Relais vom Taster trennen',
-            'help': 'Der Taster am Gerät schaltet das Relais nicht mehr direkt, sondern meldet nur Aktionen.',
+            'help':
+                'Der Taster am Gerät schaltet das Relais nicht mehr direkt, sondern meldet nur Aktionen.',
             'area': 'settings',
             'group': 'Verhalten',
             'type': 'binary',
@@ -3987,7 +4017,8 @@ const Map<String, dynamic> kFakeZigbee = {
           {
             'property': 'external_trigger_mode',
             'label': 'Schalteingang-Modus',
-            'help': 'Wie der angeschlossene Schalter oder Taster das Relais steuert.',
+            'help':
+                'Wie der angeschlossene Schalter oder Taster das Relais steuert.',
             'area': 'settings',
             'group': 'Verhalten',
             'type': 'enum',
@@ -4004,7 +4035,8 @@ const Map<String, dynamic> kFakeZigbee = {
           {
             'property': 'inching_control_set',
             'label': 'Impulsbetrieb (Inching)',
-            'help': 'Schaltet das Relais nach kurzer Zeit automatisch zurück, etwa für Türdrückerrelais.',
+            'help':
+                'Schaltet das Relais nach kurzer Zeit automatisch zurück, etwa für Türdrückerrelais.',
             'area': 'settings',
             'group': 'Zeitsteuerung',
             'type': 'composite',
@@ -4171,7 +4203,8 @@ const Map<String, dynamic> kFakeZigbee = {
           {
             'property': 'temperature_calibration',
             'label': 'Temperatur abgleichen',
-            'help': 'Wert, der zur gemessenen Temperatur addiert wird, falls der Sensor falsch liegt.',
+            'help':
+                'Wert, der zur gemessenen Temperatur addiert wird, falls der Sensor falsch liegt.',
             'area': 'settings',
             'group': 'Kalibrierung',
             'type': 'numeric',
@@ -4185,7 +4218,8 @@ const Map<String, dynamic> kFakeZigbee = {
           {
             'property': 'humidity_calibration',
             'label': 'Luftfeuchte abgleichen',
-            'help': 'Wert, der zur gemessenen Luftfeuchte addiert wird, falls der Sensor falsch liegt.',
+            'help':
+                'Wert, der zur gemessenen Luftfeuchte addiert wird, falls der Sensor falsch liegt.',
             'area': 'settings',
             'group': 'Kalibrierung',
             'type': 'numeric',
@@ -4199,7 +4233,8 @@ const Map<String, dynamic> kFakeZigbee = {
           {
             'property': 'fading_time',
             'label': 'Nachlaufzeit',
-            'help': 'Wie lange der Sensor nach dem Verlassen des Raums noch \'Anwesend\' meldet.',
+            'help':
+                'Wie lange der Sensor nach dem Verlassen des Raums noch \'Anwesend\' meldet.',
             'area': 'settings',
             'group': 'Erkennung',
             'type': 'numeric',
@@ -4225,7 +4260,8 @@ const Map<String, dynamic> kFakeZigbee = {
           {
             'property': 'illuminance_interval',
             'label': 'Messintervall Helligkeit',
-            'help': 'Wie oft der Sensor die Umgebungshelligkeit meldet (in Minuten).',
+            'help':
+                'Wie oft der Sensor die Umgebungshelligkeit meldet (in Minuten).',
             'area': 'settings',
             'group': 'Messung',
             'type': 'numeric',
@@ -4239,7 +4275,8 @@ const Map<String, dynamic> kFakeZigbee = {
           {
             'property': 'motion_detection_sensitivity',
             'label': 'Empfindlichkeit',
-            'help': 'Wie fein der Sensor Bewegung und Anwesenheit erkennt. Höher heisst empfindlicher.',
+            'help':
+                'Wie fein der Sensor Bewegung und Anwesenheit erkennt. Höher heisst empfindlicher.',
             'area': 'settings',
             'group': 'Erkennung',
             'type': 'numeric',
@@ -4468,5 +4505,6 @@ const Map<String, dynamic> kFakeZigbee = {
         'generic': [],
       },
     },
+    ...kFakeThermostatZigbee,
   ],
 };

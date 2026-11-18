@@ -8,6 +8,7 @@ import '../../core/theme/tokens.dart';
 import '../../data/models/floor_plan.dart';
 import '../../data/models/lamp.dart';
 import 'map_data.dart';
+import 'map_thermostat.dart';
 
 /// Marker einer Entity auf der Karte (Lampe, Temperatur, Schalter,
 /// Anwesenheit). Sichtbar ca. 32 dp, die Trefferfläche (48 dp) setzt die
@@ -42,6 +43,8 @@ class MapMarker extends ConsumerWidget {
             color: on ? onColorFor(rgbOf(fill)).asColor : hv.tx3,
           ),
         );
+      case FloorKind.temperature when entityId.startsWith('climate.'):
+        return ThermostatMarker(entityId: entityId);
       case FloorKind.temperature:
         final v = e?.number;
         return _Pill(

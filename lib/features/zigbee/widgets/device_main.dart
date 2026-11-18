@@ -11,6 +11,7 @@ import '../../../core/widgets/haven_switch.dart';
 import '../../../core/widgets/segmented.dart';
 import '../../../data/models/zigbee.dart';
 import '../../../data/room_view.dart';
+import '../../climate/thermostat_widgets.dart';
 import '../../room/widgets/brightness_slider.dart';
 import '../../room/widgets/color_controls.dart';
 import '../../room/widgets/light_control_list.dart';
@@ -42,6 +43,15 @@ class ZbMainFunction extends ConsumerWidget {
         return _SwitchMain(view: view, title: 'Schalter');
       case ZbType.climate:
         return _ClimateMain(view: view);
+      case ZbType.thermostat:
+        return ThermostatMain(
+          ieee: view.ieee,
+          entityId: view.entities
+              .where((e) => e.domain == 'climate')
+              .firstOrNull
+              ?.entityId,
+          compact: compact,
+        );
       case ZbType.motion:
       case ZbType.presence:
         return _PresenceMain(view: view, compact: compact);
@@ -245,8 +255,9 @@ class _LightMainState extends ConsumerState<_LightMain> {
                     axis: Axis.horizontal,
                     value: lamp.on ? lamp.brightness : 0,
                     colors: [
-                      colorOf(uiColor((255, 190, 120), dark: dark))
-                          .withValues(alpha: 0.9),
+                      colorOf(
+                        uiColor((255, 190, 120), dark: dark),
+                      ).withValues(alpha: 0.9),
                       hv.acc,
                     ],
                     onChanged: (v) =>
@@ -284,8 +295,9 @@ class _LightMainState extends ConsumerState<_LightMain> {
                     KelvinSlider(
                       kelvin:
                           lamp.kelvin ??
-                          rgbToKelvinApprox(lamp.color)
-                              .clamp(lamp.minKelvin, lamp.maxKelvin),
+                          rgbToKelvinApprox(
+                            lamp.color,
+                          ).clamp(lamp.minKelvin, lamp.maxKelvin),
                       min: lamp.minKelvin,
                       max: lamp.maxKelvin,
                       onChanged: (k) => _set(on: true, kelvin: k),

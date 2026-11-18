@@ -38,6 +38,10 @@ class SettingsStore implements LocalPrefs {
   static const _kUpdateRelease = 'update_latest_release';
   static const _kRoomOrder = 'home_room_order';
   static const _kMapLayer = 'map_layer';
+  static const _kMap3d = 'map_3d';
+  static const _kMap3dQuality = 'map_3d_quality';
+  static const _kMap3dPerspective = 'map_3d_perspective';
+  static const _kMap3dTilt = 'map_3d_tilt';
   static const _kGhostIgnored = 'ghost_ignored';
   static const _kGhostHint = 'ghost_hint_dismissed';
 
@@ -110,6 +114,22 @@ class SettingsStore implements LocalPrefs {
   /// Gewählte Kartenart (`MapLayer.name`), lokal gemerkt.
   String? get mapLayer => _p.getString(_kMapLayer);
   Future<void> setMapLayer(String name) => _p.setString(_kMapLayer, name);
+
+  /// 3D-Karte statt des flachen Grundrisses (wo das Gerät sie kann).
+  bool get map3d => _p.getBool(_kMap3d) ?? true;
+  Future<void> setMap3d(bool v) => _p.setBool(_kMap3d, v);
+
+  /// Qualitätsstufe der 3D-Karte (`low`, `medium`, `high`), `null`: Vorgabe.
+  String? get map3dQuality => _p.getString(_kMap3dQuality);
+  Future<void> setMap3dQuality(String v) => _p.setString(_kMap3dQuality, v);
+
+  /// Perspektivische statt orthographischer Kamera in der Schrägansicht.
+  bool get map3dPerspective => _p.getBool(_kMap3dPerspective) ?? false;
+  Future<void> setMap3dPerspective(bool v) => _p.setBool(_kMap3dPerspective, v);
+
+  /// Zuletzt gewählte Ansicht: schräg (Puppenhaus) statt Draufsicht.
+  bool get map3dTilt => _p.getBool(_kMap3dTilt) ?? false;
+  Future<void> setMap3dTilt(bool v) => _p.setBool(_kMap3dTilt, v);
 
   /// Ignorierte Geister-Geräte: IEEE → `last_seen`-Stempel (siehe
   /// `ghostStamp`), gelten bis zur nächsten Meldung.

@@ -33,10 +33,9 @@ const Map<String, List<String>> _extraRooms = {
 /// Räume der Sitzung und haben Vorrang. Verglichen wird wortweise, damit
 /// "Bad Lüftung" zum Bad gehört, "Badewanne" aber nicht.
 String? detectRoom(String name, [Iterable<String> knownRooms = const []]) {
-  final words = foldText(name)
-      .split(RegExp(r'[^a-z0-9-]+'))
-      .where((w) => w.isNotEmpty)
-      .toSet();
+  final words = foldText(
+    name,
+  ).split(RegExp(r'[^a-z0-9-]+')).where((w) => w.isNotEmpty).toSet();
   if (words.isEmpty) return null;
   for (final r in knownRooms) {
     if (words.contains(foldText(r))) return r;

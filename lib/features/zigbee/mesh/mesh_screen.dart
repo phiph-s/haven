@@ -233,7 +233,8 @@ class _ZigbeeMeshScreenState extends ConsumerState<ZigbeeMeshScreen> {
               if (_placing)
                 _Hint(
                   icon: Icons.open_with_rounded,
-                  text: 'Zieh den Koordinator dorthin, wo der Stick steckt. Die Lage wird im Grundriss gespeichert.',
+                  text:
+                      'Zieh den Koordinator dorthin, wo der Stick steckt. Die Lage wird im Grundriss gespeichert.',
                 ),
               Expanded(
                 child: Stack(
@@ -714,7 +715,8 @@ class _Empty extends StatelessWidget {
             ),
             const SizedBox(height: 12),
             Text(
-              data.error ?? 'Es gibt noch keine Netzkarte. Miss das Netz einmal, danach liegt sie in Home Assistant bereit.',
+              data.error ??
+                  'Es gibt noch keine Netzkarte. Miss das Netz einmal, danach liegt sie in Home Assistant bereit.',
               textAlign: TextAlign.center,
               style: HavenText.body.copyWith(color: hv.tx2),
             ),

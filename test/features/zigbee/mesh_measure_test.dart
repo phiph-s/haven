@@ -112,7 +112,10 @@ void main() {
     expect(old.status.running, isFalse);
     expect(old.status.lastError, isNull);
     expect(old.failedCount, 0);
-    expect(ZbMeasureStatus.fromJson(const {'last_error': ''}).lastError, isNull);
+    expect(
+      ZbMeasureStatus.fromJson(const {'last_error': ''}).lastError,
+      isNull,
+    );
   });
 
   test('Parsing: Start-Antwort und Ereignis', () {
@@ -158,45 +161,51 @@ void main() {
     }
   });
 
-  test('Gestartet: Messung läuft, App bleibt bedienbar, Ereignis beendet', () async {
-    final repo = _Repo();
-    final c = _container(repo);
-    await _settle();
-    expect(c.read(zigbeeMeshProvider).loaded, isTrue);
-    expect(c.read(zigbeeMeshProvider).refreshing, isFalse);
+  test(
+    'Gestartet: Messung läuft, App bleibt bedienbar, Ereignis beendet',
+    () async {
+      final repo = _Repo();
+      final c = _container(repo);
+      await _settle();
+      expect(c.read(zigbeeMeshProvider).loaded, isTrue);
+      expect(c.read(zigbeeMeshProvider).refreshing, isFalse);
 
-    expect(await c.read(zigbeeMeshProvider.notifier).refresh(), isNull);
-    var d = c.read(zigbeeMeshProvider);
-    expect(repo.starts, 1);
-    expect(d.refreshing, isTrue);
-    expect(d.legacy, isFalse);
-    expect(d.refreshStarted, isNotNull);
+      expect(await c.read(zigbeeMeshProvider.notifier).refresh(), isNull);
+      var d = c.read(zigbeeMeshProvider);
+      expect(repo.starts, 1);
+      expect(d.refreshing, isTrue);
+      expect(d.legacy, isFalse);
+      expect(d.refreshStarted, isNotNull);
 
-    // Fertig: Ereignis, dann neu laden und melden.
-    repo.current = _map(devices: 5, timestamp: '2026-11-16T11:05:00+00:00');
-    repo.results.add(const ZbMeasureResult(ok: true));
-    await _settle();
-    d = c.read(zigbeeMeshProvider);
-    expect(d.refreshing, isFalse);
-    expect(d.map!.nodes, hasLength(6));
-    expect(d.notice, 'Netz gemessen, 5 Geräte');
-    expect(d.error, isNull);
-  });
+      // Fertig: Ereignis, dann neu laden und melden.
+      repo.current = _map(devices: 5, timestamp: '2026-11-16T11:05:00+00:00');
+      repo.results.add(const ZbMeasureResult(ok: true));
+      await _settle();
+      d = c.read(zigbeeMeshProvider);
+      expect(d.refreshing, isFalse);
+      expect(d.map!.nodes, hasLength(6));
+      expect(d.notice, 'Netz gemessen, 5 Geräte');
+      expect(d.error, isNull);
+    },
+  );
 
-  test('Läuft schon: Öffnen zeigt die Messung sofort, Beginn aus der Integration', () async {
-    final repo = _Repo()
-      ..current = _map(running: true, startedAt: '2026-11-16T10:58:40+00:00');
-    final c = _container(repo);
-    await _settle();
-    final d = c.read(zigbeeMeshProvider);
-    expect(d.refreshing, isTrue);
-    expect(d.refreshStarted, DateTime.utc(2026, 11, 16, 10, 58, 40));
-    expect(d.map!.nodes, isNotEmpty); // alter Cache bleibt sichtbar
-    expect(d.legacy, isFalse);
-    // Zweiter Start ist wirkungslos.
-    expect(await c.read(zigbeeMeshProvider.notifier).refresh(), isNull);
-    expect(repo.starts, 0);
-  });
+  test(
+    'Läuft schon: Öffnen zeigt die Messung sofort, Beginn aus der Integration',
+    () async {
+      final repo = _Repo()
+        ..current = _map(running: true, startedAt: '2026-11-16T10:58:40+00:00');
+      final c = _container(repo);
+      await _settle();
+      final d = c.read(zigbeeMeshProvider);
+      expect(d.refreshing, isTrue);
+      expect(d.refreshStarted, DateTime.utc(2026, 11, 16, 10, 58, 40));
+      expect(d.map!.nodes, isNotEmpty); // alter Cache bleibt sichtbar
+      expect(d.legacy, isFalse);
+      // Zweiter Start ist wirkungslos.
+      expect(await c.read(zigbeeMeshProvider.notifier).refresh(), isNull);
+      expect(repo.starts, 0);
+    },
+  );
 
   test('Läuft schon (Start meldet running): übernimmt started_at', () async {
     final repo = _Repo()..startRunning = true;
@@ -228,22 +237,28 @@ void main() {
     expect(repo.loads, loads, reason: 'Abfragen enden mit der Messung');
   });
 
-  test('Fehler per Ereignis: Text der Integration, alter Cache bleibt', () async {
-    final repo = _Repo();
-    final c = _container(repo);
-    await _settle();
-    await c.read(zigbeeMeshProvider.notifier).refresh();
-    repo.results.add(
-      const ZbMeasureResult(ok: false, error: 'Gerät Lampe 1 nicht erreichbar'),
-    );
-    await _settle();
-    final d = c.read(zigbeeMeshProvider);
-    expect(d.refreshing, isFalse);
-    expect(d.error, contains('Gerät Lampe 1 nicht erreichbar'));
-    expect(d.map!.nodes, hasLength(4));
-    expect(d.map!.measuredAt, isNotNull);
-    expect(d.notice, isNull);
-  });
+  test(
+    'Fehler per Ereignis: Text der Integration, alter Cache bleibt',
+    () async {
+      final repo = _Repo();
+      final c = _container(repo);
+      await _settle();
+      await c.read(zigbeeMeshProvider.notifier).refresh();
+      repo.results.add(
+        const ZbMeasureResult(
+          ok: false,
+          error: 'Gerät Lampe 1 nicht erreichbar',
+        ),
+      );
+      await _settle();
+      final d = c.read(zigbeeMeshProvider);
+      expect(d.refreshing, isFalse);
+      expect(d.error, contains('Gerät Lampe 1 nicht erreichbar'));
+      expect(d.map!.nodes, hasLength(4));
+      expect(d.map!.measuredAt, isNotNull);
+      expect(d.notice, isNull);
+    },
+  );
 
   test('Fehler beim Öffnen: last_error der Integration', () async {
     final repo = _Repo()..current = _map(lastError: 'Keine Antwort');
@@ -301,7 +316,10 @@ void main() {
   });
 
   test('Neue Integration: Zeitüberschreitung nennt keinen Update-Hinweis', () {
-    final t = meshErrorText(HavenException('x', code: 'timeout'), refresh: true);
+    final t = meshErrorText(
+      HavenException('x', code: 'timeout'),
+      refresh: true,
+    );
     expect(t, isNot(contains(meshLegacyHint)));
   });
 

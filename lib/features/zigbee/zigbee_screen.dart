@@ -410,7 +410,9 @@ class _GhostHintCard extends ConsumerWidget {
       if (context.mounted) {
         zbToast(
           context,
-          restart ? 'Eingeschaltet. Starte Zigbee2MQTT neu, damit es greift.' : 'Eingeschaltet. Die Zeiten füllen sich mit den nächsten Meldungen.',
+          restart
+              ? 'Eingeschaltet. Starte Zigbee2MQTT neu, damit es greift.'
+              : 'Eingeschaltet. Die Zeiten füllen sich mit den nächsten Meldungen.',
         );
       }
     } catch (e) {

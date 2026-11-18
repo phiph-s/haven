@@ -123,11 +123,7 @@ class LaunchOverrides {
       path: '/map',
       queryParameters: time == null && inspect == null && tap == null
           ? null
-          : {
-              't': ?time,
-              'inspect': ?inspect,
-              'tap': ?tap,
-            },
+          : {'t': ?time, 'inspect': ?inspect, 'tap': ?tap},
     ).toString(),
     'floorplan_editor' =>
       '/map/editor?mode=${switch (preset) {

@@ -27,6 +27,9 @@ class PlacedReading {
     this.motionId,
     this.motion = false,
     this.motionSince,
+    this.thermostat = false,
+    this.setpoint,
+    this.heating = false,
   });
 
   /// Hauptentity der Platzierung (Knoten-ID auf der Karte).
@@ -44,6 +47,15 @@ class PlacedReading {
   final bool motion;
   final DateTime? motionSince;
 
+  /// Heizkörperthermostat (Climate-Entity): misst am Heizkörper.
+  final bool thermostat;
+
+  /// Zieltemperatur des Thermostats.
+  final double? setpoint;
+
+  /// Das Thermostat heizt gerade.
+  final bool heating;
+
   Offset get center => cell.center;
 
   @override
@@ -57,7 +69,10 @@ class PlacedReading {
       other.battery == battery &&
       other.motionId == motionId &&
       other.motion == motion &&
-      other.motionSince == motionSince;
+      other.motionSince == motionSince &&
+      other.thermostat == thermostat &&
+      other.setpoint == setpoint &&
+      other.heating == heating;
 
   @override
   int get hashCode => Object.hash(
@@ -70,6 +85,9 @@ class PlacedReading {
     motionId,
     motion,
     motionSince,
+    thermostat,
+    setpoint,
+    heating,
   );
 }
 
@@ -86,11 +104,20 @@ class MapReadings {
     return null;
   }
 
+  /// Werte für die Heatmap. Thermostate messen direkt am Heizkörper und
+  /// zählen nur in Räumen ohne eigenen Sensor.
   HeatData heat(HeatKind kind) {
     final by = <String, List<HeatSample>>{};
+    final sensed = {
+      for (final r in items)
+        if (!r.thermostat &&
+            (kind == HeatKind.temperature ? r.temp : r.hum) != null)
+          r.location,
+    };
     for (final r in items) {
       final v = kind == HeatKind.temperature ? r.temp : r.hum;
       if (v == null) continue;
+      if (r.thermostat && sensed.contains(r.location)) continue;
       (by[r.location] ??= []).add(HeatSample(r.center, v));
     }
     return HeatData.of(kind, by);
@@ -113,6 +140,9 @@ class MapReadings {
   @override
   int get hashCode => Object.hashAll(items);
 }
+
+double? _num(dynamic v) =>
+    v is num ? v.toDouble() : (v is String ? double.tryParse(v) : null);
 
 bool isMotionEntity(EntityState e) =>
     e.domain == 'binary_sensor' &&
@@ -174,8 +204,18 @@ final mapReadingsProvider = Provider.family<MapReadings, HavenFloorPlan>((
     double? hum;
     double? bat;
     EntityState? motion;
+    var thermostat = false;
+    double? setpoint;
+    var heating = false;
     for (final id in ids) {
       final e = s.entity(id);
+      if (e != null && e.domain == 'climate' && e.state != 'unavailable') {
+        thermostat = true;
+        setpoint ??= _num(e.attributes['temperature']);
+        heating = heating || e.attributes['hvac_action'] == 'heating';
+        temp ??= _num(e.attributes['current_temperature']);
+        continue;
+      }
       if (e == null || !e.isAvailable) continue;
       final n = e.number;
       switch (e.deviceClass) {
@@ -200,6 +240,9 @@ final mapReadingsProvider = Provider.family<MapReadings, HavenFloorPlan>((
         motionId: motion?.entityId,
         motion: motion?.isOn ?? false,
         motionSince: motion?.lastChanged,
+        thermostat: thermostat,
+        setpoint: setpoint,
+        heating: heating,
       ),
     );
   }

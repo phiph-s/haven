@@ -20,6 +20,8 @@ import '../automations/motion_widgets.dart';
 import '../zigbee/widgets/zb_common.dart' show showZbSheet;
 import '../zigbee/zigbee_providers.dart';
 import '../zigbee/zigbee_screen.dart' show zigbeeDevicePath;
+import '../climate/thermostat_providers.dart';
+import '../climate/thermostat_widgets.dart';
 import 'heatmap.dart';
 import 'map_actions.dart';
 import 'map_info.dart';
@@ -64,12 +66,24 @@ class MapPanelScope extends InheritedWidget {
 }
 
 /// Öffnet ein Panel als Sheet (Handy).
-Future<void> showMapPanel(BuildContext context, MapPanelSpec spec) {
+///
+/// [overMap]: das Sheet nimmt höchstens [kMapPanelShare] der Höhe ein und
+/// dunkelt kaum ab, darüber bleibt die Karte (mit dem Gerät im Blick) sichtbar.
+Future<void> showMapPanel(
+  BuildContext context,
+  MapPanelSpec spec, {
+  bool overMap = false,
+}) {
   return showZbSheet<void>(
     context,
+    maxHeight: overMap ? kMapPanelShare : 0.88,
+    barrier: overMap ? const Color(0x1A000000) : null,
     builder: (ctx) => MapPanelScope(sheet: true, child: spec.builder(ctx)),
   );
 }
+
+/// Anteil der Bildschirmhöhe für ein Panel über der 3D-Karte.
+const double kMapPanelShare = 0.64;
 
 /// Geht von einem Panel aus auf eine Seite. Im Sheet schließt es vorher.
 void _goFromPanel(BuildContext context, String path) {
@@ -806,10 +820,23 @@ class RoomClimatePanel extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final hv = context.hv;
     final readings = ref.watch(mapReadingsProvider(plan));
-    final mine = [
+    final measured = [
       for (final r in _inRoom(readings, room))
         if ((kind == HeatKind.temperature ? r.temp : r.hum) != null) r,
     ];
+    // Thermostate messen am Heizkörper: Gibt es einen Sensor, zählen sie
+    // nicht mit (wie in der Heatmap).
+    final hasSensor = measured.any((r) => !r.thermostat);
+    final mine = [
+      for (final r in measured)
+        if (!r.thermostat || !hasSensor) r,
+    ];
+    final thermostats = kind == HeatKind.temperature
+        ? [
+            for (final r in _inRoom(readings, room))
+              if (r.thermostat) r,
+          ]
+        : const <PlacedReading>[];
     double v(PlacedReading r) =>
         (kind == HeatKind.temperature ? r.temp : r.hum)!;
     String fmt(double x) =>
@@ -897,6 +924,63 @@ class RoomClimatePanel extends ConsumerWidget {
           if (kind == HeatKind.humidity && needsVenting(spread.mean))
             const _Hint('Zu feucht: Lüften hilft', icon: Icons.air_rounded),
         ],
+        if (thermostats.isNotEmpty) ...[
+          const SizedBox(height: 14),
+          Text('Heizung', style: HavenText.label.copyWith(color: hv.tx2)),
+          const SizedBox(height: 8),
+          for (final r in thermostats)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: ThermostatRow(
+                thermostat: thermostatRefFor(r.entityId, zb),
+              ),
+            ),
+          if (hasSensor)
+            Text(
+              'Thermostate messen direkt am Heizkörper und zählen hier nicht mit.',
+              style: HavenText.caption.copyWith(color: hv.tx3),
+            ),
+        ],
+      ],
+    );
+  }
+}
+
+// ---- Thermostat ----------------------------------------------------------------
+
+/// Thermostat auf der Karte: volle Bedienung wie im Gerät-Detail, dazu
+/// „Gerät öffnen“.
+class ThermostatPanel extends ConsumerWidget {
+  const ThermostatPanel({super.key, required this.entityId});
+  final String entityId;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final devices = ref.watch(zigbeeProvider.select((z) => z.devices));
+    final r = thermostatRefFor(entityId, devices);
+    final t = ref.watch(thermostatProvider(r));
+    final name =
+        t?.name ??
+        shortDeviceName(ref.watch(entityProvider(entityId))?.name ?? entityId);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        MapPanelHead(
+          title: name,
+          subtitle: t?.roomName == null
+              ? 'Thermostat'
+              : 'Thermostat · ${t!.roomName}',
+        ),
+        ThermostatControl(thermostat: r, dialSize: 220),
+        if (r.ieee != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 14),
+            child: HavenButton(
+              label: 'Gerät öffnen',
+              icon: Icons.open_in_new_rounded,
+              onTap: () => _goFromPanel(context, zigbeeDevicePath(r.ieee!)),
+            ),
+          ),
       ],
     );
   }

@@ -349,9 +349,9 @@ void main() {
       expect(find.text('Schwache'), findsOneWidget);
       expect(find.textContaining('gemessen vor'), findsOneWidget);
       expect(find.byType(MeshGraph), findsOneWidget);
-      // 21 Geräte und Koordinator, dazu der Gruppenknoten (zwei Lampen auf
+      // 23 Geräte und Koordinator, dazu der Gruppenknoten (zwei Lampen auf
       // einem Feld) mit seinem ersten Gerät.
-      expect(find.byType(MeshNodeDot), findsNWidgets(23));
+      expect(find.byType(MeshNodeDot), findsNWidgets(25));
 
       final target = find.byWidgetPredicate(
         (w) => w is MeshNodeDot && w.info.name == 'Kochbereich Arbeitslicht 1',

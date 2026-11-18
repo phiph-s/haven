@@ -761,18 +761,20 @@ class HaRepository extends BaseRepository {
         code: 'not_found',
       );
     }
-    final res = await client.send({
-      'type': 'haven/zigbee/scene_store',
-      'group_id': r!.zigbeeGroupId,
-      'scene_id': ?number,
-      'name': ?name,
-      'look': sceneLookOf(_sceneLamps(r)).toJson(),
-    }) as Map;
+    final res =
+        await client.send({
+              'type': 'haven/zigbee/scene_store',
+              'group_id': r!.zigbeeGroupId,
+              'scene_id': ?number,
+              'name': ?name,
+              'look': sceneLookOf(_sceneLamps(r)).toJson(),
+            })
+            as Map;
     final stored = (res['scene_id'] as num).toInt();
     await reloadRooms();
-    final scene = _room(roomId)?.scenes
-        .where((s) => s.number == stored)
-        .firstOrNull;
+    final scene = _room(
+      roomId,
+    )?.scenes.where((s) => s.number == stored).firstOrNull;
     if (scene != null) {
       _activeScenes[roomId] = scene.id;
       _pushNow();

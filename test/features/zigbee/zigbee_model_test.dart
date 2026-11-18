@@ -37,7 +37,7 @@ void main() {
   group('Parsing', () {
     test('alle Geräte der Beispielwohnung', () {
       final devs = _asset();
-      expect(devs, hasLength(21));
+      expect(devs, hasLength(23));
       for (final d in devs) {
         expect(d.ieee, startsWith('0x'));
         expect(d.classified.deviceType, isNot(ZbType.unknown));

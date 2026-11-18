@@ -19,6 +19,7 @@ import 'fake_automations.dart';
 import 'fake_data.dart';
 import 'fake_floor_plan.dart';
 import 'fake_rooms.dart';
+import 'fake_thermostat_sim.dart';
 import 'fake_updates.dart';
 import 'fake_zigbee.dart';
 
@@ -225,6 +226,11 @@ class FakeRepository extends BaseRepository {
       ];
     }
     _rooms = FakeRooms(inventory).derive(scenes: _sceneDefs);
+    for (final t in _thermostats.entries) {
+      _entities.addAll(
+        thermostatEntities(t.value, _zb.stateOf(t.key), _entities),
+      );
+    }
     // Melder: letzte Auslösung kurz vor dem Start (Anwesenheit auf der Karte).
     final now = DateTime.now();
     _motionAgo.forEach((id, min) {
@@ -877,9 +883,31 @@ class FakeRepository extends BaseRepository {
   }
 
   /// Leichte Bewegung in den Messwerten, damit Zahlen leben.
+  /// Thermostate: IEEE → Slug der Entities (`climate.<slug>`).
+  late final Map<String, String> _thermostats = {
+    for (final d in (inventory['z2m_devices'] as List))
+      if (d['device_type'] == 'thermostat')
+        for (final id in (d['entities'] as Map).keys.cast<String>())
+          if (id.startsWith('climate.'))
+            d['ieee'] as String: id.substring('climate.'.length),
+  };
+
+  void _syncThermostat(String ieee) {
+    final slug = _thermostats[ieee];
+    if (slug == null) return;
+    _entities.addAll(thermostatEntities(slug, _zb.stateOf(ieee), _entities));
+  }
+
   void _tick() {
     var changed = false;
     _motionTick++;
+    for (final ieee in _thermostats.keys) {
+      final step = thermostatStep(_zb.stateOf(ieee), _motionTick);
+      if (step.isEmpty) continue;
+      _zb.update(ieee, step);
+      _syncThermostat(ieee);
+      changed = true;
+    }
     _motionPattern.forEach((id, p) {
       final e = _entities[id];
       if (e == null) return;
@@ -918,8 +946,18 @@ class FakeRepository extends BaseRepository {
   @override
   Future<Map<String, Map<String, dynamic>>> zigbeeStates() => _zb.states();
   @override
-  Future<void> zigbeeSet(String ieee, Map<String, dynamic> values) =>
-      _zb.set(ieee, values);
+  Future<void> zigbeeSet(String ieee, Map<String, dynamic> values) async {
+    if (!_thermostats.containsKey(ieee)) return _zb.set(ieee, values);
+    final derived = thermostatDerived(
+      _zb.stateOf(ieee),
+      values,
+      DateTime.now(),
+    );
+    await _zb.set(ieee, {...values, ...derived});
+    _syncThermostat(ieee);
+    _push();
+  }
+
   @override
   Future<void> zigbeeRename(
     String ieee,

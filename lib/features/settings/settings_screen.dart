@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:haven_3d/haven_3d.dart' show SceneQuality;
 import 'package:go_router/go_router.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -10,10 +11,12 @@ import '../../core/state/providers.dart';
 import '../../core/theme/tokens.dart';
 import '../../core/widgets/haven_button.dart';
 import '../../core/widgets/haven_card.dart';
+import '../../core/widgets/haven_switch.dart';
 import '../../core/widgets/segmented.dart';
 import '../../data/models/room.dart';
 import '../../data/models/snapshot.dart';
 import '../ha_web/ha_web_screen.dart';
+import '../map/map_3d.dart';
 import '../map/map_routes.dart';
 import '../updates/app_update_provider.dart';
 import '../updates/app_update_widgets.dart';
@@ -222,6 +225,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                       ],
                     ),
             ),
+            if (ref.watch(map3dSupportedProvider).value ?? false) ...[
+              section('Karte'),
+              pad(const _Map3DSettings()),
+            ],
             section('Zuhause'),
             pad(
               SettingsGroup(
@@ -438,6 +445,72 @@ class _AboutSheet extends StatelessWidget {
           textAlign: TextAlign.center,
           style: HavenText.body.copyWith(color: hv.tx2),
         ),
+      ],
+    );
+  }
+}
+
+/// 3D-Karte: an/aus, Qualität, Perspektive.
+class _Map3DSettings extends ConsumerWidget {
+  const _Map3DSettings();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final hv = context.hv;
+    final s = ref.watch(map3dSettingsProvider);
+    final n = ref.read(map3dSettingsProvider.notifier);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        SettingsGroup(
+          children: [
+            SettingsRow(
+              icon: Icons.view_in_ar_rounded,
+              title: '3D-Karte',
+              subtitle: s.enabled
+                  ? 'Räume mit Höhe, Möbeln und echtem Licht'
+                  : 'Flacher Grundriss',
+              trailing: HavenSwitch(
+                value: s.enabled,
+                onChanged: n.setEnabled,
+                semanticLabel: '3D-Karte',
+              ),
+              onTap: () => n.setEnabled(!s.enabled),
+            ),
+            if (s.enabled)
+              SettingsRow(
+                icon: Icons.photo_camera_outlined,
+                title: 'Perspektive',
+                subtitle: 'In der Schrägansicht wie mit einer Kamera',
+                trailing: HavenSwitch(
+                  value: s.perspective,
+                  onChanged: n.setPerspective,
+                  semanticLabel: 'Perspektive',
+                ),
+                onTap: () => n.setPerspective(!s.perspective),
+              ),
+          ],
+        ),
+        if (s.enabled) ...[
+          const SizedBox(height: 12),
+          HavenSegmented<SceneQuality>(
+            options: const [
+              (SceneQuality.low, 'Sparsam'),
+              (SceneQuality.medium, 'Ausgewogen'),
+              (SceneQuality.high, 'Hoch'),
+            ],
+            selected: s.quality,
+            onChanged: n.setQuality,
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(4, 10, 4, 0),
+            child: Text(
+              'Sparsam schont Akku und ältere Geräte, Hoch glättet Kanten und '
+              'rechnet das Licht feiner.',
+              style: HavenText.caption.copyWith(color: hv.tx2),
+            ),
+          ),
+        ],
       ],
     );
   }

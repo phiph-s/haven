@@ -156,7 +156,8 @@ class _ZigbeePairScreenState extends ConsumerState<ZigbeePairScreen>
           _tick?.cancel();
           _stopSearch();
           setState(() {
-            _error = 'Das Gerät hat sich gemeldet, aber die Einrichtung ist fehlgeschlagen. Setze es zurück und versuche es noch einmal.';
+            _error =
+                'Das Gerät hat sich gemeldet, aber die Einrichtung ist fehlgeschlagen. Setze es zurück und versuche es noch einmal.';
             _phase = _Phase.failed;
           });
         }
@@ -348,7 +349,8 @@ class _ZigbeePairScreenState extends ConsumerState<ZigbeePairScreen>
       context,
       icon: Icons.search_off_rounded,
       title: 'Nichts gefunden',
-      text: 'In 4 Minuten hat sich kein Gerät gemeldet. Prüfe, ob das Gerät wirklich blinkt, und rücke näher an einen Router heran.',
+      text:
+          'In 4 Minuten hat sich kein Gerät gemeldet. Prüfe, ob das Gerät wirklich blinkt, und rücke näher an einen Router heran.',
       action: 'Nochmal suchen',
       onAction: _startSearch,
     ),
@@ -687,7 +689,8 @@ class _ZigbeePairScreenState extends ConsumerState<ZigbeePairScreen>
         ),
         const SizedBox(height: 6),
         Text(
-          _model ?? 'Haven richtet es gerade ein. Das dauert meist ein paar Sekunden.',
+          _model ??
+              'Haven richtet es gerade ein. Das dauert meist ein paar Sekunden.',
           textAlign: TextAlign.center,
           style: HavenText.body.copyWith(color: hv.tx2),
         ),

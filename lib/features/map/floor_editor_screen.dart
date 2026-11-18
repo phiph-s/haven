@@ -2183,8 +2183,9 @@ class DragLabel extends StatelessWidget {
         border: Border.all(color: hv.ln2),
         boxShadow: [
           BoxShadow(
-            color: const Color(0xFF000000)
-                .withValues(alpha: hv.isDark ? 0.5 : 0.16),
+            color: const Color(
+              0xFF000000,
+            ).withValues(alpha: hv.isDark ? 0.5 : 0.16),
             blurRadius: 18,
             offset: const Offset(0, 6),
           ),

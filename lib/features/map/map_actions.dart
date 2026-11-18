@@ -10,6 +10,9 @@ enum MapTarget {
   /// Steckdose oder Relais.
   plug,
   climateSensor,
+
+  /// Heizkörperthermostat.
+  thermostat,
   motionSensor,
   contactSensor,
 
@@ -30,6 +33,9 @@ enum MapTapAction {
 
   /// Kompaktes Info-Sheet mit Messwert, Verlauf, Batterie.
   openClimateSheet,
+
+  /// Thermostat bedienen: Zieltemperatur, Betriebsart, Zustand.
+  openThermostat,
   openMotionSheet,
   openBatterySheet,
 
@@ -61,6 +67,7 @@ MapTapAction mapTapAction(MapLayer layer, MapTarget target) {
         MapTarget.lamp => MapTapAction.toggleLamp,
         MapTarget.plug => MapTapAction.togglePlug,
         MapTarget.climateSensor => MapTapAction.openClimateSheet,
+        MapTarget.thermostat => MapTapAction.openThermostat,
         MapTarget.motionSensor => MapTapAction.openMotionSheet,
         MapTarget.contactSensor ||
         MapTarget.control ||
@@ -78,6 +85,8 @@ MapTapAction mapTapAction(MapLayer layer, MapTarget target) {
     case MapLayer.humidity:
       return isRoom
           ? MapTapAction.openRoomClimate
+          : target == MapTarget.thermostat
+          ? MapTapAction.openThermostat
           : MapTapAction.openClimateSheet;
     case MapLayer.presence:
       return isRoom
@@ -117,9 +126,12 @@ MapHoldAction mapSecondaryAction(MapLayer layer, MapTarget target) =>
     target == MapTarget.room ? MapHoldAction.none : MapHoldAction.openDevice;
 
 /// Zieltyp eines platzierten Geräts. Der Zigbee-Typ ([zbType], `ZbType.*`)
-/// hat Vorrang, sonst entscheidet die Art der Platzierung.
-MapTarget mapTargetOf(FloorKind kind, {String? zbType}) {
+/// hat Vorrang, dann eine Climate-Entity ([entityId]), sonst entscheidet die
+/// Art der Platzierung.
+MapTarget mapTargetOf(FloorKind kind, {String? zbType, String? entityId}) {
   switch (zbType) {
+    case ZbType.thermostat:
+      return MapTarget.thermostat;
     case ZbType.light:
       return MapTarget.lamp;
     case ZbType.plug || ZbType.switch_ || ZbType.relay:
@@ -132,6 +144,9 @@ MapTarget mapTargetOf(FloorKind kind, {String? zbType}) {
       return MapTarget.contactSensor;
     case ZbType.knob || ZbType.remote:
       return MapTarget.control;
+  }
+  if (entityId != null && entityId.startsWith('climate.')) {
+    return MapTarget.thermostat;
   }
   return switch (kind) {
     FloorKind.light => MapTarget.lamp,

@@ -20,6 +20,7 @@ import 'zigbee_model.dart';
 import 'zigbee_providers.dart';
 import 'zigbee_selection.dart';
 import '../automations/knob_widgets.dart' show KnobAutomationLink;
+import '../climate/thermostat_settings.dart';
 
 /// Gerät-Detail im Vollbild: Kopf, Hauptfunktion, Einstellungen, Diagnose,
 /// Rohdaten und Aktionen.
@@ -155,7 +156,10 @@ class _Body extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final hv = context.hv;
-    final hasSettings = classified.groupedSettings.isNotEmpty;
+    final thermostat = view.type == ZbType.thermostat;
+    final hasSettings = thermostat
+        ? ThermostatSettingsSection.hasAny(classified)
+        : classified.groupedSettings.isNotEmpty;
     return ListView(
       padding: const EdgeInsets.fromLTRB(
         HavenSpace.page,
@@ -173,7 +177,10 @@ class _Body extends ConsumerWidget {
           const SizedBox(height: 26),
           const SectionHeader('Einstellungen'),
           const SizedBox(height: 12),
-          ZbSettingsSection(view: view, classified: classified),
+          if (thermostat)
+            ThermostatSettingsSection(view: view, classified: classified)
+          else
+            ZbSettingsSection(view: view, classified: classified),
         ] else
           const SizedBox(height: 10),
         const SectionHeader('Diagnose'),
@@ -700,7 +707,8 @@ class _Actions extends ConsumerWidget {
     final ok = await confirmSheet(
       context,
       title: 'Neu einrichten',
-      text: 'Haven fragt das Gerät noch einmal nach seinen Funktionen. Das hilft, wenn Einstellungen fehlen. Bei Batteriegeräten vorher kurz einen Knopf drücken, damit es wach ist.',
+      text:
+          'Haven fragt das Gerät noch einmal nach seinen Funktionen. Das hilft, wenn Einstellungen fehlen. Bei Batteriegeräten vorher kurz einen Knopf drücken, damit es wach ist.',
       action: 'Starten',
     );
     if (!ok || !context.mounted) return;

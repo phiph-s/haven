@@ -74,10 +74,14 @@ List<EntityState> buildFakeUpdateEntities() => [
 
 /// Versionshinweise der erfundenen Updates (Markdown).
 const Map<String, String> kFakeReleaseNotes = {
-  'update.home_assistant_core_update': '## Änderungen\n\n- Neue Übersetzungen für den Zeitplan\n- Korrektur für **Szenen**, die beim Start doppelt liefen\n- Schnellerer Start der Datenbank\n\nMehr dazu in den `Versionshinweisen` auf der Webseite.',
-  'update.mqtt_broker_update': '## 6.5.0\n\n- Neue Option `retain_limit`\n- Sicherheitskorrekturen\n\n1. Broker neu starten\n2. Verbindungen prüfen',
-  'update.sonnenstand_update': '## Neu\n\n- Sensor für **Mondphase**\n- Dämmerung bürgerlich, nautisch und astronomisch\n\n## Korrekturen\n\n- Zeitzonen mit Sommerzeit',
-  'update.haven_update': '## Haven 0.3.0\n\n- Updates in der App\n- Neue Befehle für die Integration\n\nDie App prüft beim Start auf neue Versionen.',
+  'update.home_assistant_core_update':
+      '## Änderungen\n\n- Neue Übersetzungen für den Zeitplan\n- Korrektur für **Szenen**, die beim Start doppelt liefen\n- Schnellerer Start der Datenbank\n\nMehr dazu in den `Versionshinweisen` auf der Webseite.',
+  'update.mqtt_broker_update':
+      '## 6.5.0\n\n- Neue Option `retain_limit`\n- Sicherheitskorrekturen\n\n1. Broker neu starten\n2. Verbindungen prüfen',
+  'update.sonnenstand_update':
+      '## Neu\n\n- Sensor für **Mondphase**\n- Dämmerung bürgerlich, nautisch und astronomisch\n\n## Korrekturen\n\n- Zeitzonen mit Sommerzeit',
+  'update.haven_update':
+      '## Haven 0.3.0\n\n- Updates in der App\n- Neue Befehle für die Integration\n\nDie App prüft beim Start auf neue Versionen.',
 };
 
 /// Release-Antworten der GitHub-API für die Entwicklungsdaten, damit die

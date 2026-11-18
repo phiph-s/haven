@@ -233,16 +233,19 @@ Future<T?> showZbSheet<T>(
   BuildContext context, {
   required WidgetBuilder builder,
   bool scroll = true,
+  double maxHeight = 0.88,
+  Color? barrier,
 }) {
   return showHavenModalSheet<T>(
     context,
+    barrier: barrier,
     builder: (ctx) {
       final hv = ctx.hv;
       final media = MediaQuery.of(ctx);
       return Padding(
         padding: EdgeInsets.only(bottom: media.viewInsets.bottom),
         child: ConstrainedBox(
-          constraints: BoxConstraints(maxHeight: media.size.height * 0.88),
+          constraints: BoxConstraints(maxHeight: media.size.height * maxHeight),
           child: DecoratedBox(
             decoration: BoxDecoration(
               color: hv.s1,

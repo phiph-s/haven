@@ -36,8 +36,9 @@ class AccentScope extends StatelessWidget {
       curve: Curves.easeInOut,
       child: child,
       builder: (context, a, child) => Theme(
-        data: Theme.of(context)
-            .copyWith(extensions: [base.withAccent(a.acc, a.acc2, a.on)]),
+        data: Theme.of(
+          context,
+        ).copyWith(extensions: [base.withAccent(a.acc, a.acc2, a.on)]),
         child: child!,
       ),
     );

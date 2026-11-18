@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/rendering.dart';
 import 'package:go_router/go_router.dart';
+import 'package:haven_3d/haven_3d.dart' as h3 show SceneHeatmap;
 import 'package:material_ui/material_ui.dart';
 
 import '../../core/adaptive/breakpoints.dart';
@@ -40,11 +41,13 @@ import 'map_layer_widgets.dart';
 import 'map_inspector.dart';
 import 'map_info.dart';
 import 'map_layers.dart';
+import 'map_3d.dart';
 import 'map_light_controls.dart';
 import 'map_markers.dart';
 import 'map_panels.dart';
 import 'map_painters.dart';
 import 'map_readings.dart';
+import 'map_thermostat.dart';
 import 'map_routes.dart';
 
 /// Karte: Grundriss mit Kartenarten (Licht, Temperatur, Luftfeuchte,
@@ -276,6 +279,23 @@ class _MapBodyState extends ConsumerState<_MapBody> {
   double _topH = 96;
   double _bottomH = 200;
 
+  // ---- 3D --------------------------------------------------------------------
+
+  /// Handy: Raum im Fokus (die Karte unten zeigt ihn, Kamera fährt hin).
+  String? _focusRoom;
+
+  /// Raum, der sich aufrichtet (Fokus auf Raum oder Gerät).
+  String? _raised;
+
+  /// Zählt Fokuswechsel: ein spät geschlossenes Panel stellt nichts zurück,
+  /// wenn inzwischen etwas anderes passiert ist.
+  int _focusTick = 0;
+  double _mapH = 800;
+
+  /// Desktop: Raum des offenen Geräte-Panels und zuletzt angefahrener Raum.
+  String? _panelRoom;
+  String? _deskFocus;
+
   // Bewegung: Zeitstrahl und Takt fürs Abklingen.
   late double _minutes = widget.startMinutes ?? 0;
   Timer? _clock;
@@ -369,22 +389,89 @@ class _MapBodyState extends ConsumerState<_MapBody> {
     final zb = zbDeviceForEntity(ref.read(zigbeeProvider).devices, id);
     final kind =
         widget.plan.placementOf(id)?.resolvedKind ?? FloorKind.ofEntity(id);
-    return mapTargetOf(kind, zbType: zb?.deviceType);
+    return mapTargetOf(kind, zbType: zb?.deviceType, entityId: id);
   }
 
   /// Zeigt ein Panel: auf dem Handy als Sheet, auf dem Desktop im Inspektor
   /// als Details eines Geräts (zweite Ebene, zurück führt zur Raumliste).
-  void _openPanel(MapPanelSpec spec) {
+  ///
+  /// In 3D fährt die Kamera dabei zum Raum [roomId] (er richtet sich auf),
+  /// das Panel nimmt unten zwei Drittel ein. Beim Schließen fährt sie zurück.
+  void _openPanel(MapPanelSpec spec, {String? roomId}) {
     Haptics.tick();
     if (context.isDesktopLayout) {
       setState(() {
         _panel = spec;
         _inspect = null;
+        _panelRoom = roomId;
       });
+    } else if (_use3d) {
+      unawaited(_panel3d(spec, roomId));
     } else {
       unawaited(showMapPanel(context, spec));
     }
   }
+
+  bool get _use3d =>
+      ref.read(mapLayerProvider) != MapLayer.network &&
+      ref.read(map3dSettingsProvider).enabled &&
+      (ref.read(map3dSupportedProvider).value ?? false);
+
+  Future<void> _panel3d(MapPanelSpec spec, String? roomId) async {
+    final tick = ++_focusTick;
+    if (roomId != null) _focus3d(roomId, panel: true);
+    await showMapPanel(context, spec, overMap: true);
+    if (!mounted || tick != _focusTick) return;
+    final room = _focusRoom;
+    if (room != null) {
+      _focus3d(room);
+    } else if (roomId != null) {
+      _unfocus3d();
+    }
+  }
+
+  /// Freie Fläche der Karte (Handy): unter dem Kopf, über der Leiste oder
+  /// über dem Panel.
+  EdgeInsets _mapInsets({bool panel = false}) => EdgeInsets.fromLTRB(
+    8,
+    _topH + 8,
+    8,
+    panel ? _mapH * kMapPanelShare : _bottomH,
+  );
+
+  void _focus3d(String roomId, {bool panel = false}) {
+    final s = ref.read(map3dSettingsProvider);
+    setState(() => _raised = roomId);
+    unawaited(
+      ref
+          .read(map3dControllerProvider)
+          .focus(
+            roomId: roomId,
+            yaw: s.tilt ? null : kMapFocusYaw,
+            pitch: s.tilt ? null : kMapFocusPitch,
+            insets: _mapInsets(panel: panel),
+          ),
+    );
+  }
+
+  /// Fokus aufheben und zur Kamera davor zurückfahren.
+  void _unfocus3d() {
+    _clearFocus();
+    unawaited(ref.read(map3dControllerProvider).back());
+  }
+
+  /// Fokus aufheben, ohne die Kamera zu bewegen.
+  void _clearFocus() {
+    _focusTick++;
+    if (_focusRoom == null && _raised == null) return;
+    setState(() {
+      _focusRoom = null;
+      _raised = null;
+    });
+  }
+
+  String? _roomOf(FloorNode n) =>
+      n.point.isOutside || n.point.roomId.isEmpty ? null : n.point.roomId;
 
   void _closePanel() {
     if (_panel != null) setState(() => _panel = null);
@@ -431,13 +518,24 @@ class _MapBodyState extends ConsumerState<_MapBody> {
             ? HeatKind.humidity
             : HeatKind.temperature;
         _openPanel(
+          roomId: _roomOf(n),
           MapPanelSpec(
             key: 'sensor-${kind.name}-${n.id}',
             builder: (_) => SensorPanel(entityId: n.id, kind: kind),
           ),
         );
+      case MapTapAction.openThermostat:
+        Haptics.tick();
+        _openPanel(
+          roomId: _roomOf(n),
+          MapPanelSpec(
+            key: 'thermostat-${n.id}',
+            builder: (_) => ThermostatPanel(entityId: n.id),
+          ),
+        );
       case MapTapAction.openMotionSheet:
         _openPanel(
+          roomId: _roomOf(n),
           MapPanelSpec(
             key: 'motion-${n.id}',
             builder: (_) => MotionPanel(entityId: n.id),
@@ -445,6 +543,7 @@ class _MapBodyState extends ConsumerState<_MapBody> {
         );
       case MapTapAction.openBatterySheet:
         _openPanel(
+          roomId: _roomOf(n),
           MapPanelSpec(
             key: 'battery-${n.id}',
             builder: (_) => BatteryPanel(entityId: n.id),
@@ -456,6 +555,7 @@ class _MapBodyState extends ConsumerState<_MapBody> {
             .rooms[n.id];
         if (room == null) return _say(name);
         _openPanel(
+          roomId: _roomOf(n),
           MapPanelSpec(
             key: 'control-${n.id}',
             builder: (_) => ControlPanel(entityId: n.id, room: room),
@@ -559,6 +659,16 @@ class _MapBodyState extends ConsumerState<_MapBody> {
       });
       return;
     }
+    if (_use3d) {
+      // 3D: Klima, Bewegung, Batterie öffnen ihr Panel über dem Raum, sonst
+      // fährt die Kamera hin und die Karte unten zeigt den Raum.
+      final spec = _roomPanel(layer, r);
+      if (spec != null) return _openPanel(spec, roomId: r.id);
+      Haptics.tick();
+      if (_focusRoom == r.id) return _unfocus3d();
+      setState(() => _focusRoom = r.id);
+      return _focus3d(r.id);
+    }
     final sr = snapshotRoomFor(ref.read(snapshotProvider), r);
     switch (mapTapAction(layer, MapTarget.room)) {
       case MapTapAction.openRoomSheet:
@@ -659,6 +769,7 @@ class _MapBodyState extends ConsumerState<_MapBody> {
   }
 
   void _setLayer(MapLayer l) {
+    if (_focusRoom != null || _raised != null) _unfocus3d();
     ref.read(mapLayerProvider.notifier).set(l);
     setState(() {
       _meshSel = null;
@@ -685,6 +796,10 @@ class _MapBodyState extends ConsumerState<_MapBody> {
     });
     final readings = ref.watch(mapReadingsProvider(plan));
     _ensureClock(layer == MapLayer.presence);
+    final mode3d = watchMap3d(ref, layer);
+    final use3d = mode3d ?? false;
+    // Die Prüfung auf 3D läuft noch: Ladeanimation statt 2D-Karte.
+    final probing = mode3d == null;
 
     final _LayerView v = switch (layer) {
       MapLayer.combo => _lightView(plan),
@@ -696,129 +811,185 @@ class _MapBodyState extends ConsumerState<_MapBody> {
       MapLayer.battery => _batteryView(plan, readings),
     };
 
-    if (context.isDesktopLayout) return _desktop(context, plan, layer, v);
+    if (context.isDesktopLayout) {
+      return _desktop(context, plan, layer, v, use3d: use3d, probing: probing);
+    }
 
-    return LayoutBuilder(
-      builder: (context, box) {
-        final h = box.maxHeight;
-        // Oben blendet die Karte hinter dem Kopf aus, unten am Rand.
-        final fadeTop = (_topH / h).clamp(0.0, 0.5);
-        final fadeBottom = (24 / h).clamp(0.0, 0.2);
-        return Stack(
-          children: [
-            Positioned.fill(
-              child: EntryAnimation(
-                index: 1,
-                child: ShaderMask(
-                  blendMode: BlendMode.dstIn,
-                  shaderCallback: (rect) => LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: const [
-                      Color(0x00000000),
-                      Color(0xFF000000),
-                      Color(0xFF000000),
-                      Color(0x00000000),
-                    ],
-                    stops: [fadeTop * 0.55, fadeTop, 1 - fadeBottom, 1],
-                  ).createShader(rect),
-                  child: FloorPlanView(
-                    key: const ValueKey('map'),
-                    plan: v.plan,
-                    gap: v.gap,
-                    reserveGap: 2,
-                    fill: true,
-                    maxScale: 6,
-                    insets: EdgeInsets.fromLTRB(8, _topH + 8, 8, _bottomH),
-                    nodes: v.nodes,
-                    nodeBuilder: v.nodeBuilder,
-                    underlayPainter: v.underlay,
-                    overlayPainter: v.overlay,
-                    roomStyle: v.roomStyle,
-                    roomSubtitle: v.subtitle,
-                    onNodeTap: v.onNodeTap,
-                    onNodeLongPress: _holdNode,
-                    onNodeSecondaryTap: _secondaryNode,
-                    onRoomTap: v.onRoomTap,
-                    onOutsideTap: v.onOutsideTap,
-                    showOutside: v.showOutside,
+    final focus = use3d && _focusRoom != null ? plan.room(_focusRoom!) : null;
+    return PopScope(
+      // Zurück hebt erst den Fokus auf einen Raum auf.
+      canPop: focus == null,
+      onPopInvokedWithResult: (did, _) {
+        if (!did) _unfocus3d();
+      },
+      child: LayoutBuilder(
+        builder: (context, box) {
+          final h = box.maxHeight;
+          _mapH = h;
+          // Oben blendet die Karte hinter dem Kopf aus, unten am Rand.
+          final fadeTop = (_topH / h).clamp(0.0, 0.5);
+          final fadeBottom = (24 / h).clamp(0.0, 0.2);
+          return Stack(
+            children: [
+              Positioned.fill(
+                child: EntryAnimation(
+                  index: 1,
+                  child: ShaderMask(
+                    blendMode: BlendMode.dstIn,
+                    shaderCallback: (rect) => LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: const [
+                        Color(0x00000000),
+                        Color(0xFF000000),
+                        Color(0xFF000000),
+                        Color(0x00000000),
+                      ],
+                      stops: [fadeTop * 0.55, fadeTop, 1 - fadeBottom, 1],
+                    ).createShader(rect),
+                    child: use3d
+                        ? Map3DView(
+                            key: const ValueKey('map3d'),
+                            plan: v.plan,
+                            nodes: v.nodes,
+                            nodeBuilder: v.nodeBuilder,
+                            subtitle: v.subtitle,
+                            heatmap: v.heatmap3d,
+                            onNodeTap: v.onNodeTap,
+                            onNodeLongPress: _holdNode,
+                            onNodeSecondaryTap: _secondaryNode,
+                            onRoomTap: v.onRoomTap,
+                            onOutsideTap: () {
+                              if (_focusRoom != null) _unfocus3d();
+                              v.onOutsideTap?.call();
+                            },
+                            selectedRoomId: _focusRoom ?? _raised,
+                            raisedRoomId: _raised,
+                            insets: _mapInsets(),
+                          )
+                        : probing
+                        ? Map3DLoader(plan: v.plan, insets: _mapInsets())
+                        : FloorPlanView(
+                            key: const ValueKey('map'),
+                            plan: v.plan,
+                            gap: v.gap,
+                            reserveGap: 2,
+                            fill: true,
+                            maxScale: 6,
+                            insets: EdgeInsets.fromLTRB(
+                              8,
+                              _topH + 8,
+                              8,
+                              _bottomH,
+                            ),
+                            nodes: v.nodes,
+                            nodeBuilder: v.nodeBuilder,
+                            underlayPainter: v.underlay,
+                            overlayPainter: v.overlay,
+                            roomStyle: v.roomStyle,
+                            roomSubtitle: v.subtitle,
+                            onNodeTap: v.onNodeTap,
+                            onNodeLongPress: _holdNode,
+                            onNodeSecondaryTap: _secondaryNode,
+                            onRoomTap: v.onRoomTap,
+                            onOutsideTap: v.onOutsideTap,
+                            showOutside: v.showOutside,
+                          ),
                   ),
                 ),
               ),
-            ),
-            // Kopf und Legende liegen über der Karte. Der leere Raum dazwischen
-            // lässt Gesten zur Karte durch.
-            Column(
-              children: [
-                if (widget.header != null)
-                  _SizeReport(
-                    onSize: (s) => _setInsets(top: s.height),
-                    child: widget.header!,
-                  ),
-                const Spacer(),
-                _SizeReport(
-                  onSize: (s) => _setInsets(bottom: s.height),
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(
-                      HavenSpace.page,
-                      8,
-                      HavenSpace.page,
-                      HavenSpace.navClearance,
+              // Kopf und Legende liegen über der Karte. Der leere Raum dazwischen
+              // lässt Gesten zur Karte durch.
+              Column(
+                children: [
+                  if (widget.header != null)
+                    _SizeReport(
+                      onSize: (s) => _setInsets(top: s.height),
+                      child: widget.header!,
                     ),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        MapLayerTabs(
-                          layer: layer,
-                          compact: true,
-                          onChanged: _setLayer,
-                        ),
-                        const SizedBox(height: 10),
-                        HavenCard(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 12,
+                  const Spacer(),
+                  _SizeReport(
+                    onSize: (s) => _setInsets(bottom: s.height),
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(
+                        HavenSpace.page,
+                        8,
+                        HavenSpace.page,
+                        HavenSpace.navClearance,
+                      ),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          MapLayerTabs(
+                            layer: layer,
+                            compact: true,
+                            onChanged: _setLayer,
                           ),
-                          radius: HavenRadii.m,
-                          child: AnimatedSize(
-                            duration: context.motion(HavenMotion.d3),
-                            curve: HavenMotion.out,
-                            alignment: Alignment.topCenter,
-                            child: AnimatedSwitcher(
-                              duration: context.motion(HavenMotion.d2),
-                              child: _info != null
-                                  ? SizedBox(
-                                      key: ValueKey(_info),
-                                      height: 44,
-                                      width: double.infinity,
-                                      child: Align(
-                                        alignment: Alignment.centerLeft,
-                                        child: Text(
-                                          _info!,
-                                          maxLines: 2,
-                                          overflow: TextOverflow.ellipsis,
-                                          style: HavenText.body.copyWith(
-                                            color: hv.tx,
+                          const SizedBox(height: 10),
+                          HavenCard(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 12,
+                            ),
+                            radius: HavenRadii.m,
+                            child: AnimatedSize(
+                              duration: context.motion(HavenMotion.d3),
+                              curve: HavenMotion.out,
+                              alignment: Alignment.topCenter,
+                              child: AnimatedSwitcher(
+                                duration: context.motion(HavenMotion.d2),
+                                child: _info != null
+                                    ? SizedBox(
+                                        key: ValueKey(_info),
+                                        height: 44,
+                                        width: double.infinity,
+                                        child: Align(
+                                          alignment: Alignment.centerLeft,
+                                          child: Text(
+                                            _info!,
+                                            maxLines: 2,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: HavenText.body.copyWith(
+                                              color: hv.tx,
+                                            ),
                                           ),
                                         ),
+                                      )
+                                    : focus != null
+                                    ? KeyedSubtree(
+                                        key: ValueKey('focus-${focus.id}'),
+                                        child: _RoomFocusCard(
+                                          room: focus,
+                                          subtitle: v.subtitle?.call(focus),
+                                          onClose: _unfocus3d,
+                                        ),
+                                      )
+                                    : KeyedSubtree(
+                                        key: ValueKey('card-${layer.name}'),
+                                        child: v.card,
                                       ),
-                                    )
-                                  : KeyedSubtree(
-                                      key: ValueKey('card-${layer.name}'),
-                                      child: v.card,
-                                    ),
+                              ),
                             ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
                   ),
+                ],
+              ),
+              if (use3d)
+                Positioned(
+                  right: 12,
+                  bottom: _bottomH + 10,
+                  child: Map3DControls(
+                    insets: _mapInsets(),
+                    onRecenter: _clearFocus,
+                  ),
                 ),
-              ],
-            ),
-          ],
-        );
-      },
+            ],
+          );
+        },
+      ),
     );
   }
 
@@ -838,12 +1009,47 @@ class _MapBodyState extends ConsumerState<_MapBody> {
     BuildContext context,
     HavenFloorPlan plan,
     MapLayer layer,
-    _LayerView v,
-  ) {
+    _LayerView v, {
+    required bool use3d,
+    required bool probing,
+  }) {
     final hv = context.hv;
     final inspect = _inspect != null && plan.room(_inspect!) != null
         ? _inspect
         : null;
+    // 3D: Kamera zum Raum im Inspektor oder zum Raum des Geräte-Panels.
+    final want = _panel != null ? _panelRoom : inspect;
+    if (!use3d) {
+      _deskFocus = null;
+    } else if (want != _deskFocus) {
+      _deskFocus = want;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        final c = ref.read(map3dControllerProvider);
+        final s = ref.read(map3dSettingsProvider);
+        if (want == null) {
+          unawaited(c.back());
+        } else {
+          unawaited(
+            c.focus(
+              roomId: want,
+              yaw: s.tilt ? null : kMapFocusYaw,
+              pitch: s.tilt ? null : kMapFocusPitch,
+            ),
+          );
+        }
+      });
+    }
+    void outside() {
+      if (_inspect != null || _panel != null) {
+        setState(() {
+          _inspect = null;
+          _panel = null;
+        });
+      }
+      v.onOutsideTap?.call();
+    }
+
     return Row(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -855,43 +1061,54 @@ class _MapBodyState extends ConsumerState<_MapBody> {
                   padding: const EdgeInsets.fromLTRB(16, 4, 8, 76),
                   child: EntryAnimation(
                     index: 1,
-                    child: FloorPlanView(
-                      key: const ValueKey('map'),
-                      plan: v.plan,
-                      gap: v.gap,
-                      reserveGap: 2,
-                      fill: true,
-                      maxScale: 6,
-                      nodes: v.nodes,
-                      nodeBuilder: v.nodeBuilder,
-                      underlayPainter: v.underlay,
-                      overlayPainter: v.overlay,
-                      roomStyle: (r) {
-                        final base = v.roomStyle?.call(r);
-                        if (r.id != inspect) return base;
-                        return FloorRoomStyle(
-                          fill: base?.fill,
-                          border: hv.acc,
-                          borderWidth: 2,
-                        );
-                      },
-                      roomSubtitle: v.subtitle,
-                      onNodeTap: v.onNodeTap,
-                      onNodeLongPress: _holdNode,
-                      onNodeSecondaryTap: _secondaryNode,
-                      onRoomTap: v.onRoomTap,
-                      onOutsideTap: () {
-                        if (_inspect != null || _panel != null) {
-                          setState(() {
-                            _inspect = null;
-                            _panel = null;
-                          });
-                        }
-                        v.onOutsideTap?.call();
-                      },
-                      onRoomSecondaryTap: _secondaryRoom,
-                      showOutside: v.showOutside,
-                    ),
+                    child: use3d
+                        ? Map3DView(
+                            key: const ValueKey('map3d'),
+                            plan: v.plan,
+                            nodes: v.nodes,
+                            nodeBuilder: v.nodeBuilder,
+                            subtitle: v.subtitle,
+                            heatmap: v.heatmap3d,
+                            onNodeTap: v.onNodeTap,
+                            onNodeLongPress: _holdNode,
+                            onNodeSecondaryTap: _secondaryNode,
+                            onRoomTap: v.onRoomTap,
+                            onOutsideTap: outside,
+                            onRoomSecondaryTap: _secondaryRoom,
+                            selectedRoomId: want,
+                            raisedRoomId: want,
+                          )
+                        : probing
+                        ? Map3DLoader(plan: v.plan)
+                        : FloorPlanView(
+                            key: const ValueKey('map'),
+                            plan: v.plan,
+                            gap: v.gap,
+                            reserveGap: 2,
+                            fill: true,
+                            maxScale: 6,
+                            nodes: v.nodes,
+                            nodeBuilder: v.nodeBuilder,
+                            underlayPainter: v.underlay,
+                            overlayPainter: v.overlay,
+                            roomStyle: (r) {
+                              final base = v.roomStyle?.call(r);
+                              if (r.id != inspect) return base;
+                              return FloorRoomStyle(
+                                fill: base?.fill,
+                                border: hv.acc,
+                                borderWidth: 2,
+                              );
+                            },
+                            roomSubtitle: v.subtitle,
+                            onNodeTap: v.onNodeTap,
+                            onNodeLongPress: _holdNode,
+                            onNodeSecondaryTap: _secondaryNode,
+                            onRoomTap: v.onRoomTap,
+                            onOutsideTap: outside,
+                            onRoomSecondaryTap: _secondaryRoom,
+                            showOutside: v.showOutside,
+                          ),
                   ),
                 ),
               ),
@@ -901,6 +1118,24 @@ class _MapBodyState extends ConsumerState<_MapBody> {
                 right: 8,
                 child: MapLayerTabs(layer: layer, onChanged: _setLayer),
               ),
+              if (use3d)
+                Positioned(
+                  top: 8,
+                  right: 12,
+                  child: Map3DControls(
+                    axis: Axis.horizontal,
+                    insets: const EdgeInsets.fromLTRB(16, 4, 8, 76),
+                    onRecenter: () {
+                      _deskFocus = null;
+                      if (_inspect != null || _panel != null) {
+                        setState(() {
+                          _inspect = null;
+                          _panel = null;
+                        });
+                      }
+                    },
+                  ),
+                ),
             ],
           ),
         ),
@@ -1033,6 +1268,12 @@ class _MapBodyState extends ConsumerState<_MapBody> {
       nodeBuilder: (context, n) {
         final v = values[n.id]!;
         final r = readings.of(n.id)!;
+        if (r.thermostat && kind == HeatKind.temperature) {
+          return ThermostatMarker(
+            entityId: n.id,
+            fill: scale == null ? null : kind.ramp.at(scale.t(v)),
+          );
+        }
         return HeatValueMarker(
           label: ref.read(entityProvider(n.id))?.name ?? n.id,
           text: text(v),
@@ -1041,6 +1282,7 @@ class _MapBodyState extends ConsumerState<_MapBody> {
         );
       },
       underlay: HeatmapPainter(plan: plan, data: data, cache: _heat, hv: hv),
+      heatmap3d: heatmapOf(data, plan.grid.cellMeters),
       subtitle: (r) {
         final range = data.roomRange(r.id);
         if (range == null) return null;
@@ -1096,6 +1338,7 @@ class _MapBodyState extends ConsumerState<_MapBody> {
         // Auf dem Zeitstrahl zählt der Zustand von damals, ohne Puls.
         historic: past ? (sensorLevels[n.id] ?? 0) >= 1 : null,
       ),
+      heatmap3d: presenceHeatmapOf(plan, levels, presenceColor(hv)),
       underlay: PresencePainter(
         plan: plan,
         levels: levels,
@@ -1300,6 +1543,7 @@ class _LayerView {
     this.onRoomTap,
     this.onOutsideTap,
     this.showOutside = true,
+    this.heatmap3d,
   });
   final HavenFloorPlan plan;
   final Widget card;
@@ -1314,6 +1558,9 @@ class _LayerView {
   final ValueChanged<FloorRoom>? onRoomTap;
   final VoidCallback? onOutsideTap;
   final bool showOutside;
+
+  /// Färbung der Böden in 3D (statt [underlay]).
+  final h3.SceneHeatmap? heatmap3d;
 }
 
 class _PresenceCard extends StatelessWidget {
@@ -1507,6 +1754,109 @@ class _NetworkCard extends StatelessWidget {
   }
 }
 
+/// 3D, Handy: Karte unten für den Raum im Fokus mit den wichtigsten
+/// Aktionen. Die Kamera steht dabei über dem aufgerichteten Raum.
+class _RoomFocusCard extends ConsumerWidget {
+  const _RoomFocusCard({
+    required this.room,
+    required this.subtitle,
+    required this.onClose,
+  });
+  final FloorRoom room;
+  final String? subtitle;
+  final VoidCallback onClose;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final hv = context.hv;
+    final sr = snapshotRoomFor(ref.watch(snapshotProvider), room);
+    final view = sr == null ? null : ref.watch(roomViewProvider(sr.id));
+    final lit = view?.lamps.where((l) => l.on).length ?? 0;
+    final info = [
+      if (view != null && view.lamps.isNotEmpty)
+        lit == 0
+            ? 'Licht aus'
+            : lit == 1
+            ? 'Ein Licht an'
+            : '$lit Lichter an',
+      if (subtitle != null && subtitle!.isNotEmpty) subtitle!,
+    ].join(' · ');
+    return SizedBox(
+      width: double.infinity,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      room.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: HavenText.title.copyWith(
+                        color: hv.tx,
+                        fontSize: 17,
+                      ),
+                    ),
+                    if (info.isNotEmpty)
+                      Text(
+                        info,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: HavenText.caption.copyWith(color: hv.tx2),
+                      ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              RoundIconButton(
+                icon: Icons.close_rounded,
+                label: 'Zurück zur Übersicht',
+                onTap: onClose,
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              if (view != null && view.lamps.isNotEmpty)
+                _CardAction(
+                  label: view.anyOn ? 'Licht aus' : 'Licht an',
+                  icon: view.anyOn
+                      ? Icons.lightbulb_outline_rounded
+                      : Icons.lightbulb_rounded,
+                  onTap: () {
+                    Haptics.tap();
+                    unawaited(ref.read(repositoryProvider).toggleRoom(view.id));
+                  },
+                ),
+              if (sr != null && sr.lightIds.isNotEmpty)
+                _CardAction(
+                  label: 'Raum öffnen',
+                  icon: Icons.open_in_new_rounded,
+                  onTap: () => context.push(Routes.room(sr.id)),
+                ),
+              _CardAction(
+                label: 'Einrichten',
+                icon: Icons.chair_outlined,
+                onTap: () => context.push(
+                  '$mapEditorPath?mode=furniture&sel=${room.id}',
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 /// Kleine Aktion unter dem Text einer Karte (Pille mit Symbol).
 class _CardAction extends StatelessWidget {
   const _CardAction({
@@ -1578,8 +1928,9 @@ class _BatteryCard extends StatelessWidget {
           if (weak.isNotEmpty) ...[
             const SizedBox(height: 4),
             Text(
-              [for (final (n, v) in weak.take(3)) '$n ${v.round()} %']
-                  .join(' · '),
+              [
+                for (final (n, v) in weak.take(3)) '$n ${v.round()} %',
+              ].join(' · '),
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
               style: HavenText.caption.copyWith(color: hv.bad),

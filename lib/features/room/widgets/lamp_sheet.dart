@@ -168,8 +168,9 @@ class _LampSheetState extends ConsumerState<_LampSheet> {
                           axis: Axis.horizontal,
                           value: bri,
                           colors: [
-                            colorOf(uiColor((255, 190, 120), dark: dark))
-                                .withValues(alpha: 0.9),
+                            colorOf(
+                              uiColor((255, 190, 120), dark: dark),
+                            ).withValues(alpha: 0.9),
                             p.primary,
                           ],
                           onChanged: (v) => _set(brightness: v == 0 ? 1 : v),
@@ -209,8 +210,9 @@ class _LampSheetState extends ConsumerState<_LampSheet> {
                       KelvinSlider(
                         kelvin:
                             lead.kelvin ??
-                            rgbToKelvinApprox(lead.color)
-                                .clamp(lead.minKelvin, lead.maxKelvin),
+                            rgbToKelvinApprox(
+                              lead.color,
+                            ).clamp(lead.minKelvin, lead.maxKelvin),
                         min: lead.minKelvin,
                         max: lead.maxKelvin,
                         onChanged: (k) => _set(kelvin: k),

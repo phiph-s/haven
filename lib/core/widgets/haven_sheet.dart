@@ -101,10 +101,14 @@ class HavenSheetPage<T> extends Page<T> {
 
 /// Öffnet ein Sheet über der ganzen App (Root-Navigator). Ersetzt
 /// `showModalBottomSheet`: Theme und Akzentfarbe des Aufrufers kommen mit.
+///
+/// [barrier] ersetzt die Abdunklung dahinter (z. B. fast durchsichtig, damit
+/// die Karte darüber sichtbar bleibt).
 Future<T?> showHavenModalSheet<T>(
   BuildContext context, {
   required WidgetBuilder builder,
   HavenSheetSize size = HavenSheetSize.fit,
+  Color? barrier,
 }) {
   final nav = Navigator.of(context, rootNavigator: true);
   final themes = InheritedTheme.capture(from: context, to: nav.context);
@@ -112,6 +116,7 @@ Future<T?> showHavenModalSheet<T>(
     HavenSheetRoute<T>(
       builder: (ctx) => themes.wrap(Builder(builder: builder)),
       size: size,
+      barrier: barrier,
     ),
   );
 }
@@ -123,12 +128,14 @@ class HavenSheetRoute<T> extends PopupRoute<T> {
     this.size = HavenSheetSize.fit,
     this.scalesBackground = false,
     this.initialExtent = 1,
+    this.barrier,
   });
 
   final WidgetBuilder builder;
   final HavenSheetSize size;
   final bool scalesBackground;
   final double initialExtent;
+  final Color? barrier;
 
   /// Geschwindigkeit (Anteil pro Sekunde, negativ = zu) für das nächste
   /// Schließen, gesetzt beim Loslassen.
@@ -136,7 +143,8 @@ class HavenSheetRoute<T> extends PopupRoute<T> {
 
   @override
   Color? get barrierColor =>
-      scalesBackground ? const Color(0x66000000) : const Color(0x80000000);
+      barrier ??
+      (scalesBackground ? const Color(0x66000000) : const Color(0x80000000));
 
   @override
   bool get barrierDismissible => true;

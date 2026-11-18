@@ -5,6 +5,8 @@ import '../data/haven_repository.dart';
 import '../data/models/floor_plan.dart';
 import '../data/models/zigbee.dart';
 import '../data/models/zigbee_network.dart';
+import 'fake_data.dart'
+    show kFakeThermostatStates, kFakeThermostatSchedule, kFakeThermostatWeekend;
 import 'fake_floor_plan.dart';
 import 'fake_rooms.dart';
 
@@ -128,6 +130,25 @@ class FakeZigbee {
       s['power_outage_memory'] = 'restore';
     }
     if (s.containsKey('power_on_behavior')) s['power_on_behavior'] = 'previous';
+    // Thermostate: plausible Werte und ein Wochenplan.
+    final thermo = kFakeThermostatStates[d.friendlyName];
+    if (thermo != null) {
+      s.addAll(thermo);
+      const days = [
+        'monday',
+        'tuesday',
+        'wednesday',
+        'thursday',
+        'friday',
+        'saturday',
+        'sunday',
+      ];
+      for (var i = 0; i < days.length; i++) {
+        s['schedule_${days[i]}'] = i >= 5
+            ? kFakeThermostatWeekend
+            : kFakeThermostatSchedule;
+      }
+    }
     return s;
   }
 
@@ -212,6 +233,17 @@ class FakeZigbee {
 
   /// Gerätemeldung von außen (simulierte Gesten der Haven-Automationen).
   void emitDeviceState(String ieee, Map<String, dynamic> values) {
+    if (!_events.isClosed) _emitState(ieee, values);
+  }
+
+  /// Aktueller Z2M-Zustand eines Geräts (Kopie), leer wenn unbekannt.
+  Map<String, dynamic> stateOf(String ieee) => {...?_states[ieee]};
+
+  /// Werte ohne Verzögerung übernehmen und melden (Simulation).
+  void update(String ieee, Map<String, dynamic> values) {
+    final st = _states[ieee];
+    if (st == null || values.isEmpty) return;
+    st.addAll(values);
     if (!_events.isClosed) _emitState(ieee, values);
   }
 

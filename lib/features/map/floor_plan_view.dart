@@ -316,15 +316,11 @@ abstract class FloorOverlayPainter {
   Listenable? get repaint => null;
 }
 
-typedef FloorNodeBuilder = Widget Function(
-  BuildContext context,
-  FloorNode node,
-);
+typedef FloorNodeBuilder =
+    Widget Function(BuildContext context, FloorNode node);
 
-typedef FloorGroupBuilder = Widget Function(
-  BuildContext context,
-  FloorNodeGroup group,
-);
+typedef FloorGroupBuilder =
+    Widget Function(BuildContext context, FloorNodeGroup group);
 
 /// Karte des Grundrisses: Räume als weiche Polygone, „Draußen“ als Garten um
 /// die Wohnung, Knoten als Widgets an Punkten in Zellen, Zeichenebenen

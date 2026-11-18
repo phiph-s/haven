@@ -110,7 +110,8 @@ class UpdatesScreen extends ConsumerWidget {
               _Banner(
                 icon: Icons.restart_alt_rounded,
                 color: hv.warn,
-                text: 'Home Assistant startet neu. Haven verbindet sich danach von selbst wieder.',
+                text:
+                    'Home Assistant startet neu. Haven verbindet sich danach von selbst wieder.',
                 busy: true,
               ),
             if (ui.error != null)

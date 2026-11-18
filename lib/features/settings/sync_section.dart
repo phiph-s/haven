@@ -95,7 +95,8 @@ class _SyncSectionState extends ConsumerState<SyncSection> {
     final ok = await confirmSheet(
       context,
       title: 'Stand aus Home Assistant übernehmen',
-      text: 'Die Fassung auf diesem Gerät wird verworfen. Grundriss und Übersicht gelten dann so, wie sie in Home Assistant gespeichert sind.',
+      text:
+          'Die Fassung auf diesem Gerät wird verworfen. Grundriss und Übersicht gelten dann so, wie sie in Home Assistant gespeichert sind.',
       action: 'Übernehmen',
       destructive: true,
     );

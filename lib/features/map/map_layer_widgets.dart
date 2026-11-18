@@ -57,8 +57,9 @@ class HeatValueMarker extends StatelessWidget {
               ),
               boxShadow: [
                 BoxShadow(
-                  color: const Color(0xFF000000)
-                      .withValues(alpha: hv.isDark ? 0.4 : 0.14),
+                  color: const Color(
+                    0xFF000000,
+                  ).withValues(alpha: hv.isDark ? 0.4 : 0.14),
                   blurRadius: 8,
                   offset: const Offset(0, 2),
                 ),

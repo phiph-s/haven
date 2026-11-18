@@ -13,6 +13,7 @@ import '../../core/widgets/haven_sheet.dart';
 import '../../core/widgets/haven_switch.dart';
 import '../../core/widgets/section_header.dart';
 import '../../data/room_view.dart';
+import '../climate/thermostat_widgets.dart';
 import 'room_hero.dart';
 import 'widgets/brightness_slider.dart';
 import 'widgets/lamp_row.dart';
@@ -373,6 +374,7 @@ class _RoomBody extends ConsumerWidget {
               ),
             ),
         ],
+        RoomHeatingSection(roomId: room.id),
       ],
     );
   }

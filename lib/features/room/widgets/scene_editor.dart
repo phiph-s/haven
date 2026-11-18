@@ -278,8 +278,9 @@ class _SaveSceneFormState extends ConsumerState<_SaveSceneForm> {
     final name = _normalize(_c.text);
     if (name.isEmpty) return;
     final room = ref.read(snapshotProvider).room(widget.roomId);
-    Navigator.of(context)
-        .pop(_SaveResult(name, sceneNamed(room?.scenes ?? const [], name)));
+    Navigator.of(
+      context,
+    ).pop(_SaveResult(name, sceneNamed(room?.scenes ?? const [], name)));
   }
 
   @override
@@ -457,7 +458,9 @@ class _SceneActions extends StatelessWidget {
             ),
             Expanded(
               child: Text(
-                scene.stored ? 'Gespeichert mit Haven.' : 'Die Farben der Karte sind geschätzt. Nach dem Ersetzen zeigt Haven die echten.',
+                scene.stored
+                    ? 'Gespeichert mit Haven.'
+                    : 'Die Farben der Karte sind geschätzt. Nach dem Ersetzen zeigt Haven die echten.',
                 style: HavenText.caption.copyWith(color: hv.tx2),
               ),
             ),

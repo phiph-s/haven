@@ -25,18 +25,20 @@ import 'knob_editor_screen.dart';
 /// nur ihn (`haven/automations/save`).
 
 /// Prüft einen Entwurf, Fehler je Schritt des Assistenten.
-typedef DraftValidator = Map<int, String> Function(
-  HavenAutomation draft,
-  HavenAutomations all, {
-  Map<String, String> deviceNames,
-});
+typedef DraftValidator =
+    Map<int, String> Function(
+      HavenAutomation draft,
+      HavenAutomations all, {
+      Map<String, String> deviceNames,
+    });
 
 /// Baut einen Abschnitt des Assistenten für [draft].
-typedef SectionBuilder = Widget Function(
-  HavenAutomation draft,
-  HavenAutomations all,
-  ValueChanged<HavenAutomation> onChanged,
-);
+typedef SectionBuilder =
+    Widget Function(
+      HavenAutomation draft,
+      HavenAutomations all,
+      ValueChanged<HavenAutomation> onChanged,
+    );
 
 /// Eine Kachel im Dashboard samt Abschnitt zum Bearbeiten.
 class DashboardSection {

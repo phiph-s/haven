@@ -114,7 +114,8 @@ String meshErrorText(Object e, {bool refresh = false, bool legacy = false}) {
       'Neu messen geht nur mit einem Administrator-Konto in Home Assistant.',
     'busy' => 'Es läuft schon eine Messung. Warte einen Moment.',
     'disconnected' => 'Keine Verbindung zu Home Assistant.',
-    'unknown_command' || 'not_found' => 'Die Haven-Integration in Home Assistant kennt die Netzkarte noch nicht. Aktualisiere sie.',
+    'unknown_command' || 'not_found' =>
+      'Die Haven-Integration in Home Assistant kennt die Netzkarte noch nicht. Aktualisiere sie.',
     'z2m_error' =>
       'Zigbee2MQTT hat die Messung abgelehnt: ${e is HavenException ? e.message : e}',
     _ =>
@@ -232,17 +233,11 @@ class MeshNotifier extends Notifier<MeshData> {
         _finish(m);
       } catch (e) {
         if (gen != _gen) return;
-        state = state.copyWith(
-          refreshing: false,
-          error: meshErrorText(e),
-        );
+        state = state.copyWith(refreshing: false, error: meshErrorText(e));
       }
     } else {
       _stopPoll();
-      state = state.copyWith(
-        refreshing: false,
-        error: meshFailedText(r.error),
-      );
+      state = state.copyWith(refreshing: false, error: meshFailedText(r.error));
     }
   }
 

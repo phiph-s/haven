@@ -102,6 +102,9 @@ final HavenFloorPlan kFakeFloorPlan = HavenFloorPlan(
     _at('switch.lufter_waschraum', 18, 20),
     _at('binary_sensor.prasenz_waschraum_presence', 18, 16),
     _at('sensor.sensor_terrasse_temperature', 21, 5),
+    // Heizkörperthermostate unter den Fenstern.
+    _at('climate.thermostat_salon', 1, 7),
+    _at('climate.thermostat_ruheraum', 2, 21),
   ],
   coordinator: _p(16, 8),
   furniture: [

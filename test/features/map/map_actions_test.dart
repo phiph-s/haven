@@ -10,12 +10,13 @@ import 'package:haven/features/map/map_layers.dart';
 void main() {
   group('Kartenart und Zieltyp ergeben die Aktion', () {
     // Erwartung je Kartenart in der Reihenfolge von MapTarget.values:
-    // Lampe, Steckdose, Klima, Melder, Kontakt, Regler, Rest, Raum.
+    // Lampe, Steckdose, Klima, Thermostat, Melder, Kontakt, Regler, Rest, Raum.
     const expected = <MapLayer, List<MapTapAction>>{
       MapLayer.combo: [
         MapTapAction.toggleLamp,
         MapTapAction.togglePlug,
         MapTapAction.openClimateSheet,
+        MapTapAction.openThermostat,
         MapTapAction.openMotionSheet,
         MapTapAction.showStatus,
         MapTapAction.showStatus,
@@ -28,6 +29,7 @@ void main() {
         MapTapAction.showStatus,
         MapTapAction.showStatus,
         MapTapAction.showStatus,
+        MapTapAction.showStatus,
         MapTapAction.showControlInfo,
         MapTapAction.showStatus,
         MapTapAction.openRoomSheet,
@@ -36,6 +38,7 @@ void main() {
         MapTapAction.openClimateSheet,
         MapTapAction.openClimateSheet,
         MapTapAction.openClimateSheet,
+        MapTapAction.openThermostat,
         MapTapAction.openClimateSheet,
         MapTapAction.openClimateSheet,
         MapTapAction.openClimateSheet,
@@ -46,6 +49,7 @@ void main() {
         MapTapAction.openClimateSheet,
         MapTapAction.openClimateSheet,
         MapTapAction.openClimateSheet,
+        MapTapAction.openThermostat,
         MapTapAction.openClimateSheet,
         MapTapAction.openClimateSheet,
         MapTapAction.openClimateSheet,
@@ -53,6 +57,7 @@ void main() {
         MapTapAction.openRoomClimate,
       ],
       MapLayer.presence: [
+        MapTapAction.openMotionSheet,
         MapTapAction.openMotionSheet,
         MapTapAction.openMotionSheet,
         MapTapAction.openMotionSheet,
@@ -70,9 +75,11 @@ void main() {
         MapTapAction.selectNetworkNode,
         MapTapAction.selectNetworkNode,
         MapTapAction.selectNetworkNode,
+        MapTapAction.selectNetworkNode,
         MapTapAction.none,
       ],
       MapLayer.battery: [
+        MapTapAction.openBatterySheet,
         MapTapAction.openBatterySheet,
         MapTapAction.openBatterySheet,
         MapTapAction.openBatterySheet,
@@ -150,6 +157,19 @@ void main() {
       expect(mapTargetOf(FloorKind.light), MapTarget.lamp);
       expect(mapTargetOf(FloorKind.switchKind), MapTarget.plug);
       expect(mapTargetOf(FloorKind.temperature), MapTarget.climateSensor);
+      // Thermostate: Zigbee-Typ oder Climate-Entity.
+      expect(
+        mapTargetOf(FloorKind.temperature, zbType: ZbType.thermostat),
+        MapTarget.thermostat,
+      );
+      expect(
+        mapTargetOf(FloorKind.temperature, entityId: 'climate.heizung'),
+        MapTarget.thermostat,
+      );
+      expect(
+        mapTargetOf(FloorKind.temperature, entityId: 'sensor.temp'),
+        MapTarget.climateSensor,
+      );
       expect(mapTargetOf(FloorKind.presence), MapTarget.motionSensor);
       expect(mapTargetOf(FloorKind.remote), MapTarget.control);
       expect(mapTargetOf(FloorKind.media), MapTarget.otherDevice);

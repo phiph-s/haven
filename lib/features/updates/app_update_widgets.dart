@@ -215,7 +215,8 @@ class AppUpdatePanel extends ConsumerWidget {
                 const SizedBox(height: 8),
                 _Note(
                   icon: Icons.shield_outlined,
-                  text: 'Android fragt vor der ersten Installation, ob Haven Apps installieren darf. Erlaube es in den Einstellungen und tippe danach nochmal auf „Herunterladen und installieren“.',
+                  text:
+                      'Android fragt vor der ersten Installation, ob Haven Apps installieren darf. Erlaube es in den Einstellungen und tippe danach nochmal auf „Herunterladen und installieren“.',
                   color: hv.warn,
                 ),
                 const SizedBox(height: 10),

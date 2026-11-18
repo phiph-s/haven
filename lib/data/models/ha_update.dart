@@ -172,8 +172,9 @@ bool isCoreComponent(HaUpdate u) {
   ];
   if (ids.contains(id)) return true;
   final t = (u.title ?? u.name).toLowerCase();
-  return RegExp(r'^home assistant (core|operating system|os|supervisor)\b')
-      .hasMatch(t);
+  return RegExp(
+    r'^home assistant (core|operating system|os|supervisor)\b',
+  ).hasMatch(t);
 }
 
 /// Ordnet ein Update einer Gruppe zu, aus `entity_id`, Titel und Bild. Was sich

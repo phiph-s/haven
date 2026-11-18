@@ -153,6 +153,41 @@ class ZbFeature {
 
   /// Z2M-Wert zum Schalten.
   dynamic binaryValue(bool on) => on ? (valueOn ?? true) : (valueOff ?? false);
+
+  /// Gleiches Feature mit anderer Beschriftung. [valueLabels] ersetzt die
+  /// Labels der Enum-Werte (Wert → Label), fehlende bleiben.
+  ZbFeature relabeled({
+    String? label,
+    String? help,
+    Map<String, String>? valueLabels,
+  }) => ZbFeature(
+    property: property,
+    label: label ?? this.label,
+    help: help ?? this.help,
+    area: area,
+    group: group,
+    type: type,
+    canRead: canRead,
+    canWrite: canWrite,
+    source: source,
+    unit: unit,
+    min: min,
+    max: max,
+    step: step,
+    valueOn: valueOn,
+    valueOff: valueOff,
+    valueToggle: valueToggle,
+    presets: presets,
+    values: valueLabels == null
+        ? values
+        : [
+            for (final v in values)
+              ZbEnumValue(v.value, valueLabels[v.value] ?? v.label),
+          ],
+    parent: parent,
+    endpoint: endpoint,
+    features: features,
+  );
 }
 
 /// Klassifizierung eines Geräts (`classified`).
