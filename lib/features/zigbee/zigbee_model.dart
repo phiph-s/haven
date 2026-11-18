@@ -116,7 +116,9 @@ class ZbDeviceView {
       available: !offline,
       lastSeen: seen,
       lastSeenSource: source,
-      networkMeasuredAt: source == 'networkmap' ? meshMeasuredAt : null,
+      networkMeasuredAt: source == 'networkmap'
+          ? (meshMeasuredAt ?? device.networkmapAt)
+          : null,
       availability: availability,
     );
   }
@@ -200,6 +202,7 @@ class ZbDeviceView {
           lastSeen: lastSeen,
           availability: availability,
           now: now,
+          measuredAt: networkMeasuredAt,
         );
 
   ZbDeviceView withDevice(ZbDevice d) => ZbDeviceView(

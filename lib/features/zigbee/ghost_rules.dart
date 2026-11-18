@@ -67,12 +67,23 @@ String _dauer(Duration d) {
 /// heißt erreichbar, auch wenn [lastSeen] alt ist (z. B. nur aus der
 /// Netzmessung). Batteriegeräte meldet Z2M erst nach bis zu 25 h als offline,
 /// dort entscheidet allein [lastSeen].
+///
+/// [measuredAt]: [lastSeen] stammt nur aus einer Netzmessung (Schnappschuss).
+/// Dann zählt, wie lange das Gerät zum Zeitpunkt der Messung schon schwieg.
+/// Danach gibt es keine Aussage, ein seit der Messung ruhiges Gerät ist also
+/// kein Geist.
 GhostInfo? evaluateGhost({
   required bool isBattery,
   required DateTime? lastSeen,
   required String? availability,
   required DateTime now,
+  DateTime? measuredAt,
 }) {
+  if (lastSeen != null && measuredAt != null) {
+    final quiet = measuredAt.difference(lastSeen);
+    final limit = isBattery ? kBatteryQuietAfter : kMainsGhostAfter;
+    if (quiet <= limit && availability != 'offline') return null;
+  }
   final age = lastSeen == null ? null : now.difference(lastSeen);
   if (isBattery) {
     if (age == null || age <= kBatteryQuietAfter) return null;

@@ -247,6 +247,7 @@ class ZbDevice {
     this.hasAreaInfo = false,
     this.lastSeen,
     this.lastSeenSource,
+    this.networkmapAt,
     this.availability,
   });
 
@@ -277,6 +278,7 @@ class ZbDevice {
       hasAreaInfo: j.containsKey('area_id'),
       lastSeen: parseLastSeen(j['last_seen']),
       lastSeenSource: _s(j['last_seen_source']),
+      networkmapAt: parseLastSeen(j['networkmap_at']),
       availability: _s(j['availability']),
     );
   }
@@ -326,8 +328,13 @@ class ZbDevice {
   /// Zuletzt gesehen laut Integration (ab 0.5.2, `ghost_detection`).
   final DateTime? lastSeen;
 
-  /// Woher [lastSeen] stammt: `z2m` (Option `last_seen`) oder `networkmap`.
+  /// Woher [lastSeen] stammt: `z2m` (Option `last_seen`), `message` (letzte
+  /// Meldung, ab haven-ha 0.6.3) oder `networkmap`.
   final String? lastSeenSource;
+
+  /// Zeitpunkt der Netzmessung, wenn [lastSeen] nur aus ihr stammt (ab
+  /// haven-ha 0.6.4).
+  final DateTime? networkmapAt;
 
   /// Verfügbarkeit laut Z2M: `online`, `offline` oder `null`.
   final String? availability;
@@ -371,6 +378,7 @@ class ZbDevice {
     hasAreaInfo: hasAreaInfo ?? this.hasAreaInfo,
     lastSeen: lastSeen ?? this.lastSeen,
     lastSeenSource: lastSeenSource ?? this.lastSeenSource,
+    networkmapAt: networkmapAt,
     availability: availability ?? this.availability,
   );
 }

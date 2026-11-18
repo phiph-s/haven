@@ -67,6 +67,62 @@ void main() {
       );
     });
 
+    test('Zeitstempel nur aus der Netzmessung: zählt zur Zeit der Messung', () {
+      final measured = _now.subtract(const Duration(days: 2));
+      // bei der Messung kurz vorher gesehen: kein Geist, auch 2 Tage später
+      expect(
+        evaluateGhost(
+          isBattery: false,
+          lastSeen: measured.subtract(const Duration(hours: 3)),
+          availability: null,
+          now: _now,
+          measuredAt: measured,
+        ),
+        isNull,
+      );
+      // schwieg schon bei der Messung über 24 h: Geist
+      final g = evaluateGhost(
+        isBattery: false,
+        lastSeen: measured.subtract(const Duration(days: 3)),
+        availability: null,
+        now: _now,
+        measuredAt: measured,
+      )!;
+      expect(g.text, 'Seit 5 Tagen nicht erreichbar');
+      // Batterie: 2 Tage Grenze zur Zeit der Messung
+      expect(
+        evaluateGhost(
+          isBattery: true,
+          lastSeen: measured.subtract(const Duration(hours: 5)),
+          availability: null,
+          now: _now,
+          measuredAt: measured,
+        ),
+        isNull,
+      );
+    });
+
+    test('Integration liefert networkmap_at', () {
+      final d = ZbDevice.fromJson({
+        'ieee': '0xa',
+        'friendly_name': 'Lampe',
+        'type': 'Router',
+        'power_source': 'Mains (single phase)',
+        'last_seen': _now
+            .subtract(const Duration(days: 2, hours: 1))
+            .toUtc()
+            .toIso8601String(),
+        'last_seen_source': 'networkmap',
+        'networkmap_at': _now
+            .subtract(const Duration(days: 2))
+            .toUtc()
+            .toIso8601String(),
+      });
+      final v = ZbDeviceView.build(d);
+      expect(v.networkMeasuredAt, isNotNull);
+      expect(v.ghost(_now), isNull);
+    });
+
     test('offline: erst nach über 1 h', () {
       expect(
         _eval(ago: const Duration(minutes: 30), availability: 'offline'),
