@@ -30,8 +30,9 @@ Future<ProviderContainer> _pump(
   WidgetTester tester,
   String location, {
   required _MemoryRepo repo,
+  Map<String, Object> prefs = const {},
 }) async {
-  SharedPreferences.setMockInitialValues({});
+  SharedPreferences.setMockInitialValues(prefs);
   final store = SettingsStore(await SharedPreferences.getInstance());
   late Session session;
   await tester.runAsync(() async {
@@ -72,8 +73,15 @@ void main() {
     expect(find.text('Karte'), findsWidgets);
     expect(find.byType(Map3DView), findsOneWidget);
     final plan = kFakeFloorPlan;
-    // Jede Platzierung hat genau einen Marker.
-    expect(find.byType(MapMarker), findsNWidgets(plan.placements.length));
+    // Kombi: nur Geräte, bei denen gerade etwas los ist (z. B. Licht an),
+    // höchstens einer je Platzierung.
+    final markers = tester.widgetList<MapMarker>(find.byType(MapMarker));
+    expect(markers.length, lessThan(plan.placements.length));
+    final snap0 = c.read(snapshotProvider);
+    for (final m in markers) {
+      final e = snap0.entity(m.entityId);
+      if (e != null && e.domain == 'light') expect(e.isOn, isTrue);
+    }
     expect(find.bySemanticsLabel('Kartenart Kombi'), findsOneWidget);
 
     // Alle platzierten Entities gibt es in den Beispieldaten.
@@ -93,7 +101,12 @@ void main() {
   testWidgets('Zwei Lampen auf einem Feld rücken auseinander und schalten', (
     tester,
   ) async {
-    final c = await _pump(tester, '/map', repo: _MemoryRepo());
+    final c = await _pump(
+      tester,
+      '/map',
+      repo: _MemoryRepo(),
+      prefs: {'map_layer': 'lamps'},
+    );
     const id = 'light.lampe_salon';
     final plan = kFakeFloorPlan;
     final cell = plan.placementOf(id)!.cell;
@@ -113,7 +126,12 @@ void main() {
   });
 
   testWidgets('Antippen einer Lampe schaltet sie', (tester) async {
-    final c = await _pump(tester, '/map', repo: _MemoryRepo());
+    final c = await _pump(
+      tester,
+      '/map',
+      repo: _MemoryRepo(),
+      prefs: {'map_layer': 'lamps'},
+    );
     const id = 'light.lampe_decke_salon';
     final before = c.read(snapshotProvider).entity(id)!.isOn;
     final marker = find.byWidgetPredicate(

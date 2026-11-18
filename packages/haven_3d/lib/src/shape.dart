@@ -12,12 +12,17 @@ import 'dart:ui' show Offset;
 /// [open] sind offene Kanten (Kante i von Ecke i zur nächsten): Sie bleiben
 /// auf dem Umriss (kein Spalt, der Nachbarraum schließt direkt an) und ihre
 /// Ecken bleiben spitz. Zwei Räume mit offener Wand wirken so wie eine Form.
+///
+/// [convexOnly]: nur nach außen zeigende Ecken runden, einspringende bleiben
+/// spitz (Außenseite einer Wand mit Stärke, sonst schnitte die Rundung in
+/// die Wand).
 List<Offset> roundedInset(
   List<Offset> outline, {
   double inset = 0,
   double radius = 0,
   int segments = 6,
   Set<int> open = const {},
+  bool convexOnly = false,
 }) {
   final (pts, openAfter) = _dedupe(outline, open);
   if (pts.length < 3) return pts;
@@ -25,11 +30,32 @@ List<Offset> roundedInset(
   final inner = inset > 0 ? _offset(pts, inset, ccw, openAfter) : pts;
   if (radius <= 0) return inner;
   final n = pts.length;
+  bool reflex(int i) {
+    final a = pts[(i - 1 + n) % n], b = pts[i], c = pts[(i + 1) % n];
+    final cross = (b - a).dx * (c - b).dy - (b - a).dy * (c - b).dx;
+    return ccw ? cross < 0 : cross > 0;
+  }
+
   return _fillet(inner, radius, segments, {
     for (var i = 0; i < n; i++)
-      if (openAfter.contains(i) || openAfter.contains((i - 1 + n) % n)) i,
+      if (openAfter.contains(i) ||
+          openAfter.contains((i - 1 + n) % n) ||
+          (convexOnly && reflex(i)))
+        i,
   });
 }
+
+/// Stärke der Wände in Metern: innen eckig (Möbel passen in die Ecken),
+/// außen rund wie der Umriss der 2D-Karte.
+const double kWallThickness = 0.08;
+
+/// Bodenfläche eines Raums: innen an den Wänden, eckig. Offene Kanten
+/// reichen bis zur Raumgrenze.
+List<Offset> roomFloor(
+  List<Offset> outline, {
+  required double gap,
+  Set<int> open = const {},
+}) => roundedInset(outline, inset: gap / 2 + kWallThickness, open: open);
 
 /// Doppelte Punkte entfernen; offene Kanten behalten ihre (neue) Nummer.
 (List<Offset>, Set<int>) _dedupe(List<Offset> p, Set<int> open) {

@@ -33,6 +33,7 @@ import 'furniture_ops.dart';
 import 'furniture_painter.dart';
 import 'map_3d.dart'
     show
+        defaultDeviceModel,
         deviceModelOf,
         deviceModelsFor,
         markerHeightOf,
@@ -136,7 +137,12 @@ class _FloorEditorScreenState extends ConsumerState<FloorEditorScreen> {
 
   /// Geräte: gewähltes Gerät (Bauform, Höhe) und 3D-Ansicht.
   String? _dsel;
-  bool _view3d = false;
+
+  /// Geräte werden nur in 3D gesetzt.
+  bool get _view3d => _mode == _Mode.devices;
+
+  /// Gerät, das gerade gezogen wird (sein Modell weicht der Vorschau).
+  String? _dragId;
   final _proj = _EditorProjection();
   HavenFloorPlan? _heightBase;
   MouseCursor _cursor = MouseCursor.defer;
@@ -567,6 +573,45 @@ class _FloorEditorScreenState extends ConsumerState<FloorEditorScreen> {
     return _cellAt(local, z: z);
   }
 
+  /// Bauform eines (vielleicht noch nicht platzierten) Geräts.
+  String _modelOf(String? entityId, FloorKind kind) {
+    final old = entityId == null ? null : _plan!.placementOf(entityId);
+    return old?.model ?? defaultDeviceModel(kind, entityId ?? '');
+  }
+
+  /// Höhe, auf der ein Gerät in [cell] landet: Wand- und Deckengeräte auf
+  /// ihrer Höhe (oder der gewählten), Stehlampen auf dem Boden, Tischlampen
+  /// und Ähnliches auf dem Möbelstück darunter, sonst auf dem Boden.
+  double _placeZ(String? entityId, FloorKind kind, GridPoint cell) {
+    final spec = h3.deviceSpec(_modelOf(entityId, kind));
+    final old = entityId == null ? null : _plan!.placementOf(entityId);
+    if (spec.wall || spec.height >= 2.0) return old?.height ?? spec.height;
+    if (spec.height == 0) return 0;
+    final p = Offset(cell.x + 0.5, cell.y + 0.5);
+    var top = 0.0;
+    for (final f in _plan!.furniture) {
+      final fs = h3.furnitureSpec(f.kind);
+      if (fs.wallMounted || f.kind == 'rug' || !f.contains(p)) continue;
+      top = math.max(top, fs.elevation + fs.height);
+    }
+    return top;
+  }
+
+  /// Vorschau des Modells beim Ziehen (eingerastet), `null` aus.
+  void _showPreview(GridPoint? cell, FloorKind kind, String? entityId) {
+    final c = _proj.controller;
+    if (c == null || !_view3d) return;
+    if (cell == null) return c.setPreview(null);
+    final m = _plan!.grid.cellMeters;
+    final loc = _plan!.locationOfCell(cell.x, cell.y);
+    c.setPreview(
+      _modelOf(entityId, kind),
+      at: Offset(cell.x + 0.5, cell.y + 0.5) * m,
+      z: _placeZ(entityId, kind, cell),
+      roomId: loc == kOutsideId ? null : loc,
+    );
+  }
+
   /// Höhe, auf der ein Gerät beim Ziehen in 3D liegt.
   double _dragZ(String entityId) => switch (_plan!.placementOf(entityId)) {
     final p? => markerHeightOf(p),
@@ -580,6 +625,7 @@ class _FloorEditorScreenState extends ConsumerState<FloorEditorScreen> {
     String? entityId,
   ]) {
     final cell = _dropCell(global, z: entityId == null ? 0 : _dragZ(entityId));
+    _showPreview(cell, kind, entityId);
     final loc = cell == null ? null : _plan!.locationOfCell(cell.x, cell.y);
     _dragInfo.value = EditorDragInfo(
       name: name,
@@ -626,9 +672,16 @@ class _FloorEditorScreenState extends ConsumerState<FloorEditorScreen> {
       y: cell.y,
       kind: kind ?? old?.kind,
       deviceId: deviceId ?? old?.deviceId,
-      // Bauform und Höhe ziehen mit um.
+      // Bauform zieht mit um; die Höhe rastet neu ein (Wand, Decke, Boden
+      // oder das Möbelstück darunter) und wird nur gespeichert, wenn sie vom
+      // Standard der Bauform abweicht.
       model: old?.model,
-      height: old?.height,
+      height: () {
+        final k = kind ?? old?.resolvedKind ?? FloorKind.ofEntity(entityId);
+        final z = _placeZ(entityId, k, cell);
+        final std = h3.deviceSpec(_modelOf(entityId, k)).height;
+        return (z - std).abs() < 1e-6 ? null : z;
+      }(),
     );
     Haptics.tap();
     _commit(plan, plan.withPlacement(p));
@@ -724,10 +777,15 @@ class _FloorEditorScreenState extends ConsumerState<FloorEditorScreen> {
     );
     void start() {
       _dragInfo.value = EditorDragInfo(name: label(), kind: kind);
+      setState(() => _dragId = entityId);
     }
 
-    void end(DraggableDetails d) =>
-        _dropEntity(entityId, d.offset, kind: kind, deviceId: deviceId);
+    void end(DraggableDetails d) {
+      setState(() => _dragId = null);
+      _proj.controller?.setPreview(null);
+      _dropEntity(entityId, d.offset, kind: kind, deviceId: deviceId);
+    }
+
     if (pool) {
       return LongPressDraggable<String>(
         data: entityId,
@@ -1720,21 +1778,6 @@ class _FloorEditorScreenState extends ConsumerState<FloorEditorScreen> {
               children: [
                 Positioned.fill(child: _canvas(context, plan, geo)),
                 if (_previewInfo != null) _previewOverlay(geo, _previewInfo!),
-                // Geräte auch in 3D setzen: Höhe sichtbar, Ziehen auf den
-                // Boden unter dem Finger.
-                if (_mode == _Mode.devices)
-                  Positioned(
-                    top: 8,
-                    right: 8,
-                    child: RoundIconButton(
-                      icon: _view3d
-                          ? Icons.map_outlined
-                          : Icons.view_in_ar_rounded,
-                      label: _view3d ? 'Draufsicht' : '3D-Ansicht',
-                      active: _view3d,
-                      onTap: () => setState(() => _view3d = !_view3d),
-                    ),
-                  ),
               ],
             );
           },
@@ -1864,7 +1907,7 @@ class _FloorEditorScreenState extends ConsumerState<FloorEditorScreen> {
     final view = _EditorScene(
       plan: stable,
       geo: geo,
-      tilt: _view3d && _mode == _Mode.devices,
+      tilt: _view3d,
       projection: _proj,
       nodes: nodes,
       nodeBuilder: (context, n) {
@@ -1876,10 +1919,12 @@ class _FloorEditorScreenState extends ConsumerState<FloorEditorScreen> {
       interactiveMarkers: _mode == _Mode.devices,
       highlightRoomId: !rooms ? _hover : null,
       hiddenObjects: {
-        if (!furniture)
-          for (final f in stable.furniture) f.id
-        else if (_fop != null && fsel != null)
-          fsel.id,
+        // Räume zeichnen ohne Möbel; Geräte setzen mit Möbeln (Tischlampe
+        // auf den Tisch), das gezogene Gerät weicht der Vorschau.
+        if (rooms)
+          for (final f in stable.furniture) f.id,
+        if (furniture && _fop != null && fsel != null) fsel.id,
+        if (_dragId != null) 'device:$_dragId',
       },
       overlay: _EditorOverlay(
         hv: hv,
@@ -2955,6 +3000,7 @@ class _EditorSceneState extends State<_EditorScene> {
     final hv = context.hv;
     final w = widget;
     final m = w.plan.grid.cellMeters;
+    w.projection?.controller = _c;
     final top = _cameraFor(w.geo, m);
     final key = (top, w.tilt);
     if (key != _camKey) {
@@ -3043,6 +3089,9 @@ class _EditorSceneState extends State<_EditorScene> {
 /// Projektion des letzten Bildes der Editor-Szene (Ablegen in 3D).
 class _EditorProjection {
   h3.SceneProjection? current;
+
+  /// Steuerung der Editor-Szene (Vorschau beim Platzieren).
+  h3.SceneController? controller;
 }
 
 /// Raster, „Draußen“ und das Overlay des Editors über der 3D-Szene.

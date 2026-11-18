@@ -229,6 +229,17 @@ class SceneController extends ChangeNotifier {
     _view?._wake();
   }
 
+  /// Vorschau eines Geräts beim Platzieren (siehe `GpuScene.setPreview`).
+  void setPreview(
+    String? model, {
+    Offset at = Offset.zero,
+    double z = 0,
+    String? roomId,
+  }) {
+    _gpu?.setPreview(model, at: at, z: z, roomId: roomId);
+    _view?._wake();
+  }
+
   final Map<String, bool?> _open = {};
 
   /// Tür oder Fenster [id] offen, zu oder unbekannt (`null`) zeigen, etwa
@@ -822,44 +833,14 @@ class _Scene3DViewState extends State<Scene3DView>
                   for (final r in _scene.rooms)
                     if ((widget.focusRoomId == null ||
                             r.id == widget.focusRoomId) &&
-                        _besideRoom(r, cam, size) == null)
+                        !_selectedIn3d(r, cam))
                       _at(
                         cam.project(V3(r.labelAt.dx, r.labelAt.dy, 0), size),
                         labels(context, r, cam),
                         center: false,
                       ),
-                // Gewählter Raum in 3D: Beschriftung neben dem Modell, mit
-                // feiner Verbindungslinie, statt mitten darauf.
-                if (labels != null)
-                  for (final r in _scene.rooms)
-                    if (_besideRoom(r, cam, size) case final b?) ...[
-                      Positioned.fill(
-                        child: IgnorePointer(
-                          child: CustomPaint(
-                            painter: _Leader(b.anchor, b.at, widget.style),
-                          ),
-                        ),
-                      ),
-                      Positioned(
-                        left: b.at.dx,
-                        top: b.at.dy,
-                        child: IgnorePointer(
-                          child: FractionalTranslation(
-                            translation: Offset(b.right ? 0 : -1, -0.5),
-                            child: labels(context, r, cam),
-                          ),
-                        ),
-                      ),
-                    ],
                 if (widget.overlayBuilder != null)
                   Positioned.fill(child: widget.overlayBuilder!(context, proj)),
-                CustomPaint(
-                  painter: _MarkerStems(
-                    lifted.values.toList(),
-                    cam,
-                    widget.style,
-                  ),
-                ),
                 for (final m in markers)
                   _place(context, m, proj.markers[m.id]!),
                 if (widget.foregroundBuilder != null)
@@ -947,42 +928,12 @@ class _Scene3DViewState extends State<Scene3DView>
     SchedulerBinding.instance.addPostFrameCallback(next);
   }
 
-  /// Platz für die Beschriftung neben dem gewählten, aufgerichteten Raum
-  /// in einer geneigten Ansicht: rechts neben seiner Silhouette, wenn dort
-  /// Platz ist, sonst links. `null`: Beschriftung wie sonst auf dem Boden.
-  ({Offset anchor, Offset at, bool right})? _besideRoom(
-    SceneRoom r,
-    OrbitCamera cam,
-    Size size,
-  ) {
-    if (r.id != widget.selectedRoomId || cam.pitch < 0.3) return null;
-    if (_heightOf(r.id) < 0.5) return null;
-    final h = r.wallHeight * _heightOf(r.id);
-    final pts = [
-      for (final p in r.outline) ...[
-        cam.project(V3(p.dx, p.dy, 0), size).offset,
-        cam.project(V3(p.dx, p.dy, h), size).offset,
-      ],
-    ];
-    var minX = pts.first.dx, maxX = minX, minY = pts.first.dy, maxY = minY;
-    for (final p in pts) {
-      minX = math.min(minX, p.dx);
-      maxX = math.max(maxX, p.dx);
-      minY = math.min(minY, p.dy);
-      maxY = math.max(maxY, p.dy);
-    }
-    const gap = 28.0, room = 150.0;
-    final right = maxX + gap + room < size.width - 8 || minX - gap - room < 8;
-    // Anker: die oberste Ecke der Silhouette auf dieser Seite.
-    final side = [
-      for (final p in pts)
-        if (right ? p.dx > maxX - 1 : p.dx < minX + 1) p,
-    ];
-    final anchor = side.reduce((a, b) => a.dy < b.dy ? a : b);
-    final y = (minY + (maxY - minY) * 0.3).clamp(24.0, size.height - 24);
-    final at = Offset(right ? maxX + gap : minX - gap, y.toDouble());
-    return (anchor: anchor, at: at, right: right);
-  }
+  /// Gewählter, aufgerichteter Raum in einer geneigten Ansicht: ohne
+  /// Beschriftung (sein Name steht im Panel, auf dem Modell stört sie).
+  bool _selectedIn3d(SceneRoom r, OrbitCamera cam) =>
+      r.id == widget.selectedRoomId &&
+      cam.pitch >= 0.3 &&
+      _heightOf(r.id) >= 0.5;
 
   /// Widget an einem Bildpunkt: mittig oder mit der oberen linken Ecke.
   Widget _at(
@@ -1056,66 +1007,6 @@ class _Dot extends StatelessWidget {
       boxShadow: const [BoxShadow(color: Color(0x33000000), blurRadius: 4)],
     ),
   );
-}
-
-/// Gestricheltes Lot von jedem Gerät auf den Boden.
-class _MarkerStems extends CustomPainter {
-  _MarkerStems(this.points, this.camera, this.style);
-  final List<V3> points;
-  final OrbitCamera camera;
-  final SceneStyle style;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final stem = Paint()
-      ..color = style.ink.withValues(alpha: 0.5)
-      ..strokeWidth = 1;
-    final foot = Paint()..color = style.ink.withValues(alpha: 0.5);
-    for (final p in points) {
-      final top = camera.project(p, size).offset;
-      final bottom = camera.project(V3(p.x, p.y, 0), size).offset;
-      final len = (top - bottom).distance;
-      if (len < 3) continue;
-      const dash = 4.0;
-      for (var s = 0.0; s < len; s += dash * 2) {
-        canvas.drawLine(
-          Offset.lerp(bottom, top, s / len)!,
-          Offset.lerp(bottom, top, math.min(len, s + dash) / len)!,
-          stem,
-        );
-      }
-      canvas.drawCircle(bottom, 2, foot);
-    }
-  }
-
-  @override
-  bool shouldRepaint(_MarkerStems old) =>
-      old.camera != camera || old.points != points || old.style != style;
-}
-
-/// Feine Verbindungslinie von der Beschriftung zum Raum, mit Punkt am Raum.
-class _Leader extends CustomPainter {
-  _Leader(this.anchor, this.at, this.style);
-  final Offset anchor;
-  final Offset at;
-  final SceneStyle style;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = style.accent.withValues(alpha: 0.85)
-      ..strokeWidth = 1.4
-      ..strokeCap = StrokeCap.round;
-    // Erst waagerecht aus der Beschriftung, dann schräg zum Raum.
-    final bend = Offset(at.dx + (anchor.dx > at.dx ? 10 : -10), at.dy);
-    canvas.drawLine(at, bend, paint);
-    canvas.drawLine(bend, anchor, paint);
-    canvas.drawCircle(anchor, 3, Paint()..color = style.accent);
-  }
-
-  @override
-  bool shouldRepaint(_Leader old) =>
-      old.anchor != anchor || old.at != at || old.style != style;
 }
 
 /// Kleine Anzeige für Bildrate und Renderzeiten.

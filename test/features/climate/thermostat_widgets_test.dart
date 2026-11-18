@@ -342,23 +342,20 @@ void main() {
       expect(_state(c)['current_heating_setpoint'], 25.0);
     });
 
-    testWidgets('Kombi: Thermostat-Marker öffnet ebenfalls das Panel', (
+    testWidgets('Kombi: nur heizende Thermostate, Antippen öffnet das Panel', (
       tester,
     ) async {
       await _pump(tester, '/map', prefs: {'map_layer': 'combo'});
-      final marker = find.byWidgetPredicate(
-        (w) =>
-            w is ThermostatMarker &&
-            w.entityId == 'climate.thermostat_ruheraum',
+      Finder thermostat(String id) => find.byWidgetPredicate(
+        (w) => w is ThermostatMarker && w.entityId == id,
       );
-      expect(marker, findsOneWidget);
-      await tester.tap(marker);
+      // Ruheraum ruht gerade: in der Kombi-Ansicht nicht zu sehen.
+      expect(thermostat('climate.thermostat_ruheraum'), findsNothing);
+      final salon = thermostat('climate.thermostat_salon');
+      expect(salon, findsOneWidget);
+      await tester.tap(salon);
       await _settle(tester);
       expect(find.byType(ThermostatPanel), findsOneWidget);
-      expect(
-        find.text('Folgt dem Wochenplan des Thermostats.'),
-        findsOneWidget,
-      );
     });
 
     testWidgets('Raum-Klima nennt Thermostate unter Heizung', (tester) async {

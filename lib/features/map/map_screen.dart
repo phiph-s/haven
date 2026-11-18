@@ -49,6 +49,7 @@ import 'map_light_controls.dart';
 import 'map_markers.dart';
 import 'map_panels.dart';
 import 'map_readings.dart';
+import 'map_relevance.dart';
 import 'map_thermostat.dart';
 import 'map_routes.dart';
 
@@ -809,7 +810,7 @@ class _MapBodyState extends ConsumerState<_MapBody> {
     final probing = supported == null;
 
     final _LayerView v = switch (layer) {
-      MapLayer.combo => _lightView(plan),
+      MapLayer.combo => _lightView(plan, readings),
       MapLayer.light => _lampsView(plan),
       MapLayer.temperature => _heatView(plan, readings, HeatKind.temperature),
       MapLayer.humidity => _heatView(plan, readings, HeatKind.humidity),
@@ -1168,13 +1169,25 @@ class _MapBodyState extends ConsumerState<_MapBody> {
 
   // ---- Licht ----------------------------------------------------------------
 
-  _LayerView _lightView(HavenFloorPlan plan) {
+  _LayerView _lightView(HavenFloorPlan plan, MapReadings readings) {
     final lights = ref.watch(mapLightsProvider(plan));
+    // Nur Geräte, bei denen gerade etwas los ist (Licht an, Heizung heizt,
+    // Fenster offen, hoher Verbrauch ...), sonst wird die Karte zu voll.
+    final snap = ref.watch(snapshotProvider);
+    final shown = relevantDevices(
+      plan.placements,
+      entity: snap.entity,
+      power: (id) => plan.placementOf(id)?.resolvedKind == FloorKind.switchKind
+          ? plugPowerOf(ref, id)
+          : null,
+      battery: (id) => readings.of(id)?.battery,
+    );
     return _LayerView(
       plan: plan,
       nodes: [
         for (final p in plan.placements)
-          FloorNode(id: p.entityId, point: plan.pointOfCell(p.cell)),
+          if (shown.contains(p.entityId))
+            FloorNode(id: p.entityId, point: plan.pointOfCell(p.cell)),
       ],
       nodeBuilder: (context, n) =>
           MapMarker(entityId: n.id, kind: plan.placementOf(n.id)!.resolvedKind),

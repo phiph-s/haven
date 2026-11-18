@@ -102,6 +102,7 @@ void main() {
       prefs: {'map_3d_tilt': true},
     );
     await shot(tester, 'screen_editor', '/map/editor');
+    await shot(tester, 'screen_editor_devices', '/map/editor?mode=devices');
     await shot(
       tester,
       'screen_editor_furniture',

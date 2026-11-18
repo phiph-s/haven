@@ -434,7 +434,11 @@ void main() {
       await tester.tap(find.bySemanticsLabel('Kartenart Kombi'));
       await tester.pumpAndSettle();
       expect(store.mapLayer, 'combo');
-      expect(find.byType(MapMarker), findsNWidgets(plan.placements.length));
+      // Kombi zeigt nur, was gerade relevant ist.
+      expect(
+        find.byType(MapMarker).evaluate().length,
+        lessThan(plan.placements.length),
+      );
     });
 
     testWidgets('Batterie: schwache hervorgehoben', (tester) async {

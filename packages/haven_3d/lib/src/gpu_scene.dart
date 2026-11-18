@@ -93,6 +93,114 @@ class GpuScene {
   /// Wandstücke je Raum (ohne offene Wände, mit Türöffnungen) für die
   /// Lichtschatten über Raumgrenzen.
   final Map<String, List<Face3>> _wallFaces = {};
+
+  /// Außenkante der Wände je Raum (runder Umriss).
+  final Map<String, List<Offset>> _outer = {};
+
+  /// Wände eines Raums, je Kante des Grundrisses ein Knoten: Außenseite
+  /// (rund), Innenseite (eckig), oben eine Abdeckung dazwischen. Türen
+  /// schneiden beide Seiten auf, offene Kanten haben keine Wand.
+  void _buildWalls(
+    SceneRoom r,
+    fs.Node roomNode,
+    List<Offset> outer,
+    List<Offset> inner,
+    _LineSet lines,
+  ) {
+    final h = r.wallHeight;
+    final outerFaces = SceneRoom.wallsAlong(outer, h);
+    final innerFaces = SceneRoom.wallsAlong(inner, h);
+    int edgeOf(Face3 f) => r.edgeNear(f.points[0].xy, f.points[1].xy);
+    final byEdge = <int, ({List<Face3> out, List<Face3> inn})>{};
+    for (final f in outerFaces) {
+      (byEdge[edgeOf(f)] ??= (out: [], inn: [])).out.add(f);
+    }
+    for (final f in innerFaces) {
+      (byEdge[edgeOf(f)] ??= (out: [], inn: [])).inn.add(f);
+    }
+    final openLines = <Edge3>[];
+    for (final e in byEdge.entries) {
+      final outs = e.value.out, inns = e.value.inn;
+      if (r.openEdges.contains(e.key)) {
+        // Offene Wand: keine Wand, nur die Grenze als leise Linie.
+        for (final f in [...inns]) {
+          openLines.add(
+            Edge3(
+              V3(f.points[0].x, f.points[0].y, 0.012),
+              V3(f.points[1].x, f.points[1].y, 0.012),
+            ),
+          );
+        }
+        continue;
+      }
+      if (outs.isEmpty && inns.isEmpty) continue;
+      final faces = [
+        for (final f in [...outs, ...inns]) ..._cutDoors(f),
+      ];
+      (_wallFaces[r.id] ??= []).addAll(faces);
+      final acc = _MeshAcc();
+      for (final f in faces) {
+        acc.addFace(f, twoSided: true);
+      }
+      // Abdeckung oben: Innenkante hin, Außenkante zurück.
+      final cap = [..._chain(inns, h), ..._chain(outs, h).reversed];
+      if (cap.length >= 3) {
+        acc.addFace(Face3(cap, V3.up), twoSided: true);
+      }
+      final geo = acc.geometry();
+      final normal = fs.Mesh(geo, _mat.wall);
+      final node = fs.Node(name: 'wall:${r.id}:${e.key}', mesh: normal)
+        ..lightChannelMask = _maskOf(r.id);
+      node.shadowCastingMode = fs.ShadowCastingMode.off;
+      // Von oben ist die Außenkante der Raumumriss (eine Linie).
+      node.add(
+        _edgesNode('wall-edges', [
+          for (final f in outs) Edge3(f.points[3], f.points[2]),
+        ], lines.wall),
+      );
+      roomNode.add(node);
+      // Für Wegschneiden und „hängt an der Wand“: die längste Außenfläche.
+      final rep = (outs.isEmpty ? inns : outs).reduce(
+        (a, b) =>
+            (a.points[1] - a.points[0]).length >=
+                (b.points[1] - b.points[0]).length
+            ? a
+            : b,
+      );
+      _walls.add(
+        _WallNode(r, rep, node)
+          ..normal = normal
+          ..selected = fs.Mesh(geo, _mat.wallSelected)
+          ..front = fs.Mesh(geo, _mat.wallFront),
+      );
+    }
+    if (openLines.isNotEmpty) {
+      roomNode.add(_edgesNode('open-edges', openLines, lines.detail));
+    }
+  }
+
+  /// Zusammenhängende Kette der Oberkanten von [faces] in Umlaufrichtung.
+  static List<V3> _chain(List<Face3> faces, double h) {
+    if (faces.isEmpty) return const [];
+    // Die Flächen kommen in Umlaufrichtung, evtl. über den Anfang hinweg:
+    // beim größten Sprung aufschneiden.
+    var start = 0;
+    var gap = -1.0;
+    for (var i = 0; i < faces.length; i++) {
+      final prev = faces[(i - 1 + faces.length) % faces.length];
+      final d = (faces[i].points[0] - prev.points[1]).length;
+      if (d > gap) {
+        gap = d;
+        start = i;
+      }
+    }
+    final ordered = [...faces.sublist(start), ...faces.sublist(0, start)];
+    return [
+      V3(ordered.first.points[0].x, ordered.first.points[0].y, h),
+      for (final f in ordered) V3(f.points[1].x, f.points[1].y, h),
+    ];
+  }
+
   final Map<String, double> _heights = {};
   String? _lastFadeKey;
 
@@ -134,13 +242,18 @@ class GpuScene {
       scene.add(roomNode);
       final lines = _mat.lines(r.id);
 
-      final shape = roundedInset(
+      // Wände mit Stärke: außen der runde Umriss (wie die 2D-Karte),
+      // innen eckig (Möbel passen in die Ecken). Der Boden liegt innen.
+      final outer = roundedInset(
         r.outline,
         inset: style.roomGap / 2,
         radius: style.roomRadius,
         open: r.openEdges,
+        convexOnly: true,
       );
+      final shape = roomFloor(r.outline, gap: style.roomGap, open: r.openEdges);
       _shapes[r.id] = shape;
+      _outer[r.id] = outer;
       final floor = [for (final o in shape) V3(o.dx, o.dy, 0)];
       final firstReceiver = _receivers.length;
       roomNode.add(
@@ -151,61 +264,12 @@ class GpuScene {
         ),
       );
       _roomReceivers[r.id] = [firstReceiver];
-
-      final rounded = style.roomRadius > 0;
-      // Offene Wände: keine Wand und kein Spalt (die Form reicht dort bis
-      // zur Grenze, die Ecken bleiben spitz), die Grenze ist eine leise Linie.
-      final openLines = <Edge3>[];
-      final pieces = [
-        for (final w in SceneRoom.wallsAlong(shape, r.wallHeight))
-          if (r.isOpenAt(w.points[0].xy, w.points[1].xy))
-            w
-          else
-            ..._cutDoors(w),
-      ];
-      for (final w in pieces) {
-        if (r.isOpenAt(w.points[0].xy, w.points[1].xy) &&
-            w.points[0].z == 0 &&
-            w.points[2].z >= r.wallHeight - 1e-6) {
-          openLines.add(
-            Edge3(
-              V3(w.points[0].x, w.points[0].y, 0.012),
-              V3(w.points[1].x, w.points[1].y, 0.012),
-            ),
-          );
-          continue;
-        }
-        (_wallFaces[r.id] ??= []).add(w);
-        final acc = _MeshAcc()..addFace(w, twoSided: true);
-        final geo = acc.geometry();
-        final normal = fs.Mesh(geo, _mat.wall);
-        final node = fs.Node(name: 'wall:${r.id}', mesh: normal)
-          ..lightChannelMask = _maskOf(r.id);
-        node.shadowCastingMode = fs.ShadowCastingMode.off;
-        // Nur die Oberkante: von oben ist sie der Raumumriss (eine Linie,
-        // kein doppelter Boden). Senkrechte Ecken nur bei eckigen Räumen.
-        node.add(
-          _edgesNode('wall-edges', [
-            Edge3(w.points[3], w.points[2]),
-            if (!rounded) Edge3(w.points[0], w.points[3]),
-          ], lines.wall),
-        );
-        roomNode.add(node);
-        _walls.add(
-          _WallNode(r, w, node)
-            ..normal = normal
-            ..selected = fs.Mesh(geo, _mat.wallSelected)
-            ..front = fs.Mesh(geo, _mat.wallFront),
-        );
-      }
-      if (openLines.isNotEmpty) {
-        roomNode.add(_edgesNode('open-edges', openLines, lines.detail));
-      }
+      _buildWalls(r, roomNode, outer, shape, lines);
     }
 
     // Akzent-Umrandung je Raum, knapp über dem Boden, breiter als Kanten.
     for (final r in source.rooms) {
-      final shape = _shapes[r.id]!;
+      final shape = _outer[r.id]!;
       final pts = [for (final o in shape) V3(o.dx, o.dy, 0.01)];
       final node = _edgesNode(
         'room-outline:${r.id}',
@@ -561,6 +625,61 @@ class GpuScene {
     outerConeAngle: cone,
     channelMask: mask,
   );
+
+  // --- Vorschau beim Platzieren ----------------------------------------
+
+  fs.Node? _previewNode;
+  String? _previewModel;
+
+  /// Vorschau eines Geräts [model] beim Platzieren: bei [at] (Meter) auf der
+  /// Höhe [z]; Wandgeräte rasten an der nächsten Wand von [roomId] ein.
+  /// `null` entfernt die Vorschau. Verschieben kostet nur eine Transformation.
+  void setPreview(
+    String? model, {
+    Offset at = Offset.zero,
+    double z = 0,
+    String? roomId,
+  }) {
+    if (model == null) {
+      final n = _previewNode;
+      if (n != null) scene.root.remove(n);
+      _previewNode = null;
+      _previewModel = null;
+      return;
+    }
+    final spec = deviceSpec(model);
+    if (model != _previewModel || _previewNode == null) {
+      final old = _previewNode;
+      if (old != null) scene.root.remove(old);
+      final m = spec.model();
+      final g = spec.glowModel();
+      final acc = _MeshAcc();
+      for (final f in [...m.faces, ...?g?.faces]) {
+        acc.addFace(f, twoSided: true);
+      }
+      final node = fs.Node(name: 'preview')
+        ..mesh = acc.isEmpty ? null : fs.Mesh(acc.geometry(), _mat.preview);
+      final edges = featureEdges(m);
+      if (edges.isNotEmpty) {
+        node.add(_edgesNode('preview-edges', edges, _mat.accentEdge));
+      }
+      scene.add(node);
+      _previewNode = node;
+      _previewModel = model;
+    }
+    var pos = at;
+    var rot = 0.0;
+    if (spec.wall && roomId != null) {
+      final pose = _wallPose(at, roomId);
+      if (pose != null) (pos, rot) = pose;
+    }
+    _previewNode!
+      ..position = toFs(V3(pos.dx, pos.dy, z))
+      ..rotation = vm.Quaternion.axisAngle(
+        vm.Vector3(0, 1, 0),
+        rot * math.pi / 180,
+      );
+  }
 
   /// Wandgerät an die nächste Wand seines Raums: Punkt auf der Wand und
   /// Drehung (Grad), so dass die Vorderseite (-y) in den Raum zeigt.
@@ -1098,6 +1217,7 @@ class GpuScene {
     }
     // Wände zur Kamera hin ausblenden, Türen und Fenster darin mit.
     final cut = <_WallNode>{};
+    final ghost = <_WallNode>{};
     for (final w in _walls) {
       final raised = (_heights[w.room.id] ?? 1) > 0.5;
       final near = raised && style.cutaway && cam.facing(w.face.normal) > 0.02;
@@ -1107,6 +1227,7 @@ class GpuScene {
         final m = near ? w.front : w.selected;
         if (!identical(w.node.mesh, m)) w.node.mesh = m;
         w.node.visible = true;
+        if (near) ghost.add(w);
         continue;
       }
       if (!identical(w.node.mesh, w.normal)) w.node.mesh = w.normal;
@@ -1114,12 +1235,24 @@ class GpuScene {
       if (near) cut.add(w);
     }
     for (final o in _objects.values) {
-      if (!o.object.wallMounted) continue;
+      if (!_onWallThing(o.object)) {
+        if (o.object.wallMounted) {
+          o.node.visible = _focus == null || o.roomId == _focus;
+        }
+        continue;
+      }
       final room = o.roomId;
       var hide = false;
       for (final w in cut) {
         if (w.room.id == room && _onWall(o.object, w.face)) hide = true;
       }
+      // An einer durchscheinenden Wand (gewählter Raum, vorne): genauso
+      // durchscheinend wie die Wand.
+      var see = false;
+      for (final w in ghost) {
+        if (w.room.id == room && _onWall(o.object, w.face)) see = true;
+      }
+      _ghostObject(o, see);
       o.node.visible = !hide && (_focus == null || room == _focus);
     }
     // Ausgeblendete Möbel (z. B. gerade gezogen, ein Overlay zeigt sie).
@@ -1174,6 +1307,38 @@ class GpuScene {
           : math.max(target, cur - step);
       _lit[r] = next;
       if (next != target) _fading = true;
+    }
+  }
+
+  /// Hängt an einer Wand (Tür, Fenster, Wandgerät)? Decken- und
+  /// Bodengeräte nahe einer Wand zählen nicht.
+  static bool _onWallThing(SceneObject o) {
+    if (!o.wallMounted) return false;
+    if (o.kind.startsWith('device:')) {
+      return deviceSpec(o.kind.substring(7)).wall;
+    }
+    return true;
+  }
+
+  /// Objekt [o] durchscheinend zeigen wie eine vordere Wand (oder wieder
+  /// normal). Kanten blenden dabei aus.
+  void _ghostObject(_ObjectNode o, bool on) {
+    if (o.ghosted == on) return;
+    o.ghosted = on;
+    if (on) {
+      o.beforeGhost = o.node.mesh;
+      o.node.mesh = fs.Mesh.primitives(
+        primitives: [
+          for (final (g, _) in o.parts) fs.MeshPrimitive(g, _mat.wallFront),
+        ],
+      );
+    } else {
+      o.node.mesh = o.beforeGhost ?? o.mesh;
+      o.beforeGhost = null;
+    }
+    o.edges.visible = !on;
+    for (final c in o.node.children) {
+      if (c.name == 'details') c.visible = !on;
     }
   }
 
@@ -1271,6 +1436,10 @@ class _ObjectNode {
 
   /// Heatmap-Flächen über den Oberseiten.
   final List<fs.Node> heat = [];
+
+  /// Durchscheinend an einer vorderen Wand (siehe `_ghostObject`).
+  bool ghosted = false;
+  fs.Mesh? beforeGhost;
 }
 
 /// Sammelt Dreiecke mit Normalen. Runde Flächen ([Face3.smooth]) bekommen
@@ -1374,6 +1543,9 @@ class _Materials {
   }
 
   final fs.UnlitMaterial accentEdge = fs.UnlitMaterial();
+
+  /// Vorschau beim Platzieren: Akzentfarbe, halb durchsichtig.
+  final fs.UnlitMaterial preview = fs.UnlitMaterial();
   late SceneStyle _style;
 
   fs.PhysicallyBasedMaterial surface(Mat m) =>
@@ -1451,12 +1623,20 @@ class _Materials {
   void setAccent(SceneStyle s) {
     _style = s;
     accentEdge.baseColorFactor = linearColor(s.accent, 1);
+    _paintPreview();
+  }
+
+  void _paintPreview() {
+    preview
+      ..baseColorFactor = linearColor(_style.accent, 0.55)
+      ..alphaMode = fs.AlphaMode.blend;
   }
 
   void _applyLineColors() {
     for (final l in _lines.values) {
       _paintLines(l);
     }
+    _paintPreview();
     accentEdge
       ..baseColorFactor = linearColor(_style.accent, 1)
       ..depthBias = 0.025

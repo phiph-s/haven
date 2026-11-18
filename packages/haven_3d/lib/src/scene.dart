@@ -407,12 +407,8 @@ class Scene {
     if (inset <= 0 && radius <= 0) return this;
     final shapes = {
       for (final r in rooms)
-        r.id: roundedInset(
-          r.outline,
-          inset: inset,
-          radius: radius,
-          open: r.openEdges,
-        ),
+        // Innenkante der Wände (eckig): Möbel passen in die Ecken.
+        r.id: roomFloor(r.outline, gap: inset * 2, open: r.openEdges),
     };
     return Scene(
       rooms: rooms,
