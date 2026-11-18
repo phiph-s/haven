@@ -51,6 +51,22 @@ void main() {
       );
     });
 
+    test('online laut Z2M: kein Verdacht, auch mit altem Zeitstempel', () {
+      expect(
+        _eval(ago: const Duration(days: 3), availability: 'online'),
+        isNull,
+      );
+      // Batterie: Verfügbarkeit zählt nicht
+      expect(
+        _eval(
+          battery: true,
+          ago: const Duration(days: 3),
+          availability: 'online',
+        ),
+        isNotNull,
+      );
+    });
+
     test('offline: erst nach über 1 h', () {
       expect(
         _eval(ago: const Duration(minutes: 30), availability: 'offline'),

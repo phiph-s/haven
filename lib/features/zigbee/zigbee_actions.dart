@@ -259,6 +259,8 @@ String? lastSeenSourceLabel(ZbDeviceView v) {
   switch (v.lastSeenSource) {
     case 'z2m':
       return 'laut Zigbee2MQTT';
+    case 'message':
+      return 'letzte Meldung des Geräts';
     case 'networkmap':
       final t = v.networkMeasuredAt?.toLocal();
       if (t == null) return 'laut Netzmessung';

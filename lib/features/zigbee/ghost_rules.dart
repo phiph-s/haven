@@ -63,8 +63,10 @@ String _dauer(Duration d) {
 /// gesehen“ da ist ([lastSeen] `null` und nicht offline).
 ///
 /// [availability] ist die Z2M-Verfügbarkeit (`online`/`offline`/`null`), sie
-/// zählt nur bei Netzgeräten. Batteriegeräte meldet Z2M erst nach bis zu 25 h
-/// als offline, dort entscheidet allein [lastSeen].
+/// zählt nur bei Netzgeräten. Z2M fragt Netzgeräte regelmäßig ab: `online`
+/// heißt erreichbar, auch wenn [lastSeen] alt ist (z. B. nur aus der
+/// Netzmessung). Batteriegeräte meldet Z2M erst nach bis zu 25 h als offline,
+/// dort entscheidet allein [lastSeen].
 GhostInfo? evaluateGhost({
   required bool isBattery,
   required DateTime? lastSeen,
@@ -83,6 +85,7 @@ GhostInfo? evaluateGhost({
       text: 'Seit ${_dauer(age)} keine Meldung, Batterie prüfen',
     );
   }
+  if (availability == 'online') return null;
   final stale = age != null && age > kMainsGhostAfter;
   final offline =
       availability == 'offline' && (age == null || age > kMainsOfflineAfter);
