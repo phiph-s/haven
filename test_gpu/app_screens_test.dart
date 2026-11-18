@@ -109,6 +109,12 @@ void main() {
     );
     await shot(
       tester,
+      'screen_heat',
+      '/map',
+      prefs: {'map_layer': 'temperature', 'map_3d_tilt': true},
+    );
+    await shot(
+      tester,
       'screen_network',
       '/map',
       prefs: {'map_layer': 'network'},

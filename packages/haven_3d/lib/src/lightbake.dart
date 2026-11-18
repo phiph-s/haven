@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 import 'dart:typed_data';
 
+import 'devices.dart';
 import 'model.dart';
 
 /// Eine waagerechte Fläche, die Lampenlicht empfängt (Boden, Oberseite
@@ -152,6 +153,7 @@ Float32List bakeLamp(
   double radius = 0.12,
   int samples = 7,
   Float32List? unshadowed,
+  double? cone,
 }) {
   final pts = [
     lamp,
@@ -180,6 +182,8 @@ Float32List bakeLamp(
           .pow((1 - math.pow(d / range, 4)).clamp(0.0, 1.0), 2)
           .toDouble();
       var e = cos / d2 * win;
+      // Lichtkegel nach unten (Spot, Pendel): weich zum Rand.
+      if (cone != null) e *= coneFactor(cos, cone);
       if (e <= 0) continue;
       unshadowed?[iy * r.width + ix] = e;
       if (inside) {

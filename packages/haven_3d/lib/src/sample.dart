@@ -111,59 +111,75 @@ Scene sampleScene() {
     markers: [
       SceneMarker(
         id: 'licht_wohnen',
+        model: 'pendant',
         at: const Offset(2.5, 2.2),
         kind: MarkerKind.light,
         lamp: const LampState(),
       ),
       SceneMarker(
         id: 'temp_wohnen',
+        model: 'wall_thermostat',
         at: const Offset(4.9, 1.0),
         kind: MarkerKind.temperature,
       ),
       SceneMarker(
         id: 'melder_flur',
+        model: 'motion_wall',
         at: const Offset(0.2, 4.7),
         kind: MarkerKind.presence,
       ),
       SceneMarker(
         id: 'schalter_flur',
+        model: 'switch',
         at: const Offset(4.85, 4.6),
         kind: MarkerKind.remote,
       ),
       SceneMarker(
         id: 'licht_kueche',
+        model: 'ceiling',
         at: const Offset(6.75, 1.5),
         kind: MarkerKind.light,
         lamp: const LampState(brightness: 0.7, color: Color(0xFFFFE2C0)),
       ),
       SceneMarker(
         id: 'kontakt_schlafen',
+        model: 'contact',
         at: const Offset(0.1, 8.5),
         kind: MarkerKind.contact,
       ),
       // Arbeiten: drei farbige Lampen um die Pflanze (Lichttest).
       SceneMarker(
         id: 'licht_arbeiten_rot',
+        model: 'spot',
         at: const Offset(4.4, 6.9),
         kind: MarkerKind.light,
         lamp: const LampState(color: Color(0xFFFF4D6D)),
       ),
       SceneMarker(
         id: 'licht_arbeiten_blau',
+        model: 'floor_lamp',
         at: const Offset(7.3, 6.7),
         kind: MarkerKind.light,
         lamp: const LampState(color: Color(0xFF4D8DFF)),
       ),
       SceneMarker(
         id: 'licht_arbeiten_gruen',
+        model: 'table_lamp',
         at: const Offset(5.6, 9.7),
         kind: MarkerKind.light,
         lamp: const LampState(brightness: 0.8, color: Color(0xFF5DFF8A)),
       ),
       SceneMarker(
         id: 'lautsprecher',
+        model: 'speaker',
         at: const Offset(3.2, 0.3),
         kind: MarkerKind.media,
+      ),
+      SceneMarker(
+        id: 'heizung_schlafen',
+        at: const Offset(1.5, 10.4),
+        kind: MarkerKind.temperature,
+        model: 'trv',
       ),
     ],
   );

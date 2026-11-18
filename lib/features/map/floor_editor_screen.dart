@@ -31,7 +31,13 @@ import 'floor_geometry.dart';
 import 'furniture_library.dart';
 import 'furniture_ops.dart';
 import 'furniture_painter.dart';
-import 'map_3d.dart' show sceneOfPlan, spreadNodes;
+import 'map_3d.dart'
+    show
+        deviceModelOf,
+        deviceModelsFor,
+        markerHeightOf,
+        sceneOfPlan,
+        spreadNodes;
 import 'map_markers.dart';
 
 enum _Mode { rooms, devices, furniture }
@@ -127,6 +133,12 @@ class _FloorEditorScreenState extends ConsumerState<FloorEditorScreen> {
   /// Gewähltes Möbelstück (Modus „Einrichten“).
   late String? _fsel = widget.startFurniture;
   _FurnOp? _fop;
+
+  /// Geräte: gewähltes Gerät (Bauform, Höhe) und 3D-Ansicht.
+  String? _dsel;
+  bool _view3d = false;
+  final _proj = _EditorProjection();
+  HavenFloorPlan? _heightBase;
   MouseCursor _cursor = MouseCursor.defer;
   final _focus = FocusNode(debugLabel: 'Grundriss-Editor');
   String? _hover;
@@ -221,8 +233,14 @@ class _FloorEditorScreenState extends ConsumerState<FloorEditorScreen> {
   }
 
   /// Rasterzelle unter dem Pixel oder `null` außerhalb des Rasters.
-  GridPoint? _cellAt(Offset px) {
-    final c = _geo!.pxToCell(px);
+  GridPoint? _cellAt(Offset px, {double z = 0}) {
+    // 3D (Geräte): Punkt unter dem Finger auf der Höhe des Geräts (sonst
+    // spränge eine Deckenlampe beim ersten Ziehen).
+    final p = _view3d && _mode == _Mode.devices ? _proj.current : null;
+    final floor = p?.camera.unprojectOnPlane(px, p.size, z: z)?.xy;
+    final c = floor != null
+        ? floor / _plan!.grid.cellMeters
+        : _geo!.pxToCell(px);
     final cell = GridPoint(c.dx.floor(), c.dy.floor());
     return _plan!.grid.containsCell(cell.x, cell.y) ? cell : null;
   }
@@ -537,7 +555,7 @@ class _FloorEditorScreenState extends ConsumerState<FloorEditorScreen> {
 
   /// Zelle unter dem Finger oder `null` (außerhalb der Fläche oder des
   /// Rasters: Loslassen entfernt das Gerät).
-  GridPoint? _dropCell(Offset global) {
+  GridPoint? _dropCell(Offset global, {double z = 0}) {
     final local = _toLocal(global);
     if (local == null || _geo == null) return null;
     if (local.dx < 0 ||
@@ -546,11 +564,22 @@ class _FloorEditorScreenState extends ConsumerState<FloorEditorScreen> {
         local.dy > _size.height) {
       return null;
     }
-    return _cellAt(local);
+    return _cellAt(local, z: z);
   }
 
-  void _dragHover(Offset global, String name, FloorKind kind) {
-    final cell = _dropCell(global);
+  /// Höhe, auf der ein Gerät beim Ziehen in 3D liegt.
+  double _dragZ(String entityId) => switch (_plan!.placementOf(entityId)) {
+    final p? => markerHeightOf(p),
+    null => 0,
+  };
+
+  void _dragHover(
+    Offset global,
+    String name,
+    FloorKind kind, [
+    String? entityId,
+  ]) {
+    final cell = _dropCell(global, z: entityId == null ? 0 : _dragZ(entityId));
     final loc = cell == null ? null : _plan!.locationOfCell(cell.x, cell.y);
     _dragInfo.value = EditorDragInfo(
       name: name,
@@ -575,7 +604,7 @@ class _FloorEditorScreenState extends ConsumerState<FloorEditorScreen> {
   }) {
     final plan = _plan!;
     final old = plan.placementOf(entityId);
-    final cell = _dropCell(global);
+    final cell = _dropCell(global, z: _dragZ(entityId));
     _dragInfo.value = null;
     setState(() {
       _hover = null;
@@ -597,6 +626,9 @@ class _FloorEditorScreenState extends ConsumerState<FloorEditorScreen> {
       y: cell.y,
       kind: kind ?? old?.kind,
       deviceId: deviceId ?? old?.deviceId,
+      // Bauform und Höhe ziehen mit um.
+      model: old?.model,
+      height: old?.height,
     );
     Haptics.tap();
     _commit(plan, plan.withPlacement(p));
@@ -705,7 +737,8 @@ class _FloorEditorScreenState extends ConsumerState<FloorEditorScreen> {
         feedback: feedback(),
         childWhenDragging: Opacity(opacity: 0.35, child: child),
         onDragStarted: start,
-        onDragUpdate: (d) => _dragHover(d.globalPosition, label(), kind),
+        onDragUpdate: (d) =>
+            _dragHover(d.globalPosition, label(), kind, entityId),
         onDragEnd: end,
         child: child,
       );
@@ -719,9 +752,146 @@ class _FloorEditorScreenState extends ConsumerState<FloorEditorScreen> {
         Haptics.tick();
         start();
       },
-      onDragUpdate: (d) => _dragHover(d.globalPosition, label(), kind),
+      onDragUpdate: (d) =>
+          _dragHover(d.globalPosition, label(), kind, entityId),
       onDragEnd: end,
-      child: child,
+      // Antippen wählt das Gerät (Bauform und Höhe im Panel).
+      child: GestureDetector(
+        onTap: () {
+          Haptics.tick();
+          setState(() => _dsel = _dsel == entityId ? null : entityId);
+        },
+        child: _dsel == entityId
+            ? DecoratedBox(
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  border: Border.all(color: context.hv.acc, width: 2.5),
+                ),
+                child: child,
+              )
+            : child,
+      ),
+    );
+  }
+
+  // ---- Bauform und Höhe der Geräte -----------------------------------------
+
+  void _setDevice(FloorPlacement p) {
+    final plan = _plan!;
+    _commit(plan, plan.withPlacement(p));
+  }
+
+  /// Gewähltes Gerät: Bauform als Auswahl, Höhe als Regler.
+  Widget _deviceDetails(HavenFloorPlan plan, FloorPlacement p) {
+    final hv = context.hv;
+    final kind = p.resolvedKind;
+    final model = deviceModelOf(p);
+    final spec = h3.deviceSpec(model);
+    final height = p.height ?? spec.height;
+    final name = ref.read(entityProvider(p.entityId))?.name ?? p.entityId;
+    String meters(double v) => '${v.toStringAsFixed(2).replaceAll('.', ',')} m';
+    return Container(
+      key: ValueKey('dsel-${p.entityId}'),
+      margin: const EdgeInsets.only(bottom: 10, right: 8),
+      padding: const EdgeInsets.fromLTRB(12, 10, 6, 6),
+      decoration: BoxDecoration(
+        color: hv.s2,
+        borderRadius: BorderRadius.circular(HavenRadii.m),
+        border: Border.all(color: hv.ln),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              MapMarker(entityId: p.entityId, kind: kind),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: HavenText.label.copyWith(color: hv.tx),
+                ),
+              ),
+              RoundIconButton(
+                icon: Icons.close_rounded,
+                label: 'Auswahl aufheben',
+                onTap: () => setState(() => _dsel = null),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: [
+              for (final d in deviceModelsFor(kind))
+                PressScale(
+                  onTap: () {
+                    Haptics.tick();
+                    // Neue Bauform: deren Standardhöhe, außer sie wurde
+                    // gerade eigens gesetzt.
+                    _setDevice(p.copyWith(model: d.id, clearHeight: true));
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 7,
+                    ),
+                    decoration: BoxDecoration(
+                      color: d.id == model ? hv.acc : hv.s1,
+                      borderRadius: BorderRadius.circular(HavenRadii.pill),
+                      border: Border.all(
+                        color: d.id == model ? hv.acc : hv.ln2,
+                      ),
+                    ),
+                    child: Text(
+                      d.label,
+                      style: HavenText.caption.copyWith(
+                        color: d.id == model ? hv.ai : hv.tx,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Row(
+            children: [
+              Text(
+                'Höhe ${meters(height)}',
+                style: HavenText.caption.copyWith(color: hv.tx2),
+              ),
+              const Spacer(),
+              if (p.height != null)
+                TextButton(
+                  onPressed: () => _setDevice(p.copyWith(clearHeight: true)),
+                  child: Text('Standard (${meters(spec.height)})'),
+                ),
+            ],
+          ),
+          Slider(
+            value: height.clamp(0.0, 2.6),
+            min: 0,
+            max: 2.6,
+            divisions: 52,
+            label: meters(height),
+            onChangeStart: (_) => _heightBase = _plan,
+            onChanged: (v) => setState(
+              () => _plan = _plan!.withPlacement(
+                _plan!.placementOf(p.entityId)!.copyWith(height: v),
+              ),
+            ),
+            onChangeEnd: (_) {
+              final base = _heightBase;
+              _heightBase = null;
+              if (base != null) _commit(base, _plan!);
+            },
+          ),
+        ],
+      ),
     );
   }
 
@@ -1550,6 +1720,21 @@ class _FloorEditorScreenState extends ConsumerState<FloorEditorScreen> {
               children: [
                 Positioned.fill(child: _canvas(context, plan, geo)),
                 if (_previewInfo != null) _previewOverlay(geo, _previewInfo!),
+                // Geräte auch in 3D setzen: Höhe sichtbar, Ziehen auf den
+                // Boden unter dem Finger.
+                if (_mode == _Mode.devices)
+                  Positioned(
+                    top: 8,
+                    right: 8,
+                    child: RoundIconButton(
+                      icon: _view3d
+                          ? Icons.map_outlined
+                          : Icons.view_in_ar_rounded,
+                      label: _view3d ? 'Draufsicht' : '3D-Ansicht',
+                      active: _view3d,
+                      onTap: () => setState(() => _view3d = !_view3d),
+                    ),
+                  ),
               ],
             );
           },
@@ -1679,6 +1864,8 @@ class _FloorEditorScreenState extends ConsumerState<FloorEditorScreen> {
     final view = _EditorScene(
       plan: stable,
       geo: geo,
+      tilt: _view3d && _mode == _Mode.devices,
+      projection: _proj,
       nodes: nodes,
       nodeBuilder: (context, n) {
         final kind = plan.placementOf(n.id)!.resolvedKind;
@@ -1860,12 +2047,14 @@ class _FloorEditorScreenState extends ConsumerState<FloorEditorScreen> {
     final pool = buildDevicePool(ref.read(snapshotProvider), zb, plan);
     _migrate(pool);
     final open = pool.open;
+    final dsel = _dsel == null ? null : plan.placementOf(_dsel!);
     return HavenCard(
       padding: const EdgeInsets.fromLTRB(16, 12, 8, 6),
       radius: HavenRadii.m,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          if (dsel != null) _deviceDetails(plan, dsel),
           Row(
             children: [
               Expanded(
@@ -2722,10 +2911,18 @@ class _EditorScene extends StatefulWidget {
     this.interactiveMarkers = false,
     this.highlightRoomId,
     this.hiddenObjects = const {},
+    this.tilt = false,
+    this.projection,
   });
 
   final HavenFloorPlan plan;
   final FloorGeometry geo;
+
+  /// Schräg (Geräte in 3D): eigene Kamera zum Drehen, keine 2D-Ebenen.
+  final bool tilt;
+
+  /// Bekommt die Projektion jedes Bildes (Ablegen in 3D).
+  final _EditorProjection? projection;
   final FloorOverlayPainter overlay;
   final List<FloorNode> nodes;
   final FloorNodeBuilder? nodeBuilder;
@@ -2739,6 +2936,7 @@ class _EditorScene extends StatefulWidget {
 
 class _EditorSceneState extends State<_EditorScene> {
   final _c = h3.SceneController();
+  (h3.OrbitCamera, bool)? _camKey;
 
   @override
   void dispose() {
@@ -2757,8 +2955,18 @@ class _EditorSceneState extends State<_EditorScene> {
     final hv = context.hv;
     final w = widget;
     final m = w.plan.grid.cellMeters;
-    final cam = _cameraFor(w.geo, m);
-    if (_c.camera != cam) _c.preset(cam);
+    final top = _cameraFor(w.geo, m);
+    final key = (top, w.tilt);
+    if (key != _camKey) {
+      // Neue Fläche oder Ansicht: Kamera setzen (schräg: von dort aus
+      // frei drehbar, bis sich etwas ändert).
+      _camKey = key;
+      _c.preset(
+        w.tilt
+            ? top.copyWith(yaw: -0.35, pitch: 0.85, scale: top.scale * 0.9)
+            : top,
+      );
+    }
     final byId = {for (final n in w.nodes) n.id: n};
     final style = (hv.isDark ? h3.SceneStyle.dark() : h3.SceneStyle.light())
         .copyWith(accent: hv.acc);
@@ -2767,9 +2975,10 @@ class _EditorSceneState extends State<_EditorScene> {
       controller: _c,
       style: style,
       quality: h3.SceneQuality.draft,
-      gestures: h3.SceneGestures.none,
+      gestures: w.tilt ? h3.SceneGestures.orbit : h3.SceneGestures.none,
       fitOnStart: false,
-      raisedRooms: const {},
+      // Schräg stehen die Räume (Wandgeräte sitzen an ihren Wänden).
+      raisedRooms: w.tilt ? null : const {},
       selectedRoomId: w.highlightRoomId,
       hiddenObjects: w.hiddenObjects,
       interactiveMarkers: w.interactiveMarkers,
@@ -2782,6 +2991,11 @@ class _EditorSceneState extends State<_EditorScene> {
             roomId: n.point.isOutside || n.point.roomId.isEmpty
                 ? null
                 : n.point.roomId,
+            // Auf der Höhe des Geräts (Bauform, gewählte Höhe).
+            height: switch (w.plan.placementOf(n.id)) {
+              final p? => markerHeightOf(p),
+              null => null,
+            },
           ),
       ],
       markerBuilder: w.nodeBuilder == null
@@ -2812,13 +3026,23 @@ class _EditorSceneState extends State<_EditorScene> {
           ),
         );
       },
-      overlayBuilder: (context, _) => RepaintBoundary(
-        child: CustomPaint(
-          painter: _GeoPainter(geo: w.geo, overlay: w.overlay, hv: hv),
-        ),
-      ),
+      overlayBuilder: (context, p) {
+        w.projection?.current = p;
+        // Schräg passen Raster und Griffe der Draufsicht nicht.
+        if (w.tilt) return const SizedBox.shrink();
+        return RepaintBoundary(
+          child: CustomPaint(
+            painter: _GeoPainter(geo: w.geo, overlay: w.overlay, hv: hv),
+          ),
+        );
+      },
     );
   }
+}
+
+/// Projektion des letzten Bildes der Editor-Szene (Ablegen in 3D).
+class _EditorProjection {
+  h3.SceneProjection? current;
 }
 
 /// Raster, „Draußen“ und das Overlay des Editors über der 3D-Szene.

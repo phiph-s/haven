@@ -328,6 +328,8 @@ class FloorPlacement {
     required this.y,
     this.kind,
     this.deviceId,
+    this.model,
+    this.height,
   });
 
   factory FloorPlacement.fromJson(Map<String, dynamic> j) => FloorPlacement(
@@ -336,6 +338,10 @@ class FloorPlacement {
     y: (j['y'] as num).floor(),
     kind: FloorKind.fromJson(j['kind']),
     deviceId: j['deviceId'] as String?,
+    model: j['model'] is String ? j['model'] as String : null,
+    height: (j['height'] is num && (j['height'] as num).isFinite)
+        ? (j['height'] as num).toDouble()
+        : null,
   );
 
   final String entityId;
@@ -343,6 +349,13 @@ class FloorPlacement {
   final int y;
   final FloorKind? kind;
   final String? deviceId;
+
+  /// Bauform in 3D (z. B. `pendant`, `floor_lamp`, `trv`), `null`: passend
+  /// zur Art (siehe 3D-Katalog der Geräte).
+  final String? model;
+
+  /// Höhe über dem Boden in Metern, `null`: Standard der Bauform.
+  final double? height;
 
   FloorKind get resolvedKind => kind ?? FloorKind.ofEntity(entityId);
   GridPoint get cell => GridPoint(x, y);
@@ -356,6 +369,8 @@ class FloorPlacement {
     'y': y,
     if (kind != null) 'kind': kind!.json,
     if (deviceId != null) 'deviceId': deviceId,
+    if (model != null) 'model': model,
+    if (height != null) 'height': (height! * 100).roundToDouble() / 100,
   };
 
   FloorPlacement copyWith({
@@ -364,12 +379,18 @@ class FloorPlacement {
     FloorKind? kind,
     int? x,
     int? y,
+    String? model,
+    bool clearModel = false,
+    double? height,
+    bool clearHeight = false,
   }) => FloorPlacement(
     entityId: entityId ?? this.entityId,
     x: x ?? this.x,
     y: y ?? this.y,
     kind: kind ?? this.kind,
     deviceId: deviceId ?? this.deviceId,
+    model: clearModel ? null : (model ?? this.model),
+    height: clearHeight ? null : (height ?? this.height),
   );
 
   @override
@@ -379,10 +400,13 @@ class FloorPlacement {
       other.x == x &&
       other.y == y &&
       other.kind == kind &&
-      other.deviceId == deviceId;
+      other.deviceId == deviceId &&
+      other.model == model &&
+      other.height == height;
 
   @override
-  int get hashCode => Object.hash(entityId, x, y, kind, deviceId);
+  int get hashCode =>
+      Object.hash(entityId, x, y, kind, deviceId, model, height);
 
   @override
   String toString() => 'FloorPlacement($entityId @ $x, $y)';

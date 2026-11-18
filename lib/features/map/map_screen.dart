@@ -6,7 +6,7 @@ import 'package:flutter/rendering.dart';
 import 'package:go_router/go_router.dart';
 import 'package:haven_3d/haven_3d.dart'
     as h3
-    show SceneController, SceneHeatmap, SceneProjection;
+    show SceneController, SceneHeatmap, SceneProjection, SceneQuality;
 import 'package:material_ui/material_ui.dart';
 
 import '../../core/adaptive/breakpoints.dart';
@@ -874,6 +874,7 @@ class _MapBodyState extends ConsumerState<_MapBody> {
                             heatmap: v.heatmap3d,
                             controller: v.controller,
                             overlayBuilder: v.overlay3d,
+                            quality: v.quality,
                             onNodeTap: v.onNodeTap,
                             onNodeLongPress: _holdNode,
                             onNodeSecondaryTap: _secondaryNode,
@@ -1081,6 +1082,7 @@ class _MapBodyState extends ConsumerState<_MapBody> {
                           heatmap: v.heatmap3d,
                           controller: v.controller,
                           overlayBuilder: v.overlay3d,
+                          quality: v.quality,
                           onNodeTap: v.onNodeTap,
                           onNodeLongPress: _holdNode,
                           onNodeSecondaryTap: _secondaryNode,
@@ -1414,6 +1416,7 @@ class _MapBodyState extends ConsumerState<_MapBody> {
     return _LayerView(
       plan: scene.plan,
       controller: ref.watch(meshControllerProvider),
+      quality: h3.SceneQuality.draft,
       nodes: MeshGraph.floorNodes(scene, map),
       overlay3d: (context, p) => RepaintBoundary(
         child: CustomPaint(
@@ -1520,6 +1523,7 @@ class _LayerView {
     this.heatmap3d,
     this.controller,
     this.overlay3d,
+    this.quality,
   });
   final HavenFloorPlan plan;
   final Widget card;
@@ -1535,6 +1539,9 @@ class _LayerView {
 
   /// Eigene Szene und Kamera (Funknetz), sonst die Karte der App.
   final h3.SceneController? controller;
+
+  /// Qualität (Funknetz: Entwurf ohne Baking), sonst die Einstellung.
+  final h3.SceneQuality? quality;
 
   /// Zeichenebene über der Szene (Funkverbindungen).
   final Widget Function(BuildContext context, h3.SceneProjection p)? overlay3d;

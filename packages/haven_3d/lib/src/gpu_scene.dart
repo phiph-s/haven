@@ -6,6 +6,7 @@ import 'package:flutter_scene/scene.dart' as fs;
 import 'package:vector_math/vector_math.dart' as vm;
 
 import 'camera.dart';
+import 'devices.dart';
 import 'edges.dart';
 import 'heatmap.dart';
 import 'lightbake.dart';
@@ -69,7 +70,15 @@ class GpuScene {
     return t * t * (3 - 2 * t);
   }
 
-  final Map<String, fs.PointLightComponent> _lamps = {};
+  /// Lichtquelle je Lampe (Punkt- oder Spotlicht) und was dazu gehört.
+  final Map<String, fs.Component> _lampNodes = {};
+  final Map<String, double?> _lampCone = {};
+  final Map<String, fs.Geometry> _bulbGeos = {};
+
+  /// Wo das Licht einer Lampe entsteht (Welt, nach dem Ausrichten an der
+  /// Wand), für das Baking.
+  final Map<String, V3> _lampWorld = {};
+
   final Map<String, LampState> _lampState = {};
 
   /// Gebakenes Lampenlicht: Empfangsflächen (Böden, Möbel-Oberseiten) und
@@ -221,27 +230,71 @@ class GpuScene {
       );
     }
 
-    // Leuchten.
+    // Geräte (Bauform) und Leuchten.
     for (final m in source.markers) {
+      final roomId = source.markerRoom[m.id];
+      final spec = m.model == null ? null : deviceSpec(m.model);
+      // Montagepunkt: Wandgeräte an die nächste Wand, zum Raum gedreht.
+      var at = m.position.xy;
+      var rot = 0.0;
+      if (spec != null && spec.wall && roomId != null) {
+        final pose = _wallPose(at, roomId);
+        if (pose != null) (at, rot) = pose;
+      }
+      final mount = V3(at.dx, at.dy, m.position.z);
+      if (spec != null) {
+        _addObject(
+          SceneObject(
+            id: 'device:${m.id}',
+            kind: 'device:${spec.id}',
+            model: spec.model(),
+            position: mount,
+            rotation: rot,
+            roomId: roomId,
+            wallMounted: true,
+          ),
+        );
+      }
       final lamp = m.lamp;
       if (m.kind != MarkerKind.light || lamp == null) continue;
-      final node = fs.Node(name: 'lamp:${m.id}')..position = toFs(m.position);
-      final roomId = source.markerRoom[m.id];
+      // Leuchtender Teil und Lichtquelle: nicht im Raumknoten, Lampen
+      // bleiben auf ihrer Höhe, auch wenn der Raum flach ist.
+      final node = fs.Node(name: 'lamp:${m.id}')
+        ..position = toFs(mount)
+        ..rotation = vm.Quaternion.axisAngle(
+          // (x, y, z) → (x, z, -y): Drehung um z wird Drehung um y, gleicher
+          // Sinn.
+          vm.Vector3(0, 1, 0),
+          rot * math.pi / 180,
+        );
       _lampMask[m.id] = roomId == null ? 0xFF : _maskOf(roomId);
       _lampState[m.id] = lamp;
-      final light = fs.PointLightComponent(_pointLight(lamp, _lampMask[m.id]!));
-      node.addComponent(light);
+      _lampCone[m.id] = spec?.lamp?.cone;
+      final lightNode = fs.Node(name: 'light:${m.id}')
+        ..position = toFs(V3(0, 0, spec?.lamp?.lightZ ?? 0));
+      final light = _lightComponent(m.id, lamp);
+      lightNode.addComponent(light);
+      node.add(lightNode);
+      final glow = spec?.glowModel();
+      final geo = glow == null || glow.faces.isEmpty
+          ? _bulbGeometry
+          : (() {
+              final acc = _MeshAcc();
+              for (final f in glow.faces) {
+                acc.addFace(f, twoSided: f.twoSided);
+              }
+              return acc.geometry();
+            })();
+      _bulbGeos[m.id] = geo;
       final bulb = fs.Node(
         name: 'bulb:${m.id}',
-        mesh: fs.Mesh(fs.SphereGeometry(radius: 0.07), _mat.bulb(lamp)),
+        mesh: fs.Mesh(geo, _mat.bulb(lamp)),
       );
       node.add(bulb);
-      _lamps[m.id] = light;
+      _lampNodes[m.id] = light;
       _bulbs[m.id] = bulb;
       _bulbRoom[m.id] = roomId;
-      // Nicht im Raumknoten: Lampen bleiben auf Deckenhöhe, auch wenn der
-      // Raum flach ist, und beleuchten ihn von oben wie der Lichtschein der
-      // 2D-Karte.
+      _lampWorld[m.id] = mount + V3(0, 0, spec?.lamp?.lightZ ?? 0);
       scene.add(node);
     }
 
@@ -449,7 +502,7 @@ class GpuScene {
 
   fs.PointLight _pointLight(LampState s, int mask) => fs.PointLight(
     color: linearColor(s.color).xyz,
-    intensity: s.on && quality.realtimeLamps
+    intensity: s.on && quality.realtimeLamps && _lightsOn
         ? 40.0 * s.brightness * style.lampGlow
         : 0,
     range: 7,
@@ -466,8 +519,7 @@ class GpuScene {
   /// vorgemerkt und in [flushLight] neu gemischt: mehrere Lampen im selben
   /// Bild kosten so je Fläche nur ein Mischen.
   void setLamp(String id, LampState s) {
-    final l = _lamps[id];
-    if (l == null) return;
+    if (!_lampNodes.containsKey(id)) return;
     if (_lampState[id] == s) return;
     _lampState[id] = s;
     _applyLamp(id, s);
@@ -478,8 +530,85 @@ class GpuScene {
 
   /// Echtzeitlicht und Glühbirne einer Lampe (ohne Baking).
   void _applyLamp(String id, LampState s) {
-    _lamps[id]!.light = _pointLight(s, _lampMask[id] ?? 0xFF);
-    _bulbs[id]!.mesh = fs.Mesh(_bulbGeometry, _mat.bulb(s));
+    final c = _lampNodes[id];
+    if (c is fs.SpotLightComponent) {
+      c.light = _spotLight(s, _lampMask[id] ?? 0xFF, _lampCone[id]!);
+    } else if (c is fs.PointLightComponent) {
+      c.light = _pointLight(s, _lampMask[id] ?? 0xFF);
+    }
+    _bulbs[id]!.mesh = fs.Mesh(
+      _bulbGeos[id] ?? _bulbGeometry,
+      _mat.bulb(_lightsOn ? s : LampState.off),
+    );
+  }
+
+  fs.Component _lightComponent(String id, LampState s) {
+    final cone = _lampCone[id];
+    final mask = _lampMask[id] ?? 0xFF;
+    return cone == null
+        ? fs.PointLightComponent(_pointLight(s, mask))
+        : fs.SpotLightComponent(_spotLight(s, mask, cone));
+  }
+
+  /// Lichtkegel nach unten (Spot, Pendel, Deckenleuchte).
+  fs.SpotLight _spotLight(LampState s, int mask, double cone) => fs.SpotLight(
+    color: linearColor(s.color).xyz,
+    intensity: s.on && quality.realtimeLamps && _lightsOn
+        ? 40.0 * s.brightness * style.lampGlow
+        : 0,
+    range: 7,
+    innerConeAngle: cone * 0.7,
+    outerConeAngle: cone,
+    channelMask: mask,
+  );
+
+  /// Wandgerät an die nächste Wand seines Raums: Punkt auf der Wand und
+  /// Drehung (Grad), so dass die Vorderseite (-y) in den Raum zeigt.
+  /// `null`, wenn keine Wand nah genug ist (frei stehend).
+  (Offset, double)? _wallPose(Offset p, String roomId) {
+    final shape = _shapes[roomId];
+    if (shape == null || shape.length < 3) return null;
+    Offset? best;
+    Offset? dir;
+    var bestD = 0.8;
+    for (var i = 0; i < shape.length; i++) {
+      final a = shape[i], b = shape[(i + 1) % shape.length];
+      final e = b - a;
+      final len2 = e.distanceSquared;
+      if (len2 < 1e-9) continue;
+      final t = (((p - a).dx * e.dx + (p - a).dy * e.dy) / len2).clamp(
+        0.0,
+        1.0,
+      );
+      final q = a + e * t;
+      final d = (p - q).distance;
+      if (d < bestD) {
+        bestD = d;
+        best = q;
+        dir = e / math.sqrt(len2);
+      }
+    }
+    if (best == null || dir == null) return null;
+    // Nach außen zeigende Normale (weg vom Raum).
+    var out = Offset(-dir.dy, dir.dx);
+    final room = source.room(roomId);
+    if (room != null && room.contains(best + out * 0.05)) out = -out;
+    final deg = math.atan2(-out.dx, out.dy) * 180 / math.pi;
+    return (best, deg);
+  }
+
+  /// Lampenlicht zeigen? Aus (z. B. bei Heatmaps): nur Sonne und Umgebung,
+  /// Wände und Böden bleiben neutral grau.
+  bool _lightsOn = true;
+
+  void _setLightsOn(bool on) {
+    if (on == _lightsOn) return;
+    _lightsOn = on;
+    for (final e in _lampState.entries) {
+      _applyLamp(e.key, e.value);
+    }
+    // Nur neu mischen (in Scheiben), gebacken ist schon alles.
+    _dirty.addAll(_receivers);
   }
 
   late final fs.Geometry _bulbGeometry = fs.SphereGeometry(radius: 0.07);
@@ -538,7 +667,7 @@ class GpuScene {
     }
     for (final e in r.lamps.entries) {
       final s = _lampState[e.key];
-      if (s == null || !s.on) continue;
+      if (s == null || !s.on || !_lightsOn) continue;
       final c = linearColor(s.color);
       final f = k * s.brightness;
       add(
@@ -700,7 +829,8 @@ class GpuScene {
   _zoneOccluders(Set<String> roomIds) {
     final inZone = [
       for (final o in _objects.values)
-        if (roomIds.contains(o.roomId)) o.object,
+        if (roomIds.contains(o.roomId) && !o.object.kind.startsWith('device:'))
+          o.object,
     ];
     final objects = [for (final o in inZone) o.world];
     final occ = LightOccluders(objects);
@@ -741,17 +871,19 @@ class GpuScene {
       final open = Float32List(r.bake.width * r.bake.height);
       r.lamps[m.id] = bakeLamp(
         r.bake,
-        m.position,
+        _lampWorld[m.id] ?? m.lightPosition,
         occ.objects,
         samples: quality.bakeSamples,
         unshadowed: open,
+        cone: m.cone,
       );
       r.lampsOpen[m.id] = open;
       return;
     }
     // Nachbarraum der Zone: erst billig prüfen, ob durch Tür oder offene
     // Wand überhaupt Licht ankommt.
-    final through = bakeLamp(r.bake, m.position, occ.walls, samples: 1);
+    final pos = _lampWorld[m.id] ?? m.lightPosition;
+    final through = bakeLamp(r.bake, pos, occ.walls, samples: 1, cone: m.cone);
     if (!through.any((v) => v > 0)) {
       r.lamps.remove(m.id);
       r.lampsOpen.remove(m.id);
@@ -759,9 +891,10 @@ class GpuScene {
     }
     r.lamps[m.id] = bakeLamp(
       r.bake,
-      m.position,
+      pos,
       occ.lamp,
       samples: quality.bakeSamples,
+      cone: m.cone,
     );
     r.lampsOpen[m.id] = through;
   }
@@ -880,6 +1013,7 @@ class GpuScene {
     String? selectedRoomId,
     SceneHeatmap? heatmap,
     Set<String> hiddenObjects = const {},
+    bool lightsOn = true,
   }) {
     if (selectedRoomId != _selectedRoom) {
       _roomOutlines[_selectedRoom]?.visible = false;
@@ -887,6 +1021,7 @@ class GpuScene {
       _roomOutlines[selectedRoomId]?.visible = true;
     }
     if (!identical(heatmap, _heat)) _setHeatmap(heatmap);
+    _setLightsOn(lightsOn);
     // Sonnenschatten müssen von der Kamera bis hinter die Wohnung reichen;
     // bei Perspektive steht die Kamera je nach Zoom unterschiedlich weit weg.
     final sun = scene.directionalLight;

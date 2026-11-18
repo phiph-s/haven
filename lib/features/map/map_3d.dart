@@ -183,15 +183,18 @@ h3.Scene sceneOfPlan(HavenFloorPlan plan) {
           sensor: f.sensor,
         ),
     ],
+    // Alle platzierten Geräte stehen als Modell in der Welt, Lampen
+    // leuchten (Zustand über [syncMapLamps]).
     markers: [
       for (final p in plan.placements)
-        if (p.resolvedKind == FloorKind.light)
-          h3.SceneMarker(
-            id: p.entityId,
-            at: p.center * m,
-            kind: h3.MarkerKind.light,
-            lamp: h3.LampState.off,
-          ),
+        h3.SceneMarker(
+          id: p.entityId,
+          at: p.center * m,
+          kind: markerKindOf(p.resolvedKind),
+          model: deviceModelOf(p),
+          height: p.height,
+          lamp: p.resolvedKind == FloorKind.light ? h3.LampState.off : null,
+        ),
     ],
   );
   _scenes[plan] = scene;
@@ -219,6 +222,36 @@ List<(FloorNode, Offset)> spreadNodes(List<FloorNode> nodes) {
         _ => (n, n.point.offset),
       },
   ];
+}
+
+/// Bauform eines Geräts: gewählt oder passend zur Art.
+String deviceModelOf(FloorPlacement p) =>
+    p.model ?? defaultDeviceModel(p.resolvedKind, p.entityId);
+
+/// Standard-Bauform je Art (Thermostate als Heizkörperthermostat).
+String defaultDeviceModel(FloorKind kind, String entityId) => switch (kind) {
+  FloorKind.light => 'ceiling',
+  FloorKind.temperature => entityId.startsWith('climate.') ? 'trv' : 'sensor',
+  FloorKind.presence => 'motion',
+  FloorKind.remote => 'switch',
+  FloorKind.contact => 'contact',
+  FloorKind.media => 'speaker',
+  FloorKind.switchKind => 'plug',
+  FloorKind.device => 'device',
+};
+
+/// Bauformen, die für ein Gerät der Art [kind] in Frage kommen.
+List<h3.DeviceSpec> deviceModelsFor(FloorKind kind) => [
+  for (final d in h3.kDeviceModels.values)
+    if (kind == FloorKind.light ? d.isLamp : !d.isLamp) d,
+];
+
+/// Höhe des Markers über dem Gerät: an der Lichtquelle bzw. knapp über dem
+/// Montagepunkt.
+double markerHeightOf(FloorPlacement p) {
+  final spec = h3.deviceSpec(deviceModelOf(p));
+  final mount = p.height ?? spec.height;
+  return mount + (spec.lamp?.lightZ ?? 0.08);
 }
 
 /// Höhe und Farbe eines Geräts in 3D nach seiner Art.
@@ -525,6 +558,8 @@ class _Map3DViewState extends ConsumerState<Map3DView> {
       interactiveMarkers: widget.interactiveMarkers,
       selectedRoomId: widget.selectedRoomId,
       heatmap: widget.heatmap,
+      // Heatmaps zeigen Werte, kein Licht: Wände und Böden bleiben grau.
+      lightsOn: widget.heatmap == null,
       markerHitRadius: 22,
       markers: [
         for (final (n, at) in spreadNodes(widget.nodes))
@@ -540,6 +575,10 @@ class _Map3DViewState extends ConsumerState<Map3DView> {
                   plan.placementOf(n.id)?.resolvedKind ??
                       FloorKind.ofEntity(n.id),
                 ),
+            // Über dem Gerät (Bauform und gewählte Höhe).
+            height: widget.markerKind == null && plan.placementOf(n.id) != null
+                ? markerHeightOf(plan.placementOf(n.id)!)
+                : null,
           ),
       ],
       markerBuilder: widget.nodeBuilder == null

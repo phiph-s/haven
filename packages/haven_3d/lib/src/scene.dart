@@ -3,6 +3,7 @@ import 'dart:ui' show Color, Offset;
 
 import 'package:flutter/foundation.dart';
 
+import 'devices.dart';
 import 'furniture/catalog.dart';
 import 'model.dart';
 import 'shape.dart';
@@ -343,7 +344,31 @@ class SceneMarker {
     double? height,
     this.roomId,
     this.lamp,
-  }) : position = V3(at.dx, at.dy, height ?? kDefaultMarkerHeight[kind]!);
+    this.model,
+  }) : position = V3(
+         at.dx,
+         at.dy,
+         height ??
+             (model != null
+                 ? deviceSpec(model).height
+                 : kDefaultMarkerHeight[kind]!),
+       );
+
+  /// Bauform in 3D (siehe [kDeviceModels]), `null`: kein Modell, nur der
+  /// Punkt (Lampen leuchten trotzdem).
+  final String? model;
+
+  /// Wo das Licht einer Lampe entsteht (Montagepunkt plus Versatz der
+  /// Bauform, z. B. der Schirm einer Pendelleuchte).
+  V3 get lightPosition {
+    final m = model;
+    if (m == null) return position;
+    final l = deviceSpec(m).lamp;
+    return l == null ? position : position + V3(0, 0, l.lightZ);
+  }
+
+  /// Lichtkegel (halber Winkel nach unten) oder `null` (rundum).
+  double? get cone => model == null ? null : deviceSpec(model).lamp?.cone;
 
   final String id;
   final MarkerKind kind;
