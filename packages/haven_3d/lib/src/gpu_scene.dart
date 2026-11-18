@@ -33,7 +33,13 @@ vm.Vector4 linearColor(Color c, [double? alpha]) {
 /// und passt je Bild nur Sichtbarkeit (weggeschnittene Wände, Fokus-Raum),
 /// Kantenbreite und Auswahl an.
 class GpuScene {
-  GpuScene(this.source, this.style, {this.quality = SceneQuality.high}) {
+  GpuScene(
+    this.source,
+    this.style, {
+    this.quality = SceneQuality.high,
+    Map<String, bool?> open = const {},
+  }) {
+    _openState.addAll(open);
     _build();
   }
 
@@ -74,6 +80,10 @@ class GpuScene {
   final Map<String, String?> _bulbRoom = {};
   final Map<String, List<Offset>> _shapes = {};
   final Map<String, List<int>> _roomReceivers = {};
+
+  /// Wandstücke je Raum (ohne offene Wände, mit Türöffnungen) für die
+  /// Lichtschatten über Raumgrenzen.
+  final Map<String, List<Face3>> _wallFaces = {};
   final Map<String, double> _heights = {};
   String? _lastFadeKey;
 
@@ -94,7 +104,10 @@ class GpuScene {
   /// Lichtkanal (Bit) je Raum: benachbarte Räume bekommen verschiedene
   /// Bits, eine Lampe leuchtet nur in ihrem Kanal. So bleibt Licht im Raum,
   /// ohne Schatten (die flutter_scene nur für vier Punktlichter rechnet).
-  late final Map<String, int> _channel = roomChannels(source.rooms);
+  late final Map<String, int> _channel = roomChannels(
+    source.rooms,
+    source.lightZones,
+  );
 
   int _maskOf(String? roomId) =>
       roomId == null ? kOutsideChannel : _channel[roomId] ?? 0xFF;
@@ -116,6 +129,7 @@ class GpuScene {
         r.outline,
         inset: style.roomGap / 2,
         radius: style.roomRadius,
+        open: r.openEdges,
       );
       _shapes[r.id] = shape;
       final floor = [for (final o in shape) V3(o.dx, o.dy, 0)];
@@ -130,10 +144,20 @@ class GpuScene {
       _roomReceivers[r.id] = [firstReceiver];
 
       final rounded = style.roomRadius > 0;
+      // Offene Wände: keine Wand und kein Spalt (die Form reicht dort bis
+      // zur Grenze, die Ecken bleiben spitz), die Grenze ist eine leise Linie.
       final openLines = <Edge3>[];
-      for (final w in SceneRoom.wallsAlong(shape, r.wallHeight)) {
-        // Offene Wand: nur die Raumgrenze als leise Linie am Boden.
-        if (r.isOpenAt(w.points[0].xy, w.points[1].xy)) {
+      final pieces = [
+        for (final w in SceneRoom.wallsAlong(shape, r.wallHeight))
+          if (r.isOpenAt(w.points[0].xy, w.points[1].xy))
+            w
+          else
+            ..._cutDoors(w),
+      ];
+      for (final w in pieces) {
+        if (r.isOpenAt(w.points[0].xy, w.points[1].xy) &&
+            w.points[0].z == 0 &&
+            w.points[2].z >= r.wallHeight - 1e-6) {
           openLines.add(
             Edge3(
               V3(w.points[0].x, w.points[0].y, 0.012),
@@ -142,6 +166,7 @@ class GpuScene {
           );
           continue;
         }
+        (_wallFaces[r.id] ??= []).add(w);
         final acc = _MeshAcc()..addFace(w, twoSided: true);
         final geo = acc.geometry();
         final normal = fs.Mesh(geo, _mat.wall);
@@ -188,78 +213,12 @@ class GpuScene {
 
     // Möbel.
     for (final o in source.objects) {
-      final roomId = source.objectRoom[o.id];
-      final parent = roomId == null ? null : _roomNodes[roomId];
-      final node = fs.Node(name: 'object:${o.id}')
-        ..lightChannelMask = _maskOf(roomId);
-      final byMat = <Mat, _MeshAcc>{};
-      final tops = <Face3>[];
-      for (final f in o.world.faces) {
-        // Waagerechte Oberseiten bekommen gebakenes Lampenlicht (eigene
-        // Fläche), der Rest Echtzeitlicht.
-        if (roomId != null &&
-            !f.twoSided &&
-            f.mat != Mat.glass &&
-            f.normal.z > 0.95) {
-          tops.add(f);
-          continue;
-        }
-        byMat
-            .putIfAbsent(f.mat, () => _MeshAcc())
-            .addFace(f, twoSided: f.twoSided);
-      }
-      final parts = [
-        for (final e in byMat.entries)
-          if (!e.value.isEmpty) (e.value.geometry(), e.key),
-      ];
-      final mesh = fs.Mesh.primitives(
-        primitives: [
-          for (final (g, m) in parts) fs.MeshPrimitive(g, _mat.surface(m)),
-        ],
+      // Türen und Fenster gleich im bekannten Zustand (Sensor).
+      _addObject(
+        o.wallMounted && _openState.containsKey(o.id)
+            ? o.withOpen(_openState[o.id])
+            : o,
       );
-      node.mesh = mesh;
-      final topPolys = <List<V3>>[];
-      for (final f in tops) {
-        final z =
-            f.points.map((p) => p.z).reduce((a, b) => a + b) / f.points.length;
-        final poly = [for (final p in f.points) V3(p.x, p.y, z)];
-        topPolys.add(poly);
-        _roomReceivers[roomId]!.add(_receivers.length);
-        node.add(_receiverNode('top:${o.id}', poly, (s) => s.base(f.mat)));
-      }
-      // Keine Echtzeit-Schatten: Sonne und Lampen sind auf Böden und
-      // Oberseiten gebaken (mit voller Möbelhöhe, auch in flachen Räumen).
-      node.shadowCastingMode = fs.ShadowCastingMode.off;
-      final lines = _mat.lines(roomId);
-      final edges = featureEdges(o.world);
-      // Türen und Fenster gehören zur Wand: ihre Linien bleiben auch bei
-      // Licht, Möbellinien blenden dann aus.
-      final wall = o.wallMounted;
-      final normal = _edgesNode(
-        'edges',
-        edges,
-        wall ? lines.structureEdge : lines.edge,
-      );
-      final accent = _edgesNode('edges-selected', edges, _mat.accentEdge)
-        ..visible = false;
-      node.add(normal);
-      node.add(accent);
-      // Detaillinien (Kissen, Fugen, Türaufschlag): leiser als Kanten.
-      final details = liftedLines(o.world);
-      if (details.isNotEmpty) {
-        node.add(
-          _edgesNode(
-            'details',
-            details,
-            wall ? lines.structureDetail : lines.detail,
-          ),
-        );
-      }
-      (parent ?? scene.root).add(node);
-      _objects[o.id] = _ObjectNode(o, roomId, node, normal, accent)
-        ..mesh = mesh
-        ..parts = parts
-        ..tops = topPolys;
     }
 
     // Leuchten.
@@ -287,11 +246,206 @@ class GpuScene {
     }
 
     if (quality.bakes) {
-      for (final e in _roomReceivers.entries) {
-        _bakeRoom(e.key, [for (final i in e.value) _receivers[i]]);
+      // Je Lichtzone: Lampen leuchten in alle Räume der Zone, Wände halten
+      // das Licht auf (nur offene Wände und Türen lassen es durch).
+      final zones = <String, Set<String>>{};
+      for (final id in _roomReceivers.keys) {
+        (zones[source.lightZones[id] ?? id] ??= {}).add(id);
+      }
+      for (final z in zones.values) {
+        _bakeZone({
+          for (final id in z)
+            id: [for (final i in _roomReceivers[id]!) _receivers[i]],
+        });
       }
     }
   }
+
+  /// Türöffnungen (Welt) für [_cutDoors], einmal je Szene.
+  late final List<({Offset a, Offset b, double height})> _doors = [
+    for (final o in source.objects) ?o.doorOpening,
+  ];
+
+  /// Wand [w] ohne die Türen darin: Stücke links und rechts in voller
+  /// Höhe, über der Tür ein Sturz. Türen wirken auf beide Räume, deren
+  /// Wände die Tür berühren (gleich auf welcher Seite sie steht).
+  List<Face3> _cutDoors(Face3 w) {
+    if (_doors.isEmpty) return [w];
+    final a = w.points[0].xy, b = w.points[1].xy;
+    final h = w.points[2].z;
+    final e = b - a;
+    final len = e.distance;
+    if (len < 1e-6) return [w];
+    final u = e / len;
+    double along(Offset p) => (p - a).dx * u.dx + (p - a).dy * u.dy;
+    double across(Offset p) => ((p - a).dx * u.dy - (p - a).dy * u.dx).abs();
+    final cuts = <(double, double, double)>[];
+    for (final d in _doors) {
+      final o = d.b - d.a;
+      if (o.distance < 1e-6) continue;
+      // Parallel zur Wand und nah an ihr (Wandstärke plus Spalt).
+      final par = (o.dx * u.dy - o.dy * u.dx).abs() / o.distance;
+      if (par > 0.2 || across(d.a) > 0.3 || across(d.b) > 0.3) continue;
+      final t0 = math.max(0.0, math.min(along(d.a), along(d.b)));
+      final t1 = math.min(len, math.max(along(d.a), along(d.b)));
+      if (t1 - t0 > 0.05) cuts.add((t0, t1, math.min(d.height, h)));
+    }
+    if (cuts.isEmpty) return [w];
+    cuts.sort((x, y) => x.$1.compareTo(y.$1));
+    Face3 piece(double t0, double t1, double z0, double z1) {
+      final p = a + u * t0, q = a + u * t1;
+      return Face3(
+        [
+          V3(p.dx, p.dy, z0),
+          V3(q.dx, q.dy, z0),
+          V3(q.dx, q.dy, z1),
+          V3(p.dx, p.dy, z1),
+        ],
+        w.normal,
+        mat: w.mat,
+      );
+    }
+
+    final out = <Face3>[];
+    var t = 0.0;
+    for (final (t0, t1, top) in cuts) {
+      if (t0 > t + 1e-3) out.add(piece(t, t0, 0, h));
+      final from = math.max(t, t0);
+      if (t1 > from && top < h - 0.02) out.add(piece(from, t1, top, h));
+      t = math.max(t, t1);
+    }
+    if (len > t + 1e-3) out.add(piece(t, len, 0, h));
+    return out;
+  }
+
+  /// Knoten eines Möbelstücks (Körper, gebakene Oberseiten, Kanten) bauen
+  /// und in seinen Raum hängen.
+  _ObjectNode _addObject(SceneObject o) {
+    final roomId = source.objectRoom[o.id];
+    final parent = roomId == null ? null : _roomNodes[roomId];
+    final node = fs.Node(name: 'object:${o.id}')
+      ..lightChannelMask = _maskOf(roomId);
+    final byMat = <Mat, _MeshAcc>{};
+    final tops = <Face3>[];
+    for (final f in o.world.faces) {
+      // Waagerechte Oberseiten bekommen gebakenes Lampenlicht (eigene
+      // Fläche), der Rest Echtzeitlicht.
+      // Türen und Fenster nicht: sie wechseln mit dem Sensor das Modell.
+      if (roomId != null &&
+          !o.wallMounted &&
+          !f.twoSided &&
+          f.mat != Mat.glass &&
+          f.normal.z > 0.95) {
+        tops.add(f);
+        continue;
+      }
+      byMat
+          .putIfAbsent(f.mat, () => _MeshAcc())
+          .addFace(f, twoSided: f.twoSided);
+    }
+    final parts = [
+      for (final e in byMat.entries)
+        if (!e.value.isEmpty) (e.value.geometry(), e.key),
+    ];
+    final mesh = fs.Mesh.primitives(
+      primitives: [
+        for (final (g, m) in parts) fs.MeshPrimitive(g, _mat.surface(m)),
+      ],
+    );
+    node.mesh = mesh;
+    final topPolys = <List<V3>>[];
+    for (final f in tops) {
+      final z =
+          f.points.map((p) => p.z).reduce((a, b) => a + b) / f.points.length;
+      final poly = [for (final p in f.points) V3(p.x, p.y, z)];
+      topPolys.add(poly);
+      _roomReceivers[roomId]!.add(_receivers.length);
+      node.add(_receiverNode('top:${o.id}', poly, (s) => s.base(f.mat)));
+    }
+    // Keine Echtzeit-Schatten: Sonne und Lampen sind auf Böden und
+    // Oberseiten gebaken (mit voller Möbelhöhe, auch in flachen Räumen).
+    node.shadowCastingMode = fs.ShadowCastingMode.off;
+    final lines = _mat.lines(roomId);
+    final edges = featureEdges(o.world);
+    // Türen und Fenster gehören zur Wand: ihre Linien bleiben auch bei
+    // Licht, Möbellinien blenden dann aus.
+    final wall = o.wallMounted;
+    final normal = _edgesNode(
+      'edges',
+      edges,
+      wall ? lines.structureEdge : lines.edge,
+    );
+    final accent = _edgesNode('edges-selected', edges, _mat.accentEdge)
+      ..visible = false;
+    node.add(normal);
+    node.add(accent);
+    // Detaillinien (Kissen, Fugen, Türaufschlag): leiser als Kanten.
+    final details = liftedLines(o.world);
+    if (details.isNotEmpty) {
+      node.add(
+        _edgesNode(
+          'details',
+          details,
+          wall ? lines.structureDetail : lines.detail,
+        ),
+      );
+    }
+    (parent ?? scene.root).add(node);
+    return _objects[o.id] = _ObjectNode(o, roomId, node, normal, accent)
+      ..mesh = mesh
+      ..parts = parts
+      ..tops = topPolys;
+  }
+
+  // --- Türen und Fenster mit Sensor --------------------------------------
+
+  final Map<String, bool?> _openState = {};
+
+  /// Tür oder Fenster [id] offen (`true`), zu (`false`) oder unbekannt
+  /// zeigen. Baut nur dieses Objekt neu; das Licht der Zone wird danach in
+  /// Scheiben neu gebacken (eine geschlossene Tür hält es auf).
+  void setObjectOpen(String id, bool? open) {
+    final cur = _objects[id];
+    if (cur == null || !cur.object.wallMounted) return;
+    if (_openState.containsKey(id) && _openState[id] == open) return;
+    _openState[id] = open;
+    final parent = cur.roomId == null ? null : _roomNodes[cur.roomId];
+    (parent ?? scene.root).remove(cur.node);
+    _addObject(cur.object.withOpen(open));
+    // Auswahl, Ausblendung und Tönung beim nächsten sync neu anwenden.
+    _selected = const {'\u0000'};
+    _hiddenObjects = const {'\u0000'};
+    if (_heat != null) _setHeatmap(_heat);
+    if (quality.bakes && cur.roomId != null) _rebakeZoneOf(cur.roomId!);
+  }
+
+  /// Gebakenes Lampenlicht der Zone von [roomId] neu, als Aufträge für
+  /// [flushLight] (wenige Millisekunden je Bild).
+  void _rebakeZoneOf(String roomId) {
+    final zone = source.lightZones[roomId] ?? roomId;
+    final byRoom = {
+      for (final e in _roomReceivers.entries)
+        if ((source.lightZones[e.key] ?? e.key) == zone)
+          e.key: [for (final i in e.value) _receivers[i]],
+    };
+    final occ = _zoneOccluders(byRoom.keys.toSet());
+    for (final m in source.markers) {
+      final home = source.markerRoom[m.id];
+      if (m.kind != MarkerKind.light || m.lamp == null) continue;
+      if (!byRoom.containsKey(home)) continue;
+      for (final e in byRoom.entries) {
+        for (final r in e.value) {
+          _jobs.add(() {
+            _bakePair(m, r, own: e.key == home, occ: occ);
+            _dirty.add(r);
+          });
+        }
+      }
+    }
+  }
+
+  /// Ausstehende Bake-Aufträge (siehe [flushLight]).
+  final List<void Function()> _jobs = [];
 
   fs.PointLight _pointLight(LampState s, int mask) => fs.PointLight(
     color: linearColor(s.color).xyz,
@@ -335,13 +489,17 @@ class GpuScene {
   final Set<_Receiver> _dirty = <_Receiver>{};
 
   /// Gibt es noch vorgemerkte Flächen?
-  bool get lightPending => _dirty.isNotEmpty;
+  bool get lightPending => _dirty.isNotEmpty || _jobs.isNotEmpty;
 
   /// Vorgemerkte Flächen neu mischen, höchstens etwa [budget] lang (der
   /// Rest folgt im nächsten Bild). `true`: es bleibt noch etwas übrig.
   bool flushLight({Duration budget = const Duration(milliseconds: 5)}) {
-    if (_dirty.isEmpty) return false;
+    if (_dirty.isEmpty && _jobs.isEmpty) return false;
     final sw = Stopwatch()..start();
+    while (_jobs.isNotEmpty) {
+      _jobs.removeAt(0)();
+      if (sw.elapsed >= budget) return true;
+    }
     while (_dirty.isNotEmpty) {
       final r = _dirty.first;
       _dirty.remove(r);
@@ -535,16 +693,87 @@ class GpuScene {
   }
 
   /// Bake aller Lampen eines Raums auf seine Flächen.
-  void _bakeRoom(String roomId, List<_Receiver> receivers) {
-    final occ = LightOccluders([
-      for (final o in source.objects)
-        if (source.objectRoom[o.id] == roomId) o.world,
-    ]);
+  /// Hindernisse für das Licht einer Zone: Möbel (Sonne, eigener Raum),
+  /// Möbel und Wände (Lampen in Nachbarräumen), nur Wände und Türblätter
+  /// (Streulicht in Nachbarräume). Mit dem aktuellen Zustand der Türen.
+  ({LightOccluders objects, LightOccluders lamp, LightOccluders walls})
+  _zoneOccluders(Set<String> roomIds) {
+    final inZone = [
+      for (final o in _objects.values)
+        if (roomIds.contains(o.roomId)) o.object,
+    ];
+    final objects = [for (final o in inZone) o.world];
+    final occ = LightOccluders(objects);
+    final multi = roomIds.length > 1;
+    // Eine Wand je Modell, damit der Hüllquader-Test billig bleibt.
+    final walls = [
+      if (multi)
+        for (final id in roomIds)
+          for (final w in _wallFaces[id] ?? const <Face3>[])
+            Model3([w], const []),
+    ];
+    return (
+      objects: occ,
+      lamp: !multi ? occ : LightOccluders([...objects, ...walls]),
+      walls: LightOccluders([
+        ...walls,
+        if (multi)
+          for (final o in inZone)
+            if (o.kind == 'door') o.world,
+      ]),
+    );
+  }
+
+  /// Licht von Lampe [m] auf Fläche [r] backen. [own]: die Fläche liegt im
+  /// Raum der Lampe (Wände halten dort nichts auf).
+  void _bakePair(
+    SceneMarker m,
+    _Receiver r, {
+    required bool own,
+    required ({
+      LightOccluders objects,
+      LightOccluders lamp,
+      LightOccluders walls,
+    })
+    occ,
+  }) {
+    if (own) {
+      final open = Float32List(r.bake.width * r.bake.height);
+      r.lamps[m.id] = bakeLamp(
+        r.bake,
+        m.position,
+        occ.objects,
+        samples: quality.bakeSamples,
+        unshadowed: open,
+      );
+      r.lampsOpen[m.id] = open;
+      return;
+    }
+    // Nachbarraum der Zone: erst billig prüfen, ob durch Tür oder offene
+    // Wand überhaupt Licht ankommt.
+    final through = bakeLamp(r.bake, m.position, occ.walls, samples: 1);
+    if (!through.any((v) => v > 0)) {
+      r.lamps.remove(m.id);
+      r.lampsOpen.remove(m.id);
+      return;
+    }
+    r.lamps[m.id] = bakeLamp(
+      r.bake,
+      m.position,
+      occ.lamp,
+      samples: quality.bakeSamples,
+    );
+    r.lampsOpen[m.id] = through;
+  }
+
+  void _bakeZone(Map<String, List<_Receiver>> byRoom) {
+    final receivers = [for (final l in byRoom.values) ...l];
+    final occ = _zoneOccluders(byRoom.keys.toSet());
     for (final r in receivers) {
       r.sun = bakeSun(
         r.bake,
         -kSunDirection,
-        occ,
+        occ.objects,
         samples: quality.bakeSamples,
       );
       final cos = (-kSunDirection).normalized.z;
@@ -553,17 +782,12 @@ class GpuScene {
     }
     for (final m in source.markers) {
       if (m.kind != MarkerKind.light || m.lamp == null) continue;
-      if (source.markerRoom[m.id] != roomId) continue;
-      for (final r in receivers) {
-        final open = Float32List(r.bake.width * r.bake.height);
-        r.lamps[m.id] = bakeLamp(
-          r.bake,
-          m.position,
-          occ,
-          samples: quality.bakeSamples,
-          unshadowed: open,
-        );
-        r.lampsOpen[m.id] = open;
+      final home = source.markerRoom[m.id];
+      if (!byRoom.containsKey(home)) continue;
+      for (final e in byRoom.entries) {
+        for (final r in e.value) {
+          _bakePair(m, r, own: e.key == home, occ: occ);
+        }
       }
     }
     for (final r in receivers) {
@@ -1152,7 +1376,13 @@ const int kOutsideChannel = 0x80;
 
 /// Ein Bit (von sieben) je Raum, benachbarte Räume (gemeinsames Wandstück)
 /// verschieden. Gierige Färbung; Grundrisse sind planar, sieben reichen.
-Map<String, int> roomChannels(List<SceneRoom> rooms) {
+///
+/// Mit [zones] (Raum → Zone, siehe `Scene.lightZones`) teilen sich die
+/// Räume einer Zone ein Bit: Licht geht durch offene Wände und Türen.
+Map<String, int> roomChannels(
+  List<SceneRoom> rooms, [
+  Map<String, String>? zones,
+]) {
   bool touches(SceneRoom a, SceneRoom b) {
     for (var i = 0; i < a.outline.length; i++) {
       final a0 = a.outline[i], a1 = a.outline[(i + 1) % a.outline.length];
@@ -1165,17 +1395,27 @@ Map<String, int> roomChannels(List<SceneRoom> rooms) {
   }
 
   final out = <String, int>{};
+  // Je Zone (ohne Zonen: je Raum) ein Bit, das kein berührender Raum einer
+  // anderen Zone schon hat.
+  final groups = <String, List<SceneRoom>>{};
   for (final r in rooms) {
+    (groups[zones?[r.id] ?? r.id] ??= []).add(r);
+  }
+  for (final g in groups.values) {
     var used = 0;
-    for (final o in rooms) {
-      final bit = out[o.id];
-      if (bit != null && touches(r, o)) used |= bit;
+    for (final r in g) {
+      for (final o in rooms) {
+        final bit = out[o.id];
+        if (bit != null && !g.contains(o) && touches(r, o)) used |= bit;
+      }
     }
     var bit = 1;
     while (bit < kBakedChannel && used & bit != 0) {
       bit <<= 1;
     }
-    out[r.id] = bit < kBakedChannel ? bit : 1;
+    for (final r in g) {
+      out[r.id] = bit < kBakedChannel ? bit : 1;
+    }
   }
   return out;
 }

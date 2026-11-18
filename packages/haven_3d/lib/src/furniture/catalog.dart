@@ -67,9 +67,15 @@ FurnitureSpec furnitureSpec(String kind) =>
 
 /// Lokales Modell zu [kind] mit Breite [w] und Tiefe [d] (Meter) und Höhe
 /// [height] (sonst die Standardhöhe).
-Model3 buildFurniture(String kind, double w, double d, {double? height}) {
+Model3 buildFurniture(
+  String kind,
+  double w,
+  double d, {
+  double? height,
+  bool? open,
+}) {
   final spec = furnitureSpec(kind);
-  final b = ModelBuilder();
+  final b = ModelBuilder(open: open);
   spec.build(b, w, d, height ?? spec.height);
   return b.build();
 }

@@ -7,6 +7,7 @@ import '../data/haven_repository.dart';
 import '../data/models/entity_state.dart';
 import '../data/models/floor_plan.dart';
 import '../data/models/haven_automation.dart';
+import '../data/models/room_heating.dart';
 import '../data/models/room.dart';
 import '../data/models/snapshot.dart';
 import '../data/models/state_history.dart';
@@ -16,6 +17,7 @@ import '../data/storage/settings_store.dart';
 import '../data/scene_look.dart';
 import '../data/scene_styles.dart';
 import 'fake_automations.dart';
+import 'fake_heating.dart';
 import 'fake_data.dart';
 import 'fake_floor_plan.dart';
 import 'fake_rooms.dart';
@@ -67,6 +69,13 @@ class FakeRepository extends BaseRepository {
     zigbee: _zb,
     inventory: inventory,
     simulate: simulate,
+  );
+  late final FakeHeating _heat = FakeHeating(
+    entities: () => _entities,
+    trvState: _zb.stateOf,
+    trvSet: zigbeeSet,
+    trvName: (ieee) => _zb.nameOf(ieee) ?? ieee,
+    thermostats: () => _thermostats.keys,
   );
   final LocalPrefs _local;
   Set<String> _excluded = const {};
@@ -929,6 +938,7 @@ class FakeRepository extends BaseRepository {
         changed = true;
       }
     }
+    if (_motionTick % 2 == 0) _heat.tick(DateTime.now());
     if (changed) _push();
   }
 
@@ -996,6 +1006,24 @@ class FakeRepository extends BaseRepository {
   @override
   Stream<ZbMeasureResult> get zigbeeMeasureResults => _zb.measureResults;
 
+  // ---- Heizungsregelung (Entwicklungsdaten, siehe fake_heating.dart) -------
+  @override
+  Future<HeatingRooms> heatingRooms() => _heat.list();
+  @override
+  Future<RoomHeating> saveHeating(HeatingConfig config) => _heat.save(config);
+  @override
+  Future<void> deleteHeating(String areaId) => _heat.delete(areaId);
+  @override
+  Future<HeatingStatus> controlHeating(
+    String areaId, {
+    double? target,
+    HeatingMode? mode,
+  }) => _heat.control(areaId, target: target, mode: mode);
+  @override
+  Stream<HeatingUpdate> get heatingUpdates => _heat.updates;
+  @override
+  Stream<void> get heatingChanged => _heat.changed;
+
   // ---- Haven-Automationen (Entwicklungsdaten, siehe fake_automations.dart) --
   @override
   Future<HavenAutomations> havenAutomations() => _auto.list();
@@ -1019,6 +1047,7 @@ class FakeRepository extends BaseRepository {
   @override
   Future<void> dispose() async {
     await _auto.dispose();
+    await _heat.dispose();
     await _zb.dispose();
     _timer?.cancel();
     for (final t in _installs.values) {

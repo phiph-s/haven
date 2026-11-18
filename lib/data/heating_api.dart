@@ -1,0 +1,30 @@
+import 'models/room_heating.dart';
+
+/// Heizungsregelung je Raum (`haven/heating/*`, Integration mit Feature
+/// `heating`). Teil von `HavenRepository`.
+abstract interface class HeatingApi {
+  /// `haven/heating/list`. Ältere Integration: [HeatingRooms.unsupported].
+  Future<HeatingRooms> heatingRooms();
+
+  /// `haven/heating/set` (Admin). Fehler als `HavenException` mit `code`
+  /// (`device_taken`, `invalid_format`, `not_found`).
+  Future<RoomHeating> saveHeating(HeatingConfig config);
+
+  /// `haven/heating/delete` (Admin). Haven nimmt dabei seine Kalibrierung an
+  /// den Thermostaten zurück.
+  Future<void> deleteHeating(String areaId);
+
+  /// `haven/heating/control` (Admin): Ziel und/oder Betriebsart des Raums.
+  /// Ein Ziel ohne Betriebsart schaltet auf Manuell.
+  Future<HeatingStatus> controlHeating(
+    String areaId, {
+    double? target,
+    HeatingMode? mode,
+  });
+
+  /// Ereignis `haven_heating_updated` (Status in Echtzeit).
+  Stream<HeatingUpdate> get heatingUpdates;
+
+  /// `haven_data_updated` mit `kind: heating`, außerdem nach jedem Verbinden.
+  Stream<void> get heatingChanged;
+}

@@ -20,6 +20,18 @@ final Map<String, FurnitureSpec> structureModels = {
       b.box(x0, wall - post, 0, x0 + post, wall, h - post);
       b.box(x0 + r - post, wall - post, 0, x0 + r, wall, h - post);
       b.box(x0, wall - post, h - post, x0 + r, wall, h);
+      if (b.open == false) {
+        // Zu (Sensor): Blatt in der Zarge, kein Aufschlag.
+        b.box(
+          x0 + post,
+          wall - post,
+          0.01,
+          x0 + r - post,
+          wall - 0.005,
+          h - post,
+        );
+        return;
+      }
       // Türblatt, offen: dünne Platte entlang der Angelseite.
       b.box(x0, wall - r, 0.01, x0 + 0.035, wall - post, h - post);
       // Aufschlag als Bogen auf dem Boden.
@@ -64,6 +76,8 @@ final Map<String, FurnitureSpec> structureModels = {
       }
       // Glas als Mittellinie in der Draufsicht (wie in 2D).
       b.line(V3(-w / 2, 0, h), V3(w / 2, 0, h));
+      // Zu (Sensor): kein Aufgehwinkel.
+      if (b.open == false) return;
       // Aufgehwinkel wie bei der Tür, auf Brüstungshöhe zur Raumseite (-y):
       // breite Fenster zwei Flügel (Angeln außen), schmale einer.
       final two = w >= 0.8;

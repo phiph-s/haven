@@ -236,6 +236,22 @@ void main() {
     );
     await shot(
       tester,
+      'flur_door_closed',
+      const OrbitCamera(
+        target: V3(2.5, 5.5, 0),
+        yaw: -0.3,
+        pitch: 0.8,
+        scale: 160,
+        fov: OrbitCamera.perspectiveFov,
+      ),
+      fit: false,
+      then: (c, size) async {
+        c.setObjectOpen('door_8', false);
+        c.setObjectOpen('door_20', false);
+      },
+    );
+    await shot(
+      tester,
       'perspective',
       const OrbitCamera(
         yaw: -0.5,

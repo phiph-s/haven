@@ -260,16 +260,25 @@ void main() {
     });
   });
 
-  testWidgets('Raum: Abschnitt Heizung mit Plus und Sheet', (tester) async {
-    final (c, spy) = await _pump(tester, '/home/room/salon');
+  testWidgets('Raum ohne Regelung: Zeilen mit Plus, Sheet und Hinweis', (
+    tester,
+  ) async {
+    const ruheraum = '0x00124b0000000031';
+    final (c, spy) = await _pump(tester, '/home/room/ruheraum');
     await _scrollTo(tester, find.text('Heizung'));
     expect(find.byType(ThermostatRow), findsOneWidget);
-    expect(find.text('Thermostat Salon'), findsOneWidget);
-    await tester.tap(find.bySemanticsLabel('Wärmer Thermostat Salon'));
+    expect(find.text('Thermostat Ruheraum'), findsOneWidget);
+    await tester.tap(find.bySemanticsLabel('Wärmer Thermostat Ruheraum'));
     await _settle(tester, 10);
-    expect(spy.sets.last.$2, {'current_heating_setpoint': 21.5});
-    expect(_state(c)['current_heating_setpoint'], 21.5);
-    await tester.tap(find.text('Thermostat Salon'));
+    expect(spy.sets.last.$1, ruheraum);
+    expect(spy.sets.last.$2, {'current_heating_setpoint': 18.5});
+    expect(
+      c.read(zigbeeProvider).states[ruheraum]?['current_heating_setpoint'],
+      18.5,
+    );
+    await _scrollTo(tester, find.text('Nach Raumthermometer regeln'));
+    expect(find.text('Nach Raumthermometer regeln'), findsOneWidget);
+    await tester.tap(find.text('Thermostat Ruheraum'));
     await _settle(tester);
     expect(find.byType(ThermostatControl), findsOneWidget);
     expect(find.text('Gerät öffnen'), findsOneWidget);

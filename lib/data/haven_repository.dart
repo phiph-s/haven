@@ -1,5 +1,6 @@
 import '../core/light/color_math.dart';
 import 'automations_api.dart';
+import 'heating_api.dart';
 import 'models/floor_plan.dart';
 import 'models/snapshot.dart';
 import 'models/state_history.dart';
@@ -14,7 +15,8 @@ import 'zigbee_api.dart';
 /// Die Oberfläche liest immer [snapshot] bzw. [snapshots] und ruft die
 /// Aktionen auf. Aktionen wirken sofort (optimistisch) und der Snapshot
 /// meldet danach den echten Zustand.
-abstract class HavenRepository implements ZigbeeApi, AutomationsApi {
+abstract class HavenRepository
+    implements ZigbeeApi, AutomationsApi, HeatingApi {
   /// `true` für die Entwicklungsdaten (`FakeRepository`). Die Oberfläche
   /// zeigt dann einen Hinweis.
   bool get isFake;

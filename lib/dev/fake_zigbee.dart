@@ -236,6 +236,10 @@ class FakeZigbee {
     if (!_events.isClosed) _emitState(ieee, values);
   }
 
+  /// Name eines Geräts, `null` wenn unbekannt.
+  String? nameOf(String ieee) =>
+      _devices.where((d) => d.ieee == ieee).firstOrNull?.friendlyName;
+
   /// Aktueller Z2M-Zustand eines Geräts (Kopie), leer wenn unbekannt.
   Map<String, dynamic> stateOf(String ieee) => {...?_states[ieee]};
 

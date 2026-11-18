@@ -4,6 +4,7 @@ import 'package:material_ui/material_ui.dart';
 
 import '../../features/automations/automations_routes.dart';
 import '../../features/automations/automations_screen.dart';
+import '../../features/climate/heating_setup_screen.dart';
 import '../../features/home/home_screen.dart';
 import '../../features/map/map_routes.dart';
 import '../../features/map/map_screen.dart';
@@ -38,6 +39,9 @@ abstract final class Routes {
   /// Raum als Sheet über der aktuellen Seite. Unter Zuhause eingehängt,
   /// damit ein Deep Link Zuhause dahinter hat. `/room/<id>` leitet um.
   static String room(String id) => '/home/room/$id';
+
+  /// Heizungsregelung eines Bereichs einrichten.
+  static String heating(String areaId) => '/heating/$areaId';
 }
 
 /// Raum: Sheet von unten (`HavenSheetPage`), die App dahinter rückt zurück.
@@ -199,6 +203,14 @@ GoRouter buildRouter(Ref ref, {String? initialLocation}) {
               ? null
               : state.uri.queryParameters,
         ).toString(),
+      ),
+      GoRoute(
+        path: '/heating/:area',
+        parentNavigatorKey: rootNavigatorKey,
+        pageBuilder: (context, state) => _slidePage(
+          state,
+          HeatingSetupScreen(areaId: state.pathParameters['area']!),
+        ),
       ),
       GoRoute(
         path: Routes.settings,

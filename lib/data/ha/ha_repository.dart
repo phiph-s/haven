@@ -10,6 +10,7 @@ import '../models/device.dart';
 import '../models/entity_state.dart';
 import '../models/floor_plan.dart';
 import '../models/haven_automation.dart';
+import '../models/room_heating.dart';
 import '../models/lamp.dart';
 import '../models/light_groups.dart';
 import '../models/room.dart';
@@ -22,6 +23,7 @@ import '../scene_styles.dart';
 import '../storage/settings_store.dart';
 import '../sync/app_data.dart';
 import 'ha_automations.dart';
+import 'ha_heating.dart';
 import 'ha_zigbee.dart';
 import 'ha_client.dart';
 
@@ -56,6 +58,7 @@ class HaRepository extends BaseRepository {
   final LocalPrefs _local;
   late final HaZigbee _zb = HaZigbee(client);
   late final HaAutomations _auto = HaAutomations(client);
+  late final HaHeating _heat = HaHeating(client);
 
   /// HA-Ereignisse, nach denen die Räume neu geladen werden.
   static const registryEvents = [
@@ -158,6 +161,7 @@ class HaRepository extends BaseRepository {
       emitAppData(AppDataKind.floorplan);
       emitAppData(AppDataKind.widgets);
       _auto.notifyChanged();
+      _heat.notifyChanged();
     } catch (e) {
       debugPrint('Laden fehlgeschlagen: $e');
     }
@@ -216,6 +220,7 @@ class HaRepository extends BaseRepository {
   void _onDataUpdated(dynamic event) {
     final data = (event as Map?)?['data'] as Map?;
     if (data?['kind'] == 'automations') return _auto.notifyChanged();
+    if (data?['kind'] == 'heating') return _heat.notifyChanged();
     final kind = AppDataKind.parse(data?['kind']);
     if (kind == null) return;
     if (kind == AppDataKind.prefs) {
@@ -931,6 +936,29 @@ class HaRepository extends BaseRepository {
   @override
   Stream<ZbMeasureResult> get zigbeeMeasureResults => _measureResults.stream;
 
+  // ---- Heizungsregelung (haven/heating/*) ----------------------------------
+  @override
+  Future<HeatingRooms> heatingRooms() => _heat.list();
+
+  @override
+  Future<RoomHeating> saveHeating(HeatingConfig config) => _heat.save(config);
+
+  @override
+  Future<void> deleteHeating(String areaId) => _heat.delete(areaId);
+
+  @override
+  Future<HeatingStatus> controlHeating(
+    String areaId, {
+    double? target,
+    HeatingMode? mode,
+  }) => _heat.control(areaId, target: target, mode: mode);
+
+  @override
+  Stream<HeatingUpdate> get heatingUpdates => _heat.updates;
+
+  @override
+  Stream<void> get heatingChanged => _heat.changed;
+
   // ---- Haven-Automationen (haven/automations/*) ---------------------------
   @override
   Future<HavenAutomations> havenAutomations() => _auto.list();
@@ -952,6 +980,7 @@ class HaRepository extends BaseRepository {
     await _zb.dispose();
     await _measureResults.close();
     await _auto.dispose();
+    await _heat.dispose();
     _flush?.cancel();
     _roomsDebounce?.cancel();
     for (final t in _timers.values) {

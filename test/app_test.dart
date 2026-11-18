@@ -118,8 +118,14 @@ void main() {
       expect(find.text('Drehknopf Salon 1'), findsNothing);
 
       // Nach oben scrollen und im selben Zug weiterziehen: Am oberen Ende
-      // übernimmt das Sheet und schließt.
-      await tester.drag(roomList, const Offset(0, 3000));
+      // übernimmt das Sheet und schließt. In kleinen Schritten wie ein
+      // Finger, damit der Zug nach dem Scrollen beim Sheet ankommt.
+      final pull = await tester.startGesture(tester.getCenter(roomList));
+      for (var i = 0; i < 30; i++) {
+        await pull.moveBy(const Offset(0, 100));
+        await tester.pump(const Duration(milliseconds: 16));
+      }
+      await pull.up();
       await tester.pumpAndSettle();
       expect(find.text('Szenen'), findsNothing);
       expect(find.text('Strom jetzt'), findsOneWidget);

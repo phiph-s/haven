@@ -82,4 +82,15 @@ void main() {
       expect(o.position, o0.position);
     }
   });
+
+  test('Offene Kante bleibt auf dem Umriss, ihre Ecken spitz', () {
+    const sq = [Offset(0, 0), Offset(4, 0), Offset(4, 3), Offset(0, 3)];
+    final shape = roundedInset(sq, inset: 0.1, radius: 0.3, open: {1});
+    // Rechte Kante (1) offen: Punkte mit x = 4 vorhanden, Ecken genau.
+    expect(shape, contains(const Offset(4, 0.1)));
+    expect(shape, contains(const Offset(4, 2.9)));
+    // Links bleibt eingerückt und gerundet (kein Punkt bei x = 0).
+    expect(shape.every((p) => p.dx > 0.05), isTrue);
+    expect(shape.length, greaterThan(4));
+  });
 }

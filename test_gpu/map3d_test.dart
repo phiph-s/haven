@@ -9,6 +9,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:haven/data/models/floor_plan.dart';
 import 'package:haven/dev/fake_floor_plan.dart';
+import 'package:haven/features/map/furniture_ops.dart';
 import 'package:haven/features/map/map_3d.dart';
 import 'package:haven_3d/haven_3d.dart';
 
@@ -23,6 +24,7 @@ Future<void> shot(
   Map<String, LampState> lamps = const {},
   HavenFloorPlan? floorPlan,
   String? reveal,
+  bool fit = true,
 }) async {
   const size = Size(430, 800);
   const dpr = 2.0;
@@ -50,6 +52,7 @@ Future<void> shot(
             style: dark ? SceneStyle.dark() : SceneStyle.light(),
             raisedRooms: raised,
             revealRoomId: reveal,
+            fitOnStart: fit,
             selectedRoomId: selected,
             heatmap: heatmap,
             insets: const EdgeInsets.fromLTRB(8, 110, 8, 200),
@@ -154,6 +157,34 @@ void main() {
       cam: const OrbitCamera(yaw: kMapTiltYaw, pitch: kMapTiltPitch),
       lamps: lamps,
       floorPlan: open,
+    );
+    // Türen an ihre Wände gesetzt: Öffnungen in beiden Räumen.
+    var doors = kFakeFloorPlan;
+    for (final f in doors.furniture) {
+      doors = doors.withFurniture(snapDoorToWall(f, doors.rooms));
+    }
+    await shot(
+      tester,
+      'app_doors_tilt',
+      dark: true,
+      cam: const OrbitCamera(yaw: kMapTiltYaw, pitch: kMapTiltPitch),
+      lamps: lamps,
+      floorPlan: doors,
+    );
+    // Nah an der Tür zwischen Diele und Waschraum.
+    await shot(
+      tester,
+      'app_door_close',
+      dark: false,
+      cam: const OrbitCamera(
+        target: V3(10.4, 8.6, 1),
+        yaw: 0.7,
+        pitch: 0.95,
+        scale: 110,
+      ),
+      lamps: lamps,
+      floorPlan: doors,
+      fit: false,
     );
     await shot(
       tester,

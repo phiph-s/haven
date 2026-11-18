@@ -89,9 +89,9 @@ class MapScreen extends ConsumerWidget {
               child: MeshGlow(palette: palette, style: MeshStyle.ambient),
             ),
           ),
-          if (has && !context.isDesktopLayout)
-            // Handy: die Karte nutzt die ganze Fläche bis zum unteren Rand
-            // (auch unter der Navigation), der Kopf liegt über ihr.
+          if (has)
+            // Die Karte nutzt die ganze Fläche bis zum Rand (am Handy auch
+            // unter der Navigation), Kopf und Leisten liegen über ihr.
             Positioned.fill(
               child: _MapBody(
                 plan: p,
@@ -1027,6 +1027,7 @@ class _MapBodyState extends ConsumerState<_MapBody> {
               roomId: want,
               yaw: s.tilt ? null : kMapFocusYaw,
               pitch: s.tilt ? null : kMapFocusPitch,
+              insets: _deskInsets,
             ),
           );
         }
@@ -1042,98 +1043,126 @@ class _MapBodyState extends ConsumerState<_MapBody> {
       v.onOutsideTap?.call();
     }
 
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Expanded(
-          child: Stack(
-            children: [
-              Positioned.fill(
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 4, 8, 76),
-                  child: EntryAnimation(
-                    index: 1,
-                    child: supported == false
-                        ? const Map3DUnsupported()
-                        : probing
-                        ? Map3DLoader(plan: v.plan)
-                        : Map3DView(
-                            key: const ValueKey('map3d'),
-                            plan: v.plan,
-                            nodes: v.nodes,
-                            nodeBuilder: v.nodeBuilder,
-                            subtitle: v.subtitle,
-                            heatmap: v.heatmap3d,
-                            controller: v.controller,
-                            overlayBuilder: v.overlay3d,
-                            onNodeTap: v.onNodeTap,
-                            onNodeLongPress: _holdNode,
-                            onNodeSecondaryTap: _secondaryNode,
-                            onRoomTap: v.onRoomTap,
-                            onOutsideTap: outside,
-                            onRoomSecondaryTap: _secondaryRoom,
-                            selectedRoomId: want,
-                            raisedRoomId: want,
-                          ),
-                  ),
+    const side = DesktopMetrics.sideColumn;
+    return LayoutBuilder(
+      builder: (context, box) {
+        final h = box.maxHeight;
+        // Wie am Handy: oben blendet die Karte hinter dem Kopf aus.
+        final fadeTop = (_topH / h).clamp(0.0, 0.5);
+        final fadeBottom = (24 / h).clamp(0.0, 0.2);
+        return Stack(
+          children: [
+            Positioned.fill(
+              child: EntryAnimation(
+                index: 1,
+                child: ShaderMask(
+                  blendMode: BlendMode.dstIn,
+                  shaderCallback: (rect) => LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: const [
+                      Color(0x00000000),
+                      Color(0xFF000000),
+                      Color(0xFF000000),
+                      Color(0x00000000),
+                    ],
+                    stops: [fadeTop * 0.55, fadeTop, 1 - fadeBottom, 1],
+                  ).createShader(rect),
+                  child: supported == false
+                      ? const Map3DUnsupported()
+                      : probing
+                      ? Map3DLoader(plan: v.plan, insets: _deskInsets)
+                      : Map3DView(
+                          key: const ValueKey('map3d'),
+                          plan: v.plan,
+                          nodes: v.nodes,
+                          nodeBuilder: v.nodeBuilder,
+                          subtitle: v.subtitle,
+                          heatmap: v.heatmap3d,
+                          controller: v.controller,
+                          overlayBuilder: v.overlay3d,
+                          onNodeTap: v.onNodeTap,
+                          onNodeLongPress: _holdNode,
+                          onNodeSecondaryTap: _secondaryNode,
+                          onRoomTap: v.onRoomTap,
+                          onOutsideTap: outside,
+                          onRoomSecondaryTap: _secondaryRoom,
+                          selectedRoomId: want,
+                          raisedRoomId: want,
+                          insets: _deskInsets,
+                        ),
                 ),
               ),
-              Positioned(
-                bottom: 20,
-                left: 16,
-                right: 8,
-                child: MapLayerTabs(layer: layer, onChanged: _setLayer),
-              ),
-              if (supported == true)
-                Positioned(
-                  top: 8,
-                  right: 12,
-                  child: Map3DControls(
-                    axis: Axis.horizontal,
-                    controller: v.controller,
-                    insets: const EdgeInsets.fromLTRB(16, 4, 8, 76),
-                    onRecenter: () {
-                      _deskFocus = null;
-                      if (_inspect != null || _panel != null) {
-                        setState(() {
-                          _inspect = null;
-                          _panel = null;
-                        });
-                      }
-                    },
-                  ),
-                ),
-            ],
-          ),
-        ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(8, 0, 20, 20),
-          child: SizedBox(
-            width: DesktopMetrics.sideColumn,
-            child: MapInspector(
-              plan: plan,
-              layer: layer,
-              selected: inspect,
-              onSelect: (id) => setState(() {
-                _inspect = id;
-                _panel = null;
-              }),
-              roomPanel: inspect == null
-                  ? null
-                  : _roomPanel(layer, plan.room(inspect)!),
-              panel: _panel,
-              onClosePanel: _closePanel,
-              layerCard: KeyedSubtree(
-                key: ValueKey('card-${layer.name}'),
-                child: v.card,
-              ),
-              info: _info,
             ),
-          ),
-        ),
-      ],
+            if (widget.header != null)
+              Positioned(
+                top: 0,
+                left: 0,
+                right: 0,
+                child: _SizeReport(
+                  onSize: (s) => _setInsets(top: s.height),
+                  child: widget.header!,
+                ),
+              ),
+            Positioned(
+              bottom: 20,
+              left: 16,
+              right: side + 36,
+              child: MapLayerTabs(layer: layer, onChanged: _setLayer),
+            ),
+            if (supported == true)
+              Positioned(
+                top: _topH + 4,
+                right: side + 40,
+                child: Map3DControls(
+                  axis: Axis.horizontal,
+                  controller: v.controller,
+                  insets: _deskInsets,
+                  onRecenter: () {
+                    _deskFocus = null;
+                    if (_inspect != null || _panel != null) {
+                      setState(() {
+                        _inspect = null;
+                        _panel = null;
+                      });
+                    }
+                  },
+                ),
+              ),
+            Positioned(
+              top: _topH,
+              right: 20,
+              bottom: 20,
+              width: side,
+              child: MapInspector(
+                plan: plan,
+                layer: layer,
+                selected: inspect,
+                onSelect: (id) => setState(() {
+                  _inspect = id;
+                  _panel = null;
+                }),
+                roomPanel: inspect == null
+                    ? null
+                    : _roomPanel(layer, plan.room(inspect)!),
+                panel: _panel,
+                onClosePanel: _closePanel,
+                layerCard: KeyedSubtree(
+                  key: ValueKey('card-${layer.name}'),
+                  child: v.card,
+                ),
+                info: _info,
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
+
+  /// Desktop: freie Fläche der Karte zwischen Kopf, Inspektor und Leiste.
+  EdgeInsets get _deskInsets =>
+      EdgeInsets.fromLTRB(16, _topH + 8, DesktopMetrics.sideColumn + 36, 76);
 
   // ---- Licht ----------------------------------------------------------------
 

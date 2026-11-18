@@ -109,7 +109,12 @@ class SceneController extends ChangeNotifier {
     final key = (scene, style.roomGap, style.roomRadius, quality);
     if (_gpuKey != key || _gpu == null) {
       _gpuKey = key;
-      _gpu = GpuScene(_fittedFor(scene, style), style, quality: quality);
+      _gpu = GpuScene(
+        _fittedFor(scene, style),
+        style,
+        quality: quality,
+        open: _open,
+      );
       // Zustände aus [setLamp] gelten auch nach einem Neuaufbau.
       for (final e in _lamps.entries) {
         _gpu!.setLamp(e.key, e.value);
@@ -221,6 +226,17 @@ class SceneController extends ChangeNotifier {
     if (_lamps[id] == state) return;
     _lamps[id] = state;
     _gpu?.setLamp(id, state);
+    _view?._wake();
+  }
+
+  final Map<String, bool?> _open = {};
+
+  /// Tür oder Fenster [id] offen, zu oder unbekannt (`null`) zeigen, etwa
+  /// nach einem Kontaktsensor. Gilt auch für eine später gebaute Szene.
+  void setObjectOpen(String id, bool? open) {
+    if (_open.containsKey(id) && _open[id] == open) return;
+    _open[id] = open;
+    _gpu?.setObjectOpen(id, open);
     _view?._wake();
   }
 

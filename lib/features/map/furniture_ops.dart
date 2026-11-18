@@ -230,3 +230,59 @@ String furnitureSizeText(FloorFurniture f, double cellMeters) {
 
   return '${m(f.w)} × ${m(f.h)} m';
 }
+
+/// Tür an die nächste Wand (Raumkante, auch zwischen zwei Räumen) setzen:
+/// Ihre Wandlinie (lokal `y = h/2`, ab der Angel `min(w, h)` breit) liegt
+/// dann genau auf der Kante, gedreht wie die Kante. Das Türblatt bleibt auf
+/// der Seite, auf der die Tür gerade liegt. Weiter als [reach] Zellen von
+/// jeder Kante entfernt bleibt sie, wie sie ist. Andere Möbel unverändert.
+FloorFurniture snapDoorToWall(
+  FloorFurniture f,
+  Iterable<FloorRoom> rooms, {
+  double reach = 1.5,
+}) {
+  if (f.kind != 'door') return f;
+  final r = math.min(f.w, f.h);
+  final midLocal = Offset(-f.w / 2 + r / 2, f.h / 2);
+  final m = f.toWorld(midLocal);
+  Offset? bestA, bestB;
+  var best = double.infinity;
+  for (final room in rooms) {
+    if (room.detached) continue;
+    final pts = room.offsets;
+    for (var i = 0; i < pts.length; i++) {
+      final a = pts[i], b = pts[(i + 1) % pts.length];
+      final e = b - a;
+      final len2 = e.distanceSquared;
+      if (len2 < 1e-9) continue;
+      final t = (((m - a).dx * e.dx + (m - a).dy * e.dy) / len2).clamp(
+        0.0,
+        1.0,
+      );
+      final d = (m - (a + e * t)).distance;
+      if (d < best) {
+        best = d;
+        bestA = a;
+        bestB = b;
+      }
+    }
+  }
+  if (bestA == null || bestB == null || best > reach) return f;
+  final a = bestA, e = bestB - bestA;
+  final len = e.distance;
+  final u = e / len;
+  // Öffnung ganz auf der Kante halten.
+  final along = ((m - a).dx * u.dx + (m - a).dy * u.dy);
+  final t = len <= r ? len / 2 : along.clamp(r / 2, len - r / 2);
+  final q = a + u * t;
+  // Seite des Türblatts: wo die Mitte der Tür gerade liegt.
+  final nrm = Offset(-u.dy, u.dx);
+  final side = ((f.center - q).dx * nrm.dx + (f.center - q).dy * nrm.dy) < 0
+      ? -1.0
+      : 1.0;
+  // Lokal +y zeigt von der Mitte zur Wand, also gegen die Seite.
+  final y = -nrm * side;
+  final deg = math.atan2(-y.dx, y.dy) * 180 / math.pi;
+  final g = f.copyWith(rotation: deg);
+  return g.moveTo(q - (g.toWorld(midLocal) - g.center));
+}

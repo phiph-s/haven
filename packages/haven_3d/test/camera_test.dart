@@ -161,4 +161,24 @@ void main() {
     }
     expect(bad, isEmpty);
   });
+
+  test('Tür zu (Sensor): Blatt in der Zarge, kein Aufschlag', () {
+    final open = buildFurniture('door', 0.9, 0.9);
+    final shut = buildFurniture('door', 0.9, 0.9, open: false);
+    // Offen: Aufschlag-Bogen als Linien; zu: keine.
+    expect(open.lines, isNotEmpty);
+    expect(shut.lines, isEmpty);
+    // Zu reicht das Blatt nicht mehr in den Raum (lokal y < 0).
+    double minY(Model3 m) => m.faces
+        .expand((f) => f.points)
+        .map((p) => p.y)
+        .reduce((a, b) => a < b ? a : b);
+    expect(minY(open), lessThan(-0.3));
+    expect(minY(shut), greaterThan(0.3));
+    // Fenster zu: ohne Aufgehwinkel.
+    expect(
+      buildFurniture('window', 1.2, 0.2, open: false).lines.length,
+      lessThan(buildFurniture('window', 1.2, 0.2).lines.length),
+    );
+  });
 }

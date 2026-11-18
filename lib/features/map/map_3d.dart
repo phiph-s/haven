@@ -10,6 +10,7 @@ import '../../core/theme/tokens.dart';
 import '../../core/widgets/haptics.dart';
 import '../../data/models/floor_plan.dart';
 import '../../data/models/lamp.dart';
+import '../../data/models/snapshot.dart';
 import 'floor_geometry.dart';
 import 'heatmap.dart';
 import 'map_data.dart';
@@ -179,6 +180,7 @@ h3.Scene sceneOfPlan(HavenFloorPlan plan) {
           w: f.w * m,
           d: f.h * m,
           rotation: f.rotation,
+          sensor: f.sensor,
         ),
     ],
     markers: [
@@ -247,6 +249,25 @@ void syncMapLamps(h3.SceneController c, h3.Scene scene, MapLights lights) {
     if (m.lamp == null) continue;
     final l = lights.lamps[m.id];
     c.setLamp(m.id, l == null ? h3.LampState.off : lampStateOf(l));
+  }
+}
+
+/// Türen und Fenster mit Sensor auf den Stand der Kontakte bringen: `on`
+/// heißt offen, unbekannt oder nicht erreichbar zeigt den Normalzustand.
+void syncMapOpenings(h3.SceneController c, h3.Scene scene, HavenSnapshot snap) {
+  for (final o in scene.objects) {
+    final id = o.sensor;
+    if (id == null) continue;
+    final e = snap.entity(id);
+    final st = e?.state;
+    c.setObjectOpen(
+      o.id,
+      st == 'on'
+          ? true
+          : st == 'off'
+          ? false
+          : null,
+    );
   }
 }
 
@@ -470,6 +491,10 @@ class _Map3DViewState extends ConsumerState<Map3DView> {
     // Lichtzustand live in die Szene (gebackenes Licht wird nur für die
     // geänderte Lampe neu gemischt).
     ref.listen(mapLightsProvider(plan), (_, l) => syncMapLamps(_c, scene, l));
+    // Türen und Fenster mit Kontakt: gleich im Aufbau (die Szene backt dann
+    // schon mit dem richtigen Stand), danach bei jeder Änderung.
+    ref.listen(snapshotProvider, (_, s) => syncMapOpenings(c, scene, s));
+    syncMapOpenings(c, scene, ref.read(snapshotProvider));
     if (!identical(_synced, plan)) {
       _synced = plan;
       final l = ref.read(mapLightsProvider(plan));

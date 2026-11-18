@@ -32,6 +32,13 @@ Map<String, dynamic> thermostatDerived(
       out['position'] = 0;
     }
   }
+  // Kalibrierung verschiebt die Anzeige sofort (der Fühler misst dasselbe)
+  final cal = values['local_temperature_calibration'];
+  final local = state['local_temperature'];
+  if (cal is num && local is num) {
+    final old = (state['local_temperature_calibration'] as num?) ?? 0;
+    out['local_temperature'] = ((local + cal - old) * 10).round() / 10;
+  }
   final boost = values['boost_timeset_countdown'];
   if (boost is num && boost > 0 && state['preset'] != 'off') {
     out['running_state'] = 'heat';

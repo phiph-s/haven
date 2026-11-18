@@ -21,6 +21,7 @@ import '../../core/widgets/press_scale.dart';
 import '../../core/widgets/segmented.dart';
 import '../../data/models/floor_plan.dart';
 import '../zigbee/widgets/device_icon.dart';
+import '../zigbee/widgets/zb_common.dart' show showZbSheet;
 import '../zigbee/zigbee_providers.dart';
 import 'device_pool.dart';
 import 'floor_assign_sheet.dart';
@@ -788,7 +789,7 @@ class _FloorEditorScreenState extends ConsumerState<FloorEditorScreen> {
     if (op == null) return;
     final cell = _cellOf(d.localPosition);
     final snap = !_shift;
-    final next = switch (op.kind) {
+    var next = switch (op.kind) {
       _FurnOpKind.move => moveFurniture(
         op.item,
         cell - op.start,
@@ -803,6 +804,10 @@ class _FloorEditorScreenState extends ConsumerState<FloorEditorScreen> {
       ),
       _FurnOpKind.rotate => rotateFurnitureTo(op.item, cell, snap: snap),
     };
+    // Türen rasten beim Verschieben an der nächsten Wand ein.
+    if (snap && op.kind == _FurnOpKind.move) {
+      next = snapDoorToWall(next, op.base.rooms);
+    }
     final cur = _plan!.furnitureById(next.id);
     if (cur == next) return;
     if (snap) Haptics.tick();
@@ -853,6 +858,12 @@ class _FloorEditorScreenState extends ConsumerState<FloorEditorScreen> {
             shortcut: 'R',
             onSelected: () => _rotateSel(90),
           ),
+          if (hit.canHaveSensor)
+            HavenMenuItem(
+              label: hit.sensor == null ? 'Sensor verknüpfen' : 'Sensor ändern',
+              icon: Icons.sensors_rounded,
+              onSelected: () => _linkSensor(hit),
+            ),
           HavenMenuItem(
             label: 'Duplizieren',
             icon: Icons.copy_all_rounded,
@@ -972,13 +983,14 @@ class _FloorEditorScreenState extends ConsumerState<FloorEditorScreen> {
         spot += const Offset(1, 1);
       }
     }
-    final f = placeFurniture(
+    var f = placeFurniture(
       t,
       spot,
       plan.grid,
       id: newFurnitureId(),
       snap: !_shift,
     );
+    if (!_shift) f = snapDoorToWall(f, plan.rooms);
     _commit(plan, plan.withFurniture(f));
     setState(() => _fsel = f.id);
   }
@@ -1002,6 +1014,120 @@ class _FloorEditorScreenState extends ConsumerState<FloorEditorScreen> {
     Haptics.tick();
     final plan = _plan!;
     _commit(plan, plan.withFurniture(rotateFurnitureBy(f, deg)));
+  }
+
+  /// Tür oder Fenster mit einem Kontaktsensor verknüpfen (oder lösen).
+  Future<void> _linkSensor(FloorFurniture f) async {
+    final snap = ref.read(snapshotProvider);
+    final plan = _plan!;
+    final contacts = {
+      for (final p in plan.placements)
+        if (p.resolvedKind == FloorKind.contact) p.entityId,
+    };
+    final candidates = [
+      for (final e in snap.entities.values)
+        if (e.entityId.startsWith('binary_sensor.') &&
+            (contacts.contains(e.entityId) ||
+                const {
+                  'door',
+                  'window',
+                  'opening',
+                  'garage_door',
+                }.contains(e.deviceClass)))
+          e,
+    ]..sort((a, b) => a.name.compareTo(b.name));
+    final what = f.kind == 'door' ? 'die Tür' : 'das Fenster';
+    final picked = await showZbSheet<String>(
+      context,
+      builder: (ctx) {
+        final hv = ctx.hv;
+        Widget row(String? id, String title, String? sub) {
+          final on = id == f.sensor;
+          return PressScale(
+            onTap: () => Navigator.of(ctx).pop(id ?? ''),
+            child: Container(
+              margin: const EdgeInsets.only(bottom: 6),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              decoration: BoxDecoration(
+                color: on ? hv.acc.withValues(alpha: 0.12) : hv.s2,
+                borderRadius: BorderRadius.circular(HavenRadii.m),
+                border: Border.all(color: on ? hv.acc : hv.ln),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    id == null
+                        ? Icons.link_off_rounded
+                        : Icons.sensor_door_outlined,
+                    size: 20,
+                    color: on ? hv.acc : hv.tx2,
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          title,
+                          style: HavenText.label.copyWith(color: hv.tx),
+                        ),
+                        if (sub != null)
+                          Text(
+                            sub,
+                            style: HavenText.caption.copyWith(color: hv.tx2),
+                          ),
+                      ],
+                    ),
+                  ),
+                  if (on) Icon(Icons.check_rounded, size: 18, color: hv.acc),
+                ],
+              ),
+            ),
+          );
+        }
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              'Sensor für $what',
+              style: HavenText.section.copyWith(color: hv.tx),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Die Karte zeigt $what dann offen oder geschlossen.',
+              style: HavenText.caption.copyWith(color: hv.tx2),
+            ),
+            const SizedBox(height: 14),
+            row(null, 'Kein Sensor', null),
+            for (final e in candidates)
+              row(e.entityId, e.name, e.isOn ? 'gerade offen' : 'gerade zu'),
+            if (candidates.isEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Text(
+                  'Keine Tür- oder Fensterkontakte gefunden.',
+                  style: HavenText.body.copyWith(color: hv.tx2),
+                ),
+              ),
+          ],
+        );
+      },
+    );
+    if (picked == null || !mounted) return;
+    final cur = _plan!;
+    final now = cur.furnitureById(f.id);
+    if (now == null) return;
+    final next = picked.isEmpty
+        ? now.copyWith(clearSensor: true)
+        : now.copyWith(sensor: picked);
+    if (next == now) return;
+    _commit(cur, cur.withFurniture(next));
+    _say(
+      picked.isEmpty
+          ? 'Sensor gelöst'
+          : 'Verknüpft mit ${snap.entity(picked)?.name ?? picked}',
+    );
   }
 
   void _duplicateSel() {
@@ -1135,8 +1261,12 @@ class _FloorEditorScreenState extends ConsumerState<FloorEditorScreen> {
 
   String _furnInfo(FloorFurniture f) {
     final r = f.rotation.round();
+    final s = f.sensor == null
+        ? null
+        : ref.read(snapshotProvider).entity(f.sensor!)?.name ?? f.sensor;
     return '${furnitureSizeText(f, _plan!.grid.cellMeters)}'
-        '${r == 0 ? '' : ' · $r°'}';
+        '${r == 0 ? '' : ' · $r°'}'
+        '${s == null ? '' : ' · Sensor $s'}';
   }
 
   /// Gewähltes Möbelstück: Name, Maße, Drehen, Duplizieren, Löschen.
@@ -1151,6 +1281,16 @@ class _FloorEditorScreenState extends ConsumerState<FloorEditorScreen> {
         onTap: () => _rotateSel(90),
       ),
       const SizedBox(width: 4),
+      if (f.canHaveSensor) ...[
+        _ToolButton(
+          label: f.sensor == null ? 'Sensor verknüpfen' : 'Sensor ändern',
+          icon: f.sensor == null
+              ? Icons.sensors_rounded
+              : Icons.sensor_door_rounded,
+          onTap: () => _linkSensor(f),
+        ),
+        const SizedBox(width: 4),
+      ],
       _ToolButton(
         label: 'Duplizieren',
         shortcut: '${ctrl}D',

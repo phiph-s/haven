@@ -11,6 +11,8 @@ import '../../core/widgets/press_scale.dart';
 import '../../core/widgets/section_header.dart';
 import '../zigbee/widgets/zb_common.dart';
 import '../zigbee/zigbee_screen.dart' show zigbeeDevicePath;
+import 'heating_providers.dart';
+import 'heating_widgets.dart';
 import 'thermostat_dial.dart';
 import 'thermostat_model.dart';
 import 'thermostat_providers.dart';
@@ -681,8 +683,10 @@ Future<void> showThermostatSheet(BuildContext context, ThermostatRef r) {
   );
 }
 
-/// Abschnitt „Heizung“ im Raum: je Thermostat eine Zeile mit Plus und Minus,
-/// Antippen öffnet die volle Bedienung. Ohne Thermostat leer.
+/// Abschnitt „Heizung“ im Raum. Mit Heizungsregelung die Karte der
+/// Regelung, sonst je Thermostat eine Zeile mit Plus und Minus (Antippen
+/// öffnet die volle Bedienung) und der Hinweis, nach einem Raumthermometer
+/// zu regeln. Ohne Thermostat leer.
 class RoomHeatingSection extends ConsumerWidget {
   const RoomHeatingSection({super.key, required this.roomId});
   final String roomId;
@@ -690,7 +694,10 @@ class RoomHeatingSection extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final refs = ref.watch(roomThermostatsProvider(roomId));
-    if (refs.isEmpty) return const SizedBox.shrink();
+    final heat = ref.watch(roomHeatingProvider(roomId));
+    if (refs.isEmpty && heat == null) return const SizedBox.shrink();
+    final canSetup =
+        ref.watch(heatingSupportedProvider) && refs.any((r) => r.ieee != null);
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 22, 20, 0),
       child: Column(
@@ -698,14 +705,20 @@ class RoomHeatingSection extends ConsumerWidget {
         children: [
           const SectionHeader('Heizung'),
           const SizedBox(height: 10),
-          for (final r in refs)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 8),
-              child: ThermostatRow(
-                thermostat: r,
-                onOpen: () => showThermostatSheet(context, r),
+          if (heat != null)
+            RoomHeatingCard(roomId: roomId, heat: heat)
+          else ...[
+            for (final r in refs)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: ThermostatRow(
+                  thermostat: r,
+                  onOpen: () => showThermostatSheet(context, r),
+                ),
               ),
-            ),
+            if (canSetup)
+              HeatingSetupPrompt(areaId: ref.watch(roomAreaProvider(roomId))),
+          ],
         ],
       ),
     );

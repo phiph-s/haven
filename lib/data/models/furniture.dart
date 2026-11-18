@@ -139,6 +139,7 @@ class FloorFurniture {
     required this.w,
     required this.h,
     this.rotation = 0,
+    this.sensor,
   });
 
   /// Neues Möbelstück in Standardgröße mit Mitte [center].
@@ -178,6 +179,7 @@ class FloorFurniture {
       w: math.max(kFurnitureMinSide, w),
       h: math.max(kFurnitureMinSide, h),
       rotation: rot.isFinite ? normalizeDegrees(rot) : 0,
+      sensor: raw['sensor'] is String ? raw['sensor'] as String : null,
     );
   }
 
@@ -188,6 +190,13 @@ class FloorFurniture {
   final double w;
   final double h;
   final double rotation;
+
+  /// Verknüpfter Kontaktsensor (Entity-ID) bei Türen und Fenstern: Die Karte
+  /// zeigt sie offen oder zu.
+  final String? sensor;
+
+  /// Lässt sich mit einem Sensor verknüpfen (Tür, Fenster).
+  bool get canHaveSensor => kind == 'door' || kind == 'window';
 
   FurnitureType? get type => furnitureType(kind);
 
@@ -248,6 +257,8 @@ class FloorFurniture {
     double? w,
     double? h,
     double? rotation,
+    String? sensor,
+    bool clearSensor = false,
   }) => FloorFurniture(
     id: id ?? this.id,
     kind: kind,
@@ -256,6 +267,7 @@ class FloorFurniture {
     w: w ?? this.w,
     h: h ?? this.h,
     rotation: rotation == null ? this.rotation : normalizeDegrees(rotation),
+    sensor: clearSensor ? null : (sensor ?? this.sensor),
   );
 
   FloorFurniture moveTo(Offset c) => copyWith(x: c.dx, y: c.dy);
@@ -268,6 +280,7 @@ class FloorFurniture {
     'w': _r3(w),
     'h': _r3(h),
     'rotation': _r3(rotation),
+    if (sensor != null) 'sensor': sensor,
   };
 
   @override
@@ -279,10 +292,11 @@ class FloorFurniture {
       other.y == y &&
       other.w == w &&
       other.h == h &&
-      other.rotation == rotation;
+      other.rotation == rotation &&
+      other.sensor == sensor;
 
   @override
-  int get hashCode => Object.hash(id, kind, x, y, w, h, rotation);
+  int get hashCode => Object.hash(id, kind, x, y, w, h, rotation, sensor);
 
   @override
   String toString() =>

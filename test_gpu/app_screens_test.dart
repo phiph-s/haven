@@ -34,6 +34,7 @@ Future<void> shot(
   String name,
   String location, {
   Map<String, Object> prefs = const {},
+  Size size = const Size(412, 915),
 }) async {
   // ignore: invalid_use_of_visible_for_testing_member
   SharedPreferences.setMockInitialValues(prefs);
@@ -44,7 +45,7 @@ Future<void> shot(
     await r.start();
     session = Session(SessionMode.fake, r);
   });
-  tester.view.physicalSize = const Size(412 * 2, 915 * 2);
+  tester.view.physicalSize = size * 2;
   tester.view.devicePixelRatio = 2;
   final container = ProviderContainer(
     overrides: [
@@ -93,6 +94,13 @@ void main() {
   testWidgets('App-Bildschirme in 3D', (tester) async {
     addTearDown(tester.view.reset);
     await shot(tester, 'screen_map', '/map');
+    await shot(
+      tester,
+      'screen_map_desktop',
+      '/map',
+      size: const Size(1400, 860),
+      prefs: {'map_3d_tilt': true},
+    );
     await shot(tester, 'screen_editor', '/map/editor');
     await shot(
       tester,

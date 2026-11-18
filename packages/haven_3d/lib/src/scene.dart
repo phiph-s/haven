@@ -186,6 +186,8 @@ class SceneObject {
     this.roomId,
     this.wallMounted = false,
     this.depth = 0,
+    this.width = 0,
+    this.sensor,
   });
 
   /// Möbelstück aus dem Katalog: Mitte [center] und Maße [w] × [d] in
@@ -200,17 +202,21 @@ class SceneObject {
     double? height,
     double? elevation,
     String? roomId,
+    bool? open,
+    String? sensor,
   }) {
     final spec = furnitureSpec(kind);
     return SceneObject(
       id: id,
       kind: kind,
-      model: buildFurniture(kind, w, d, height: height),
+      model: buildFurniture(kind, w, d, height: height, open: open),
       position: V3(center.dx, center.dy, elevation ?? spec.elevation),
       rotation: rotation,
       roomId: roomId,
       wallMounted: spec.wallMounted,
       depth: d,
+      width: w,
+      sensor: sensor,
     );
   }
 
@@ -226,6 +232,41 @@ class SceneObject {
 
   /// Tiefe (lokales `y`) in Metern, für die Zuordnung zum Raum.
   final double depth;
+
+  /// Breite (lokales `x`) in Metern.
+  final double width;
+
+  /// Sensor (frei wählbare ID), der den Zustand offen/zu meldet.
+  final String? sensor;
+
+  /// Dasselbe Objekt mit Modell im Zustand [open] (nur Kataloggrößen).
+  SceneObject withOpen(bool? open) => SceneObject(
+    id: id,
+    kind: kind,
+    model: buildFurniture(kind, width, depth, open: open),
+    position: position,
+    rotation: rotation,
+    roomId: roomId,
+    wallMounted: wallMounted,
+    depth: depth,
+    width: width,
+    sensor: sensor,
+  );
+
+  /// Türöffnung in der Wand: Anfang und Ende auf der Wandlinie (Welt) und
+  /// Höhe. Die Wand liegt an der Unterkante der Tür (lokal `y = d/2`), die
+  /// Öffnung beginnt an der Angel und ist `min(w, d)` breit. `null` für
+  /// alles außer Türen.
+  ({Offset a, Offset b, double height})? get doorOpening {
+    if (kind != 'door' || width <= 0) return null;
+    final r = math.min(width, depth);
+    final x0 = -width / 2;
+    return (
+      a: toWorld(Offset(x0, depth / 2)),
+      b: toWorld(Offset(x0 + r, depth / 2)),
+      height: furnitureSpec(kind).height,
+    );
+  }
 
   /// Punkt [local] (lokales System, ohne Höhe) in Weltkoordinaten.
   Offset toWorld(Offset local) {
@@ -341,7 +382,12 @@ class Scene {
     if (inset <= 0 && radius <= 0) return this;
     final shapes = {
       for (final r in rooms)
-        r.id: roundedInset(r.outline, inset: inset, radius: radius),
+        r.id: roundedInset(
+          r.outline,
+          inset: inset,
+          radius: radius,
+          open: r.openEdges,
+        ),
     };
     return Scene(
       rooms: rooms,
@@ -402,6 +448,8 @@ class Scene {
       roomId: objectRoom[o.id],
       wallMounted: o.wallMounted,
       depth: o.depth,
+      width: o.width,
+      sensor: o.sensor,
     );
   }
 
@@ -422,6 +470,70 @@ class Scene {
   late final Map<String, String?> markerRoom = {
     for (final m in markers) m.id: m.roomId ?? _roomAt(m.position.xy),
   };
+
+  /// Lichtzone je Raum (Raum-ID → ID der Zone): Räume, die eine offene
+  /// Wand oder eine Tür verbindet, teilen sich das Licht ihrer Lampen.
+  late final Map<String, String> lightZones = _zones();
+
+  Map<String, String> _zones() {
+    final parent = {for (final r in rooms) r.id: r.id};
+    String find(String x) {
+      while (parent[x] != x) {
+        x = parent[x] = parent[parent[x]!]!;
+      }
+      return x;
+    }
+
+    void union(String a, String b) {
+      final ra = find(a), rb = find(b);
+      if (ra != rb) parent[rb] = ra;
+    }
+
+    // Offene Wände: eine offene Kante, die mit einer Kante eines anderen
+    // Raums auf einer Linie liegt und sich mit ihr überdeckt.
+    for (final a in rooms) {
+      final n = a.outline.length;
+      for (final i in a.openEdges) {
+        if (i >= n) continue;
+        final a0 = a.outline[i], a1 = a.outline[(i + 1) % n];
+        for (final b in rooms) {
+          if (b.id == a.id) continue;
+          final m = b.outline.length;
+          for (var j = 0; j < m; j++) {
+            if (_overlap(a0, a1, b.outline[j], b.outline[(j + 1) % m]) > 0.05) {
+              union(a.id, b.id);
+              break;
+            }
+          }
+        }
+      }
+    }
+    // Türen: die Räume knapp vor und hinter der Öffnung.
+    for (final o in objects) {
+      final d = o.doorOpening;
+      if (d == null) continue;
+      final e = d.b - d.a;
+      if (e.distance < 1e-6) continue;
+      final mid = (d.a + d.b) / 2;
+      final nrm = Offset(-e.dy, e.dx) / e.distance;
+      final x = _roomAt(mid + nrm * 0.2), y = _roomAt(mid - nrm * 0.2);
+      if (x != null && y != null && x != y) union(x, y);
+    }
+    return {for (final r in rooms) r.id: find(r.id)};
+  }
+
+  static double _overlap(Offset a0, Offset a1, Offset b0, Offset b1) {
+    final d = a1 - a0;
+    final len = d.distance;
+    if (len < 1e-9) return 0;
+    final u = d / len;
+    double cross(Offset p) => (p - a0).dx * u.dy - (p - a0).dy * u.dx;
+    if (cross(b0).abs() > 0.01 || cross(b1).abs() > 0.01) return 0;
+    double t(Offset p) => (p - a0).dx * u.dx + (p - a0).dy * u.dy;
+    final lo = math.max(0.0, math.min(t(b0), t(b1)));
+    final hi = math.min(len, math.max(t(b0), t(b1)));
+    return hi - lo;
+  }
 
   /// Raum, in dem [p] liegt (oder `null`).
   String? roomAt(Offset p) => _roomAt(p);

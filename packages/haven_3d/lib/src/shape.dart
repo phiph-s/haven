@@ -8,29 +8,46 @@ import 'dart:ui' show Offset;
 ///
 /// Der Umlaufsinn bleibt erhalten. Zu enge Ecken (kurze Kanten) bekommen
 /// automatisch einen kleineren Radius.
+///
+/// [open] sind offene Kanten (Kante i von Ecke i zur nächsten): Sie bleiben
+/// auf dem Umriss (kein Spalt, der Nachbarraum schließt direkt an) und ihre
+/// Ecken bleiben spitz. Zwei Räume mit offener Wand wirken so wie eine Form.
 List<Offset> roundedInset(
   List<Offset> outline, {
   double inset = 0,
   double radius = 0,
   int segments = 6,
+  Set<int> open = const {},
 }) {
-  final pts = _dedupe(outline);
+  final (pts, openAfter) = _dedupe(outline, open);
   if (pts.length < 3) return pts;
   final ccw = _area(pts) > 0;
-  final inner = inset > 0 ? _offset(pts, inset, ccw) : pts;
+  final inner = inset > 0 ? _offset(pts, inset, ccw, openAfter) : pts;
   if (radius <= 0) return inner;
-  return _fillet(inner, radius, segments);
+  final n = pts.length;
+  return _fillet(inner, radius, segments, {
+    for (var i = 0; i < n; i++)
+      if (openAfter.contains(i) || openAfter.contains((i - 1 + n) % n)) i,
+  });
 }
 
-List<Offset> _dedupe(List<Offset> p) {
+/// Doppelte Punkte entfernen; offene Kanten behalten ihre (neue) Nummer.
+(List<Offset>, Set<int>) _dedupe(List<Offset> p, Set<int> open) {
   final out = <Offset>[];
-  for (final q in p) {
-    if (out.isEmpty || (out.last - q).distance > 1e-6) out.add(q);
+  final outOpen = <int>{};
+  for (var i = 0; i < p.length; i++) {
+    final q = p[i];
+    if (out.isEmpty || (out.last - q).distance > 1e-6) {
+      out.add(q);
+    }
+    // Die Kante ab diesem Punkt gehört zum zuletzt behaltenen Punkt.
+    if (open.contains(i)) outOpen.add(out.length - 1);
   }
   if (out.length > 1 && (out.first - out.last).distance <= 1e-6) {
     out.removeLast();
+    if (outOpen.remove(out.length)) outOpen.add(out.length - 1);
   }
-  return out;
+  return (out, outOpen);
 }
 
 double _area(List<Offset> p) {
@@ -42,8 +59,9 @@ double _area(List<Offset> p) {
   return a / 2;
 }
 
-/// Jede Kante um [d] nach innen schieben, neue Ecken als Schnittpunkte.
-List<Offset> _offset(List<Offset> p, double d, bool ccw) {
+/// Jede Kante um [d] nach innen schieben (offene Kanten nicht), neue Ecken
+/// als Schnittpunkte.
+List<Offset> _offset(List<Offset> p, double d, bool ccw, Set<int> open) {
   final n = p.length;
   Offset inward(Offset a, Offset b) {
     final e = b - a;
@@ -57,9 +75,11 @@ List<Offset> _offset(List<Offset> p, double d, bool ccw) {
   for (var i = 0; i < n; i++) {
     final prev = p[(i - 1 + n) % n], cur = p[i], next = p[(i + 1) % n];
     final n0 = inward(prev, cur), n1 = inward(cur, next);
-    final a0 = prev + n0 * d, a1 = cur + n0 * d;
-    final b0 = cur + n1 * d, b1 = next + n1 * d;
-    out.add(_intersect(a0, a1, b0, b1) ?? cur + (n0 + n1) * (d / 2));
+    final d0 = open.contains((i - 1 + n) % n) ? 0.0 : d;
+    final d1 = open.contains(i) ? 0.0 : d;
+    final a0 = prev + n0 * d0, a1 = cur + n0 * d0;
+    final b0 = cur + n1 * d1, b1 = next + n1 * d1;
+    out.add(_intersect(a0, a1, b0, b1) ?? cur + (n0 * d0 + n1 * d1) / 2);
   }
   return out;
 }
@@ -72,12 +92,21 @@ Offset? _intersect(Offset a0, Offset a1, Offset b0, Offset b1) {
   return a0 + r * t;
 }
 
-/// Ecken durch tangentiale Kreisbögen ersetzen.
-List<Offset> _fillet(List<Offset> p, double radius, int segments) {
+/// Ecken durch tangentiale Kreisbögen ersetzen, außer den [sharp].
+List<Offset> _fillet(
+  List<Offset> p,
+  double radius,
+  int segments, [
+  Set<int> sharp = const {},
+]) {
   final n = p.length;
   final out = <Offset>[];
   for (var i = 0; i < n; i++) {
     final prev = p[(i - 1 + n) % n], cur = p[i], next = p[(i + 1) % n];
+    if (sharp.contains(i)) {
+      out.add(cur);
+      continue;
+    }
     final u = prev - cur, v = next - cur;
     final lu = u.distance, lv = v.distance;
     if (lu < 1e-9 || lv < 1e-9) {

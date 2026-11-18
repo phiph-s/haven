@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'haven_repository.dart';
+import 'models/room_heating.dart';
 import 'models/snapshot.dart';
 import 'models/state_history.dart';
 import 'sync/app_data.dart';
@@ -45,6 +46,39 @@ abstract class BaseRepository implements HavenRepository {
     'Szenen lassen sich hier nicht löschen',
     code: 'not_supported',
   );
+
+  // ---- Heizungsregelung: ohne Unterstützung (Unterklassen überschreiben) --
+
+  @override
+  Future<HeatingRooms> heatingRooms() async => HeatingRooms.unsupported;
+
+  @override
+  Future<RoomHeating> saveHeating(HeatingConfig config) => throw HavenException(
+    'Die Heizungsregelung gibt es hier nicht',
+    code: 'not_supported',
+  );
+
+  @override
+  Future<void> deleteHeating(String areaId) => throw HavenException(
+    'Die Heizungsregelung gibt es hier nicht',
+    code: 'not_supported',
+  );
+
+  @override
+  Future<HeatingStatus> controlHeating(
+    String areaId, {
+    double? target,
+    HeatingMode? mode,
+  }) => throw HavenException(
+    'Die Heizungsregelung gibt es hier nicht',
+    code: 'not_supported',
+  );
+
+  @override
+  Stream<HeatingUpdate> get heatingUpdates => const Stream.empty();
+
+  @override
+  Stream<void> get heatingChanged => const Stream.empty();
 
   // ---- Geteilte Dokumente, im Speicher (Entwicklungsdaten, Tests) --------
 

@@ -33,7 +33,8 @@ import 'package:material_ui/material_ui.dart';
 /// Live-Test, ohne `preset` nur das Dashboard), beide mit Beispielgesten im
 /// Live-Test. `screen=motion_new&room=waschraum&preset=<Schritt 0..6>` ist der
 /// Bewegungslicht-Assistent, `screen=motion_edit&preset=<Abschnitt>` das
-/// Dashboard von `demo-waschraum`.
+/// Dashboard von `demo-waschraum`. `screen=heating&room=salon` öffnet die
+/// Einrichtung der Heizungsregelung.
 class LaunchOverrides {
   const LaunchOverrides({
     this.theme,
@@ -152,6 +153,7 @@ class LaunchOverrides {
       '/automations/motion/new?room=$room&step=${preset ?? 0}&demo=1',
     'motion_edit' =>
       '/automations/motion/${ieee ?? 'demo-waschraum'}?step=${preset ?? 6}&demo=1',
+    'heating' => '/heating/$room',
     'settings' => '/settings',
     'updates' => '/settings/updates',
     'onboarding' => '/onboarding',

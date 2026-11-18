@@ -183,6 +183,12 @@ class Model3 {
 /// (`-d/2 … d/2`, negativ ist die Oberkante des 2D-Symbols), `z` von 0 (Unterkante
 /// des Möbels) nach oben. Alles in Metern.
 class ModelBuilder {
+  ModelBuilder({this.open});
+
+  /// Zustand von Türen und Fenstern mit Sensor: `true` offen, `false` zu,
+  /// `null` unbekannt (Tür offen gezeichnet, Fenster mit Aufgehwinkel).
+  final bool? open;
+
   final List<Face3> _faces = [];
   final List<Line3> _lines = [];
 
