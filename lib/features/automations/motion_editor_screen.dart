@@ -25,6 +25,51 @@ import 'motion_logic.dart';
 /// Pfad des Bewegungslicht-Editors (neu bzw. vorhandene Automation).
 String motionEditorPath([String? id]) => '/automations/motion/${id ?? 'new'}';
 
+/// Entwurf auf Raum [areaId] umstellen: Standardname nachziehen, freie Melder
+/// des Raums vorschlagen, Z2M-Szenen eines anderen Raums auf Helligkeit.
+/// Gemeinsam für Assistent und Dashboard.
+HavenAutomation motionDraftWithRoom(
+  HavenAutomation d,
+  String areaId,
+  HavenAutomations all,
+  List<ZbDeviceView> detectors,
+) {
+  final name = all.rooms[areaId]?.name ?? areaId;
+  final oldDefault =
+      d.name.isEmpty ||
+      d.name == 'Bewegungslicht ${all.rooms[d.roomAreaId]?.name ?? ''}';
+  var devices = d.devices;
+  if (devices.isEmpty) {
+    devices = [
+      for (final k in detectors)
+        if (k.roomId == areaId &&
+            all.ownerOf(k.ieee, exceptId: d.id, type: kMotionType) == null)
+          k.ieee,
+    ];
+  }
+  final o = d.motion ?? const MotionOptions();
+  // Szenen eines anderen Raums gelten hier nicht.
+  final changed = d.roomAreaId != areaId;
+  return d.copyWith(
+    roomAreaId: areaId,
+    name: oldDefault ? 'Bewegungslicht $name' : d.name,
+    devices: devices,
+    motion: changed
+        ? o.copyWith(
+            light: o.light.isScene && o.light.sceneEntity == null
+                ? o.light.asBrightness()
+                : o.light,
+            night: o.night?.copyWith(
+              light:
+                  o.night!.light.isScene && o.night!.light.sceneEntity == null
+                  ? o.night!.light.asBrightness()
+                  : o.night!.light,
+            ),
+          )
+        : o,
+  );
+}
+
 /// Assistent bzw. Editor „Bewegungslicht“: Raum, Melder, Wann aktiv, Licht,
 /// Nachlauf, Live-Test, Speichern. Aufbau wie [KnobEditorScreen].
 class MotionEditorScreen extends ConsumerStatefulWidget {
@@ -87,42 +132,7 @@ class _MotionEditorScreenState extends ConsumerState<MotionEditorScreen> {
     HavenAutomation d,
     String areaId,
     HavenAutomations all,
-  ) {
-    final name = all.rooms[areaId]?.name ?? areaId;
-    final oldDefault =
-        d.name.isEmpty ||
-        d.name == 'Bewegungslicht ${all.rooms[d.roomAreaId]?.name ?? ''}';
-    var devices = d.devices;
-    if (devices.isEmpty) {
-      devices = [
-        for (final k in ref.read(motionDevicesProvider))
-          if (k.roomId == areaId &&
-              all.ownerOf(k.ieee, exceptId: d.id, type: kMotionType) == null)
-            k.ieee,
-      ];
-    }
-    final o = d.motion ?? const MotionOptions();
-    // Szenen eines anderen Raums gelten hier nicht.
-    final changed = d.roomAreaId != areaId;
-    return d.copyWith(
-      roomAreaId: areaId,
-      name: oldDefault ? 'Bewegungslicht $name' : d.name,
-      devices: devices,
-      motion: changed
-          ? o.copyWith(
-              light: o.light.isScene && o.light.sceneEntity == null
-                  ? o.light.asBrightness()
-                  : o.light,
-              night: o.night?.copyWith(
-                light:
-                    o.night!.light.isScene && o.night!.light.sceneEntity == null
-                    ? o.night!.light.asBrightness()
-                    : o.night!.light,
-              ),
-            )
-          : o,
-    );
-  }
+  ) => motionDraftWithRoom(d, areaId, all, ref.read(motionDevicesProvider));
 
   void _update(HavenAutomation d) => setState(() {
     _draft = d;
@@ -405,15 +415,15 @@ class _MotionEditorScreenState extends ConsumerState<MotionEditorScreen> {
     final room = all.rooms[d.roomAreaId];
     final o = d.motion ?? const MotionOptions();
     return switch (_step) {
-      0 => _RoomStep(
+      0 => MotionRoomStep(
         draft: d,
         all: all,
         onPick: (id) => _update(_withRoom(d, id, all)),
       ),
-      1 => _DetectorStep(draft: d, all: all, onChanged: _update),
-      2 => _WhenStep(draft: d, options: o, onChanged: _opts),
-      3 => _LightStep(draft: d, room: room, options: o, onChanged: _opts),
-      4 => _DelayStep(draft: d, options: o, onChanged: _update),
+      1 => MotionDetectorStep(draft: d, all: all, onChanged: _update),
+      2 => MotionWhenStep(draft: d, options: o, onChanged: _opts),
+      3 => MotionLightStep(draft: d, room: room, options: o, onChanged: _opts),
+      4 => MotionDelayStep(draft: d, options: o, onChanged: _update),
       5 => MotionLiveTest(automation: d, demo: widget.demo),
       _ => _SummaryStep(
         draft: d,
@@ -427,8 +437,9 @@ class _MotionEditorScreenState extends ConsumerState<MotionEditorScreen> {
 
 // ---- 1. Raum --------------------------------------------------------------
 
-class _RoomStep extends ConsumerWidget {
-  const _RoomStep({
+class MotionRoomStep extends ConsumerWidget {
+  const MotionRoomStep({
+    super.key,
     required this.draft,
     required this.all,
     required this.onPick,
@@ -485,8 +496,9 @@ class _RoomStep extends ConsumerWidget {
   return null;
 }
 
-class _DetectorStep extends ConsumerWidget {
-  const _DetectorStep({
+class MotionDetectorStep extends ConsumerWidget {
+  const MotionDetectorStep({
+    super.key,
     required this.draft,
     required this.all,
     required this.onChanged,
@@ -577,8 +589,9 @@ class _DetectorStep extends ConsumerWidget {
 
 // ---- 3. Wann aktiv -------------------------------------------------------
 
-class _WhenStep extends ConsumerWidget {
-  const _WhenStep({
+class MotionWhenStep extends ConsumerWidget {
+  const MotionWhenStep({
+    super.key,
     required this.draft,
     required this.options,
     required this.onChanged,
@@ -721,11 +734,7 @@ class _WhenStep extends ConsumerWidget {
             if (sun != null) ...[
               HavenSegmented<int>(
                 neutral: true,
-                options: const [
-                  (0, 'Nachts'),
-                  (1, 'Abends'),
-                  (2, 'Morgens'),
-                ],
+                options: const [(0, 'Nachts'), (1, 'Abends'), (2, 'Morgens')],
                 selected: sun.from != null && sun.until != null
                     ? 0
                     : (sun.from != null ? 1 : 2),
@@ -945,21 +954,32 @@ class _TimeBox extends StatelessWidget {
           child: Row(
             children: [
               Text(label, style: HavenText.caption.copyWith(color: hv.tx2)),
-              const Spacer(),
-              Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  Text(value, style: HavenText.headline.copyWith(color: hv.tx)),
-                  if (hint != null)
-                    Text(
-                      hint!,
-                      style: HavenText.caption.copyWith(
-                        color: hv.tx3,
-                        fontSize: 11,
+              const SizedBox(width: 8),
+              // Schmale Sheets und große Schrift: Wert verkleinern statt
+              // überlaufen.
+              Expanded(
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerRight,
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Text(
+                        value,
+                        style: HavenText.headline.copyWith(color: hv.tx),
                       ),
-                    ),
-                ],
+                      if (hint != null)
+                        Text(
+                          hint!,
+                          style: HavenText.caption.copyWith(
+                            color: hv.tx3,
+                            fontSize: 11,
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
               ),
             ],
           ),
@@ -989,7 +1009,11 @@ class _OffsetRow extends StatelessWidget {
     return Row(
       children: [
         Expanded(
-          child: Text(label, style: HavenText.body.copyWith(color: hv.tx)),
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.centerLeft,
+            child: Text(label, style: HavenText.body.copyWith(color: hv.tx)),
+          ),
         ),
         RoundIconButton(
           icon: Icons.remove_rounded,
@@ -1016,8 +1040,9 @@ class _OffsetRow extends StatelessWidget {
 
 // ---- 4. Licht -------------------------------------------------------------
 
-class _LightStep extends StatelessWidget {
-  const _LightStep({
+class MotionLightStep extends StatelessWidget {
+  const MotionLightStep({
+    super.key,
     required this.draft,
     required this.room,
     required this.options,
@@ -1244,8 +1269,9 @@ class MotionLightEditor extends ConsumerWidget {
 
 // ---- 5. Nachlauf ----------------------------------------------------------
 
-class _DelayStep extends StatefulWidget {
-  const _DelayStep({
+class MotionDelayStep extends StatefulWidget {
+  const MotionDelayStep({
+    super.key,
     required this.draft,
     required this.options,
     required this.onChanged,
@@ -1255,10 +1281,10 @@ class _DelayStep extends StatefulWidget {
   final ValueChanged<HavenAutomation> onChanged;
 
   @override
-  State<_DelayStep> createState() => _DelayStepState();
+  State<MotionDelayStep> createState() => _MotionDelayStepState();
 }
 
-class _DelayStepState extends State<_DelayStep> {
+class _MotionDelayStepState extends State<MotionDelayStep> {
   late final _name = TextEditingController(text: widget.draft.name);
 
   @override

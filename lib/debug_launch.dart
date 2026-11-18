@@ -29,11 +29,12 @@ import 'package:material_ui/material_ui.dart';
 /// `screen=map&inspect=<Raum>` wählt am Desktop einen Raum im Inspektor.
 /// `screen=automations_ha` zeigt die HA-Automationen, `screen=automation_new`
 /// den Drehregler-Assistenten (`room=`, `preset=<Schritt 0..6>`),
-/// `screen=automation_edit` eine Beispiel-Automation (`ieee=<ID>`,
-/// `preset=<Schritt>`), beide mit Beispielgesten im Live-Test.
-/// `screen=motion_new&room=waschraum&preset=<Schritt 0..6>` ist der
-/// Bewegungslicht-Assistent, `screen=motion_edit&preset=<Schritt>` das
-/// Beispiel `demo-waschraum`.
+/// `screen=automation_edit` das Dashboard einer Beispiel-Automation
+/// (`ieee=<ID>`, `preset=<Abschnitt 0..4>` öffnet dessen Sheet, `5` den
+/// Live-Test, ohne `preset` nur das Dashboard), beide mit Beispielgesten im
+/// Live-Test. `screen=motion_new&room=waschraum&preset=<Schritt 0..6>` ist der
+/// Bewegungslicht-Assistent, `screen=motion_edit&preset=<Abschnitt>` das
+/// Dashboard von `demo-waschraum`.
 class LaunchOverrides {
   const LaunchOverrides({
     this.theme,

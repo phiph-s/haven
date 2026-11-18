@@ -6,6 +6,7 @@ import 'package:material_ui/material_ui.dart';
 
 import '../../core/state/providers.dart';
 import '../../core/theme/tokens.dart';
+import '../../core/widgets/haven_sheet.dart';
 import '../../core/widgets/haptics.dart';
 import '../../core/widgets/haven_button.dart';
 import '../../core/widgets/haven_card.dart';
@@ -31,6 +32,37 @@ const _steps = [
   'Live-Test',
   'Speichern',
 ];
+
+/// Entwurf auf Raum [areaId] umstellen: Standardname nachziehen, freie Regler
+/// des Raums vorschlagen, Szenen zurücksetzen. Gemeinsam für Assistent und
+/// Dashboard.
+HavenAutomation knobDraftWithRoom(
+  HavenAutomation d,
+  String areaId,
+  HavenAutomations all,
+  List<ZbDeviceView> knobs,
+) {
+  final name = all.rooms[areaId]?.name ?? areaId;
+  final oldDefault =
+      d.name.isEmpty ||
+      d.name == 'Drehregler ${all.rooms[d.roomAreaId]?.name ?? ''}';
+  // Freie Regler des Raums gleich vorschlagen, solange nichts gewählt ist.
+  var devices = d.devices;
+  if (devices.isEmpty) {
+    devices = [
+      for (final k in knobs)
+        if (k.roomId == areaId &&
+            all.ownerOf(k.ieee, exceptId: d.id, type: 'room_knob') == null)
+          k.ieee,
+    ];
+  }
+  return d.copyWith(
+    roomAreaId: areaId,
+    name: oldDefault ? 'Drehregler $name' : d.name,
+    devices: devices,
+    options: d.options.copyWith(clearScenes: true, clearOnScene: true),
+  );
+}
 
 /// Assistent bzw. Editor „Drehregler für einen Raum“.
 ///
@@ -92,28 +124,7 @@ class _KnobEditorScreenState extends ConsumerState<KnobEditorScreen> {
     HavenAutomation d,
     String areaId,
     HavenAutomations all,
-  ) {
-    final name = all.rooms[areaId]?.name ?? areaId;
-    final oldDefault =
-        d.name.isEmpty ||
-        d.name == 'Drehregler ${all.rooms[d.roomAreaId]?.name ?? ''}';
-    // Freie Regler des Raums gleich vorschlagen, solange nichts gewählt ist.
-    var devices = d.devices;
-    if (devices.isEmpty) {
-      devices = [
-        for (final k in ref.read(knobDevicesProvider))
-          if (k.roomId == areaId &&
-              all.ownerOf(k.ieee, exceptId: d.id, type: 'room_knob') == null)
-            k.ieee,
-      ];
-    }
-    return d.copyWith(
-      roomAreaId: areaId,
-      name: oldDefault ? 'Drehregler $name' : d.name,
-      devices: devices,
-      options: d.options.copyWith(clearScenes: true, clearOnScene: true),
-    );
-  }
+  ) => knobDraftWithRoom(d, areaId, all, ref.read(knobDevicesProvider));
 
   void _update(HavenAutomation d) => setState(() {
     _draft = d;
@@ -392,15 +403,15 @@ class _KnobEditorScreenState extends ConsumerState<KnobEditorScreen> {
   Widget _stepBody(HavenAutomation d, HavenAutomations all) {
     final room = all.rooms[d.roomAreaId];
     return switch (_step) {
-      0 => _RoomStep(
+      0 => KnobRoomStep(
         draft: d,
         all: all,
         onPick: (id) => _update(_withRoom(d, id, all)),
       ),
-      1 => _DeviceStep(draft: d, all: all, onChanged: _update),
-      2 => _GestureStep(draft: d, room: room, onChanged: _update),
-      3 => _SceneStep(draft: d, room: room, onChanged: _update),
-      4 => _OptionsStep(draft: d, onChanged: _update),
+      1 => KnobDeviceStep(draft: d, all: all, onChanged: _update),
+      2 => KnobGestureStep(draft: d, room: room, onChanged: _update),
+      3 => KnobSceneStep(draft: d, room: room, onChanged: _update),
+      4 => KnobOptionsStep(draft: d, onChanged: _update),
       5 => KnobLiveTest(automation: d, demo: widget.demo),
       _ => _SummaryStep(
         draft: d,
@@ -485,6 +496,8 @@ class StepScroll extends StatelessWidget {
   Widget build(BuildContext context) {
     final hv = context.hv;
     return ListView(
+      // Im Bearbeiten-Sheet des Dashboards zieht das obere Ende das Sheet.
+      controller: HavenSheetScope.maybeOf(context)?.scrollController,
       padding: const EdgeInsets.fromLTRB(20, 14, 20, 24),
       children: [
         Text(title, style: HavenText.section.copyWith(color: hv.tx)),
@@ -597,8 +610,9 @@ class PickRow extends StatelessWidget {
 
 // ---- 1. Raum --------------------------------------------------------------
 
-class _RoomStep extends ConsumerWidget {
-  const _RoomStep({
+class KnobRoomStep extends ConsumerWidget {
+  const KnobRoomStep({
+    super.key,
     required this.draft,
     required this.all,
     required this.onPick,
@@ -652,8 +666,9 @@ class _RoomStep extends ConsumerWidget {
 
 // ---- 2. Regler ----------------------------------------------------------------
 
-class _DeviceStep extends ConsumerWidget {
-  const _DeviceStep({
+class KnobDeviceStep extends ConsumerWidget {
+  const KnobDeviceStep({
+    super.key,
     required this.draft,
     required this.all,
     required this.onChanged,
@@ -761,8 +776,9 @@ class FieldLabel extends StatelessWidget {
 
 // ---- 3. Gesten ----------------------------------------------------------------
 
-class _GestureStep extends StatelessWidget {
-  const _GestureStep({
+class KnobGestureStep extends StatelessWidget {
+  const KnobGestureStep({
+    super.key,
     required this.draft,
     required this.room,
     required this.onChanged,
@@ -894,8 +910,9 @@ class _GestureStep extends StatelessWidget {
 
 // ---- 4. Szenen ------------------------------------------------------------------
 
-class _SceneStep extends StatelessWidget {
-  const _SceneStep({
+class KnobSceneStep extends StatelessWidget {
+  const KnobSceneStep({
+    super.key,
     required this.draft,
     required this.room,
     required this.onChanged,
@@ -933,6 +950,8 @@ class _SceneStep extends StatelessWidget {
     ];
     final onScene = draft.options.onScene;
     return ListView(
+      // Im Bearbeiten-Sheet des Dashboards zieht das obere Ende das Sheet.
+      controller: HavenSheetScope.maybeOf(context)?.scrollController,
       padding: const EdgeInsets.fromLTRB(20, 14, 20, 24),
       children: [
         Text('Szenen', style: HavenText.section.copyWith(color: hv.tx)),
@@ -1088,16 +1107,20 @@ class OptionChip extends StatelessWidget {
 
 // ---- 5. Optionen -------------------------------------------------------------
 
-class _OptionsStep extends StatefulWidget {
-  const _OptionsStep({required this.draft, required this.onChanged});
+class KnobOptionsStep extends StatefulWidget {
+  const KnobOptionsStep({
+    super.key,
+    required this.draft,
+    required this.onChanged,
+  });
   final HavenAutomation draft;
   final ValueChanged<HavenAutomation> onChanged;
 
   @override
-  State<_OptionsStep> createState() => _OptionsStepState();
+  State<KnobOptionsStep> createState() => _KnobOptionsStepState();
 }
 
-class _OptionsStepState extends State<_OptionsStep> {
+class _KnobOptionsStepState extends State<KnobOptionsStep> {
   late final _name = TextEditingController(text: widget.draft.name);
 
   @override

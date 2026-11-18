@@ -6,7 +6,9 @@ import '../../core/theme/tokens.dart';
 import '../../core/widgets/system_bars.dart';
 import '../ha_web/ha_web_screen.dart';
 import 'ha_automations_screen.dart';
+import 'knob_dashboard_screen.dart';
 import 'knob_editor_screen.dart';
+import 'motion_dashboard_screen.dart';
 import 'motion_editor_screen.dart';
 
 /// Von rechts hereinschieben (Vollbild ohne Navigation).
@@ -31,11 +33,13 @@ Page<void> _slide(GoRouterState state, Widget child) =>
 /// - `/automations/ha?path=/config/automation/edit/<id>&title=...` öffnet die
 ///   eingebettete HA-Oberfläche im Vollbild (auch aus den Einstellungen).
 /// - `/automations/home-assistant`: Liste der HA-Automationen.
-/// - `/automations/knob/new?room=<area>&step=<0..6>` bzw.
-///   `/automations/knob/<id>?step=`: Drehregler-Assistent bzw. -Editor
+/// - `/automations/knob/new?room=<area>&step=<0..6>`: Drehregler-Assistent
 ///   (`demo=1` füllt den Live-Test für Screenshots).
+/// - `/automations/knob/<id>?step=`: Dashboard der bestehenden Automation,
+///   `step` öffnet gleich den Abschnitt (0 bis 4) bzw. den Live-Test (5).
+///   Mit `wizard=1` stattdessen alle Schritte im Assistenten.
 /// - `/automations/motion/new?room=&step=` bzw. `/automations/motion/<id>`:
-///   Bewegungslicht-Assistent bzw. -Editor.
+///   Bewegungslicht-Assistent bzw. -Dashboard, sonst wie beim Drehregler.
 final List<RouteBase> automationsRoutes = <RouteBase>[
   GoRoute(
     path: 'ha',
@@ -59,12 +63,23 @@ final List<RouteBase> automationsRoutes = <RouteBase>[
     pageBuilder: (context, state) {
       final id = state.pathParameters['id']!;
       final q = state.uri.queryParameters;
+      final step = int.tryParse(q['step'] ?? '');
+      if (id != 'new' && q['wizard'] != '1') {
+        return _slide(
+          state,
+          KnobDashboardScreen(
+            id: id,
+            initialStep: step,
+            demo: q['demo'] == '1',
+          ),
+        );
+      }
       return _slide(
         state,
         KnobEditorScreen(
           id: id == 'new' ? null : id,
           initialRoom: q['room'],
-          initialStep: int.tryParse(q['step'] ?? ''),
+          initialStep: step,
           demo: q['demo'] == '1',
         ),
       );
@@ -76,12 +91,23 @@ final List<RouteBase> automationsRoutes = <RouteBase>[
     pageBuilder: (context, state) {
       final id = state.pathParameters['id']!;
       final q = state.uri.queryParameters;
+      final step = int.tryParse(q['step'] ?? '');
+      if (id != 'new' && q['wizard'] != '1') {
+        return _slide(
+          state,
+          MotionDashboardScreen(
+            id: id,
+            initialStep: step,
+            demo: q['demo'] == '1',
+          ),
+        );
+      }
       return _slide(
         state,
         MotionEditorScreen(
           id: id == 'new' ? null : id,
           initialRoom: q['room'],
-          initialStep: int.tryParse(q['step'] ?? ''),
+          initialStep: step,
           demo: q['demo'] == '1',
         ),
       );

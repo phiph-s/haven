@@ -355,7 +355,7 @@ void main() {
       expect(find.text('Haven-Automationen'), findsOneWidget);
     });
 
-    testWidgets('Karte zeigt den Zustand, Editor öffnet', (tester) async {
+    testWidgets('Karte zeigt den Zustand, Dashboard öffnet', (tester) async {
       await _pump(tester, '/automations');
       expect(find.text('Waschraum'), findsOneWidget);
       expect(find.textContaining('Licht vom Melder, aus in'), findsOneWidget);
@@ -366,7 +366,8 @@ void main() {
       expect(dx, lessThan(tester.getTopLeft(find.text('Waschraum')).dx + 40));
       await tester.tap(find.text('Waschraum'));
       await tester.pumpAndSettle();
-      expect(find.text('Welcher Raum?'), findsOneWidget);
+      expect(find.text('Welcher Raum?'), findsNothing);
+      expect(find.text('Wann aktiv'), findsOneWidget);
     });
 
     testWidgets('Live-Test: Testknopf löst Bewegung aus', (tester) async {
@@ -376,11 +377,12 @@ void main() {
       await tester.tap(find.text('Von Hand übernehmen'));
       await tester.pumpAndSettle();
       expect(find.text('Von Hand übernommen'), findsOneWidget);
-      expect(find.text('Manuell übernommen'), findsOneWidget);
+      // Live-Test im Sheet und Zustand im Dashboard dahinter
+      expect(find.text('Manuell übernommen'), findsWidgets);
     });
 
     testWidgets('Zusammenfassung nennt Bedingungen und Licht', (tester) async {
-      await _pump(tester, '/automations/motion/demo-waschraum?step=6');
+      await _pump(tester, '/automations/motion/demo-waschraum?wizard=1&step=6');
       expect(find.text('Alles klar?'), findsOneWidget);
       expect(find.textContaining('18:00 bis 07:00'), findsWidgets);
       expect(find.textContaining('unter 30 lx'), findsOneWidget);

@@ -5,6 +5,7 @@ import 'package:material_ui/material_ui.dart';
 
 import '../../core/state/providers.dart';
 import '../../core/theme/tokens.dart';
+import '../../core/widgets/haven_sheet.dart';
 import '../../core/widgets/haptics.dart';
 import '../../core/widgets/press_scale.dart';
 import '../../data/models/haven_automation.dart';
@@ -188,6 +189,8 @@ class _KnobLiveTestState extends ConsumerState<KnobLiveTest> {
     final latest = _log.items.firstOrNull;
 
     return ListView(
+      // Im Bearbeiten-Sheet des Dashboards zieht das obere Ende das Sheet.
+      controller: HavenSheetScope.maybeOf(context)?.scrollController,
       padding: const EdgeInsets.fromLTRB(20, 14, 20, 24),
       children: [
         Text(

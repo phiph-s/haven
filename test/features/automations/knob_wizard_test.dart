@@ -153,17 +153,20 @@ void main() {
     'Editor zeigt Hinweis auf doppelte HA-Automation und schaltet sie aus',
     (tester) async {
       await _pump(tester, '/automations/knob/demo-ruheraum?step=1');
+      // Dashboard dahinter und Sheet „Regler und Taster“ zeigen den Hinweis.
       expect(find.text('Taster Ruheraum'), findsWidgets);
-      expect(find.text('Doppelt gesteuert'), findsOneWidget);
+      expect(find.text('Welche Regler und Taster?'), findsOneWidget);
+      expect(find.text('Doppelt gesteuert'), findsNWidgets(2));
       expect(
         find.text(
           'Diese HA-Automationen steuern dieselben Regler. Deaktiviere sie, '
           'sonst passiert alles doppelt.',
         ),
-        findsOneWidget,
+        findsWidgets,
       );
-      await tester.ensureVisible(find.text('In Home Assistant ausschalten'));
-      await tester.tap(find.text('In Home Assistant ausschalten'));
+      final off = find.text('In Home Assistant ausschalten').last;
+      await tester.ensureVisible(off);
+      await tester.tap(off);
       await tester.pumpAndSettle();
       expect(find.text('HA-Automation ausschalten?'), findsOneWidget);
       await tester.tap(find.text('Ausschalten'));
@@ -204,7 +207,9 @@ void main() {
     await tester.ensureVisible(link);
     await tester.tap(link);
     await tester.pumpAndSettle();
+    // Öffnet das Dashboard, nicht den Assistenten.
     expect(find.text('Drehregler Salon'), findsWidgets);
-    expect(find.textContaining('von 7'), findsOneWidget);
+    expect(find.text('Einstellungen'.toUpperCase()), findsOneWidget);
+    expect(find.textContaining('von 7'), findsNothing);
   });
 }
