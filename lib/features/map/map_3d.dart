@@ -105,6 +105,14 @@ final map3dControllerProvider = Provider<h3.SceneController>((ref) {
   return c;
 });
 
+/// Kamera und Szene der Netzkarte (Vollbild und Kartenart Funknetz): eigene
+/// Szene, weil der Netzplan den Bereich „Ohne Raum“ enthält.
+final meshControllerProvider = Provider<h3.SceneController>((ref) {
+  final c = h3.SceneController();
+  ref.onDispose(c.dispose);
+  return c;
+});
+
 /// Kann die Karte erscheinen? `null`: die Prüfung läuft noch (dann
 /// [Map3DLoader] zeigen), `false`: das Gerät kann kein 3D
 /// ([Map3DUnsupported]).
@@ -156,6 +164,10 @@ h3.Scene sceneOfPlan(HavenFloorPlan plan) {
           outline: [for (final o in r.offsets) o * m],
           // Wie in 2D oben links in der Innenfläche.
           label: r.innerRect.topLeft * m + const Offset(0.24, 0.2),
+          // „Ohne Raum“ (Netzkarte) ist nur eine Fläche ohne Wände.
+          openEdges: r.detached
+              ? {for (var i = 0; i < r.points.length; i++) i}
+              : r.open,
         ),
     ],
     objects: [
@@ -325,8 +337,9 @@ class Map3DView extends ConsumerStatefulWidget {
   /// Umrandeter Raum (Auswahl).
   final String? selectedRoomId;
 
-  /// Raum, der sich in der Draufsicht aufrichtet (Fokus). In der
-  /// Schrägansicht stehen alle Räume.
+  /// Raum im Fokus: alle Räume richten sich auf, nur die, die ihn verdecken
+  /// würden, bleiben flach. Ohne Fokus stehen in der Schrägansicht alle,
+  /// in der Draufsicht keiner.
   final String? raisedRoomId;
 
   /// Verdeckte Ränder (Kopf, Leisten) fürs erste Einpassen.
@@ -387,6 +400,24 @@ class _Map3DViewState extends ConsumerState<Map3DView> {
 
   h3.SceneController get _c =>
       widget.controller ?? ref.read(map3dControllerProvider);
+
+  @override
+  void didUpdateWidget(Map3DView old) {
+    super.didUpdateWidget(old);
+    // Andere Szene (Karte ↔ Funknetz): Übersicht in der gewählten Ansicht.
+    if (old.controller != widget.controller && widget.followSettings) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        unawaited(
+          showMapOverview(
+            _c,
+            ref.read(map3dSettingsProvider),
+            insets: widget.insets,
+          ),
+        );
+      });
+    }
+  }
 
   FloorRoom? _roomOfHit(h3.SceneHit? hit) {
     if (hit == null) return null;
@@ -460,9 +491,10 @@ class _Map3DViewState extends ConsumerState<Map3DView> {
           : h3.SceneGestures.none,
       insets: widget.insets,
       placeholder: Map3DLoader(plan: plan, insets: widget.insets),
-      raisedRooms: tilt
-          ? null
-          : {if (widget.raisedRoomId != null) widget.raisedRoomId!},
+      // Fokus: alle Räume stehen, nur die davor liegen flach. Sonst je nach
+      // Ansicht alle (schräg) oder keiner (Draufsicht).
+      revealRoomId: widget.raisedRoomId,
+      raisedRooms: tilt ? null : const {},
       overlayBuilder: widget.overlayBuilder,
       foregroundBuilder: widget.foregroundBuilder,
       interactiveMarkers: widget.interactiveMarkers,
@@ -574,7 +606,11 @@ class Map3DControls extends ConsumerWidget {
     required this.insets,
     this.onRecenter,
     this.axis = Axis.vertical,
+    this.controller,
   });
+
+  /// Kamera, die die Leiste steuert (Funknetz), sonst die Karte der App.
+  final h3.SceneController? controller;
 
   /// Freie Fläche der Karte für das Einpassen.
   final EdgeInsets insets;
@@ -587,7 +623,8 @@ class Map3DControls extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final hv = context.hv;
     final s = ref.watch(map3dSettingsProvider);
-    final c = ref.watch(map3dControllerProvider);
+    final h3.SceneController c =
+        controller ?? ref.watch(map3dControllerProvider);
     void setTilt(bool tilt) {
       if (tilt == s.tilt) return;
       Haptics.tick();

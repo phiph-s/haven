@@ -19,6 +19,7 @@ class SceneRoom {
     required List<Offset> outline,
     this.wallHeight = kDefaultWallHeight,
     this.label,
+    this.openEdges = const {},
   }) : outline = List.unmodifiable(outline);
 
   final String id;
@@ -29,6 +30,43 @@ class SceneRoom {
   /// Innenfläche wie in der 2D-Karte. `null`: ein Punkt im Raum nahe der
   /// Mitte.
   final Offset? label;
+
+  /// Offene Kanten des Umrisses (Kante i von Ecke i zur nächsten): dort ist
+  /// eine Raumgrenze, aber keine Wand.
+  final Set<int> openEdges;
+
+  /// Kante des Umrisses, zu der das Stück [a]–[b] gehört (z. B. ein Stück des
+  /// abgerundeten, eingerückten Umrisses): die nächste, möglichst parallele.
+  int edgeNear(Offset a, Offset b) {
+    final m = (a + b) / 2;
+    final d = b - a;
+    final n = outline.length;
+    var best = 0;
+    var bestScore = double.infinity;
+    for (var i = 0; i < n; i++) {
+      final p = outline[i], q = outline[(i + 1) % n];
+      final e = q - p;
+      final len2 = e.distanceSquared;
+      final t = len2 == 0
+          ? 0.0
+          : (((m - p).dx * e.dx + (m - p).dy * e.dy) / len2).clamp(0.0, 1.0);
+      final dist = (m - (p + e * t)).distance;
+      // Quer zur Kante liegende Stücke (Rundung) zählen etwas weniger.
+      final par = d.distance == 0 || e.distance == 0
+          ? 0.0
+          : ((d.dx * e.dy - d.dy * e.dx) / (d.distance * e.distance)).abs();
+      final score = dist + par * 0.05;
+      if (score < bestScore) {
+        bestScore = score;
+        best = i;
+      }
+    }
+    return best;
+  }
+
+  /// Ist das Stück [a]–[b] eine offene Raumgrenze?
+  bool isOpenAt(Offset a, Offset b) =>
+      openEdges.isNotEmpty && openEdges.contains(edgeNear(a, b));
 
   /// Wo die Beschriftung sitzt: [label] oder ein innerer Punkt.
   late final Offset labelAt = label ?? _inner();

@@ -19,6 +19,7 @@ import '../widgets/zb_common.dart';
 import '../zigbee_model.dart';
 import '../zigbee_providers.dart';
 import '../zigbee_screen.dart' show zigbeeDevicePath;
+import '../../map/map_3d.dart';
 import 'mesh_graph.dart';
 import 'mesh_providers.dart';
 import 'mesh_scene.dart';
@@ -138,6 +139,14 @@ class _ZigbeeMeshScreenState extends ConsumerState<ZigbeeMeshScreen> {
         );
         _selected = null;
         _recompute(ref.read(zigbeeMeshProvider).map);
+      } else {
+        // Fertig platziert: zurück zur gewählten Ansicht.
+        unawaited(
+          showMapOverview(
+            ref.read(meshControllerProvider),
+            ref.read(map3dSettingsProvider),
+          ),
+        );
       }
     });
   }
@@ -308,6 +317,23 @@ class _ZigbeeMeshScreenState extends ConsumerState<ZigbeeMeshScreen> {
                 ),
               ),
             ),
+            // Wie auf der Karte: Draufsicht oder 3D, zurück zur Übersicht.
+            // Beim Platzieren des Koordinators bleibt es bei der Draufsicht.
+            if (!_placing)
+              Positioned(
+                top: 8,
+                right: 12,
+                child: Map3DControls(
+                  axis: Axis.horizontal,
+                  controller: ref.watch(meshControllerProvider),
+                  insets: EdgeInsets.zero,
+                  onRecenter: () {
+                    if (_selected == null) return;
+                    _selected = null;
+                    _recompute(map);
+                  },
+                ),
+              ),
             Positioned.fill(
               child: ValueListenableBuilder<MeshViewState>(
                 valueListenable: _state,

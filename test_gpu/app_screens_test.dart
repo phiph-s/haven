@@ -18,7 +18,6 @@ import 'package:haven_3d/haven_3d.dart' show Scene3DSupport;
 import 'package:material_ui/material_ui.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-
 class _Repo implements FloorPlanRepository {
   _Repo(this.plan);
   HavenFloorPlan? plan;

@@ -130,12 +130,23 @@ class GpuScene {
       _roomReceivers[r.id] = [firstReceiver];
 
       final rounded = style.roomRadius > 0;
+      final openLines = <Edge3>[];
       for (final w in SceneRoom.wallsAlong(shape, r.wallHeight)) {
+        // Offene Wand: nur die Raumgrenze als leise Linie am Boden.
+        if (r.isOpenAt(w.points[0].xy, w.points[1].xy)) {
+          openLines.add(
+            Edge3(
+              V3(w.points[0].x, w.points[0].y, 0.012),
+              V3(w.points[1].x, w.points[1].y, 0.012),
+            ),
+          );
+          continue;
+        }
         final acc = _MeshAcc()..addFace(w, twoSided: true);
-        final node = fs.Node(
-          name: 'wall:${r.id}',
-          mesh: fs.Mesh(acc.geometry(), _mat.wall),
-        )..lightChannelMask = _maskOf(r.id);
+        final geo = acc.geometry();
+        final normal = fs.Mesh(geo, _mat.wall);
+        final node = fs.Node(name: 'wall:${r.id}', mesh: normal)
+          ..lightChannelMask = _maskOf(r.id);
         node.shadowCastingMode = fs.ShadowCastingMode.off;
         // Nur die Oberkante: von oben ist sie der Raumumriss (eine Linie,
         // kein doppelter Boden). Senkrechte Ecken nur bei eckigen Räumen.
@@ -146,7 +157,15 @@ class GpuScene {
           ], lines.wall),
         );
         roomNode.add(node);
-        _walls.add(_WallNode(r, w, node));
+        _walls.add(
+          _WallNode(r, w, node)
+            ..normal = normal
+            ..selected = fs.Mesh(geo, _mat.wallSelected)
+            ..front = fs.Mesh(geo, _mat.wallFront),
+        );
+      }
+      if (openLines.isNotEmpty) {
+        roomNode.add(_edgesNode('open-edges', openLines, lines.detail));
       }
     }
 
@@ -723,6 +742,15 @@ class GpuScene {
     for (final w in _walls) {
       final raised = (_heights[w.room.id] ?? 1) > 0.5;
       final near = raised && style.cutaway && cam.facing(w.face.normal) > 0.02;
+      // Gewählter Raum: Wände deutlich, die vorderen durchscheinend statt
+      // weggeschnitten (Türen und Fenster darin bleiben).
+      if (raised && w.room.id == _selectedRoom) {
+        final m = near ? w.front : w.selected;
+        if (!identical(w.node.mesh, m)) w.node.mesh = m;
+        w.node.visible = true;
+        continue;
+      }
+      if (!identical(w.node.mesh, w.normal)) w.node.mesh = w.normal;
       w.node.visible = !near;
       if (near) cut.add(w);
     }
@@ -853,6 +881,12 @@ class _WallNode {
   final SceneRoom room;
   final Face3 face;
   final fs.Node node;
+
+  /// Normal, im gewählten Raum (kräftig) und vorn im gewählten Raum
+  /// (durchscheinend statt weggeschnitten).
+  late final fs.Mesh normal;
+  late final fs.Mesh selected;
+  late final fs.Mesh front;
 }
 
 class _ObjectNode {
@@ -955,6 +989,12 @@ class _Materials {
   final fs.PhysicallyBasedMaterial wall = fs.PhysicallyBasedMaterial()
     ..doubleSided = true;
 
+  /// Wände des gewählten Raums: hinten fast deckend, vorn durchscheinend.
+  final fs.PhysicallyBasedMaterial wallSelected = fs.PhysicallyBasedMaterial()
+    ..doubleSided = true;
+  final fs.PhysicallyBasedMaterial wallFront = fs.PhysicallyBasedMaterial()
+    ..doubleSided = true;
+
   final Map<String?, _LineSet> _lines = {};
 
   /// Linienmaterialien eines Raums (null: außerhalb), je Raum eigene
@@ -1036,6 +1076,16 @@ class _Materials {
       ..alphaMode = s.wallOpacity < 1
           ? fs.AlphaMode.blend
           : fs.AlphaMode.opaque;
+    for (final (m, a) in [
+      (wallSelected, math.max(0.9, s.wallOpacity)),
+      (wallFront, 0.22),
+    ]) {
+      m
+        ..metallicFactor = 0
+        ..roughnessFactor = 1
+        ..baseColorFactor = linearColor(s.wall, a)
+        ..alphaMode = fs.AlphaMode.blend;
+    }
     _applyLineColors();
   }
 

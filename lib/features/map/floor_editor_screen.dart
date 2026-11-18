@@ -445,6 +445,7 @@ class _FloorEditorScreenState extends ConsumerState<FloorEditorScreen> {
   void _longPress(LongPressStartDetails d) {
     final plan = _plan!;
     final h = _handle(d.localPosition);
+    if (h is EdgeHandle) return _toggleWall(h.index);
     if (h is VertexHandle) {
       final room = plan.room(_sel!)!;
       final next = removeVertex(room, h.index);
@@ -468,6 +469,25 @@ class _FloorEditorScreenState extends ConsumerState<FloorEditorScreen> {
       Haptics.tick();
       setState(() => _sel = id);
     }
+  }
+
+  /// Wand an Kante [edge] des gewählten Raums öffnen oder schließen. Eine
+  /// gemeinsame Wand mit einem Nachbarraum wechselt dort mit.
+  void _toggleWall(int edge) {
+    final plan = _plan!;
+    final room = plan.room(_sel!)!;
+    final open = !room.isOpen(edge);
+    var next = plan.withRoom(setEdgeOpen(room, edge, open));
+    for (final e in sharedEdges(room, edge, plan.rooms).entries) {
+      var q = next.room(e.key)!;
+      for (final k in e.value) {
+        q = setEdgeOpen(q, k, open);
+      }
+      next = next.withRoom(q);
+    }
+    Haptics.tap();
+    _commit(plan, next);
+    _say(open ? 'Wand offen: nur noch Raumgrenze' : 'Wand wieder geschlossen');
   }
 
   Future<void> _assign(String roomId) async {
@@ -851,6 +871,22 @@ class _FloorEditorScreenState extends ConsumerState<FloorEditorScreen> {
       return;
     }
     if (_mode == _Mode.rooms) {
+      final h = _handle(d.localPosition);
+      if (h is EdgeHandle) {
+        final open = plan.room(_sel!)!.isOpen(h.index);
+        unawaited(
+          showHavenContextMenu(context, d.globalPosition, [
+            HavenMenuItem(
+              label: open ? 'Wand schließen' : 'Wand öffnen',
+              icon: open
+                  ? Icons.border_outer_rounded
+                  : Icons.border_clear_rounded,
+              onSelected: () => _toggleWall(h.index),
+            ),
+          ]),
+        );
+        return;
+      }
       final id = _geo!.roomAt(d.localPosition);
       if (id == null) return;
       setState(() => _sel = id);
@@ -1617,7 +1653,8 @@ class _FloorEditorScreenState extends ConsumerState<FloorEditorScreen> {
                   _hint ??
                       'Im leeren Bereich ziehen legt einen Raum an. Raum '
                           'antippen wählt ihn, dann Ecken ziehen, Kantenmitte '
-                          'antippen für eine neue Ecke.',
+                          'antippen für eine neue Ecke, lange drücken öffnet '
+                          'die Wand dort (nur Raumgrenze).',
                   style: HavenText.body.copyWith(
                     color: _hint == null ? hv.tx2 : hv.warn,
                     fontSize: 14,
@@ -2692,6 +2729,28 @@ class _GeoPainter extends CustomPainter {
         ..strokeWidth = 2.2
         ..strokeCap = StrokeCap.round,
     );
+    // Offene Wände: gestrichelte Raumgrenze.
+    final dash = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2
+      ..strokeCap = StrokeCap.round
+      ..color = hv.acc.withValues(alpha: 0.8);
+    for (final r in geo.plan.rooms) {
+      final pts = geo.polygons[r.id];
+      if (pts == null || r.open.isEmpty) continue;
+      for (final i in r.open) {
+        if (i >= pts.length) continue;
+        final a = pts[i], b = pts[(i + 1) % pts.length];
+        final len = (b - a).distance;
+        for (var t = 0.0; t < len; t += 9) {
+          canvas.drawLine(
+            Offset.lerp(a, b, t / len)!,
+            Offset.lerp(a, b, math.min(len, t + 4.5) / len)!,
+            dash,
+          );
+        }
+      }
+    }
     overlay.paint(canvas, size, geo);
   }
 

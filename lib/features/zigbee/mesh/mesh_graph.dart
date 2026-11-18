@@ -35,14 +35,6 @@ class MeshProjection {
   h3.SceneProjection? current;
 }
 
-/// Kamera und Szene der Netzkarte (Vollbild und Kartenart Funknetz): eigene
-/// Szene, weil der Netzplan den Bereich „Ohne Raum“ enthält.
-final meshControllerProvider = Provider<h3.SceneController>((ref) {
-  final c = h3.SceneController();
-  ref.onDispose(c.dispose);
-  return c;
-});
-
 /// Der Netz-Graph auf der 3D-Karte: Kanten als Overlay, Knoten als Widgets.
 /// Gleiche Ansicht für Vollbild und Miniatur ([mini]: ohne Beschriftung,
 /// ohne Interaktion, eigene kleine Szene).

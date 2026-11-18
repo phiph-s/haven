@@ -21,12 +21,14 @@ Future<void> shot(
   String? selected,
   SceneHeatmap? heatmap,
   Map<String, LampState> lamps = const {},
+  HavenFloorPlan? floorPlan,
+  String? reveal,
 }) async {
   const size = Size(430, 800);
   const dpr = 2.0;
   tester.view.physicalSize = size * dpr;
   tester.view.devicePixelRatio = dpr;
-  final plan = kFakeFloorPlan;
+  final plan = floorPlan ?? kFakeFloorPlan;
   final scene = sceneOfPlan(plan);
   final m = plan.grid.cellMeters;
   final key = GlobalKey();
@@ -47,6 +49,7 @@ Future<void> shot(
             controller: ctrl,
             style: dark ? SceneStyle.dark() : SceneStyle.light(),
             raisedRooms: raised,
+            revealRoomId: reveal,
             selectedRoomId: selected,
             heatmap: heatmap,
             insets: const EdgeInsets.fromLTRB(8, 110, 8, 200),
@@ -128,6 +131,29 @@ void main() {
       dark: true,
       cam: const OrbitCamera(yaw: kMapTiltYaw, pitch: kMapTiltPitch),
       lamps: lamps,
+    );
+    // Offene Wand zwischen Salon und Kochbereich, Salon gewählt: alle Räume
+    // stehen außer denen davor, die Wände des Salons sind deutlich.
+    var open = kFakeFloorPlan;
+    open = open.withRoom(open.room('salon')!.copyWith(open: {1}));
+    open = open.withRoom(open.room('kochbereich')!.copyWith(open: {4}));
+    await shot(
+      tester,
+      'app_reveal_salon',
+      dark: true,
+      cam: const OrbitCamera(yaw: kMapFocusYaw, pitch: kMapFocusPitch),
+      selected: 'salon',
+      reveal: 'salon',
+      lamps: lamps,
+      floorPlan: open,
+    );
+    await shot(
+      tester,
+      'app_open_tilt',
+      dark: false,
+      cam: const OrbitCamera(yaw: kMapTiltYaw, pitch: kMapTiltPitch),
+      lamps: lamps,
+      floorPlan: open,
     );
     await shot(
       tester,

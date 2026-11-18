@@ -968,13 +968,14 @@ class _MapBodyState extends ConsumerState<_MapBody> {
                   ),
                 ],
               ),
-              if (use3d)
+              if (supported == true)
                 Positioned(
                   right: 12,
                   bottom: _bottomH + 10,
                   child: Map3DControls(
                     insets: _mapInsets(),
                     onRecenter: _clearFocus,
+                    controller: v.controller,
                   ),
                 ),
             ],
@@ -1083,12 +1084,13 @@ class _MapBodyState extends ConsumerState<_MapBody> {
                 right: 8,
                 child: MapLayerTabs(layer: layer, onChanged: _setLayer),
               ),
-              if (use3d)
+              if (supported == true)
                 Positioned(
                   top: 8,
                   right: 12,
                   child: Map3DControls(
                     axis: Axis.horizontal,
+                    controller: v.controller,
                     insets: const EdgeInsets.fromLTRB(16, 4, 8, 76),
                     onRecenter: () {
                       _deskFocus = null;

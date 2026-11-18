@@ -152,6 +152,7 @@ class FloorRoom {
     required this.points,
     this.areaId,
     this.detached = false,
+    this.open = const {},
   });
 
   /// Rechteck aus Zellen (wie in Version 1).
@@ -182,6 +183,10 @@ class FloorRoom {
     name: j['name'] as String,
     areaId: j['areaId'] as String?,
     points: [for (final p in (j['points'] as List)) GridPoint.fromJson(p)],
+    open: {
+      for (final i in (j['open'] as List?) ?? const [])
+        if (i is int) i,
+    },
   );
 
   final String id;
@@ -196,6 +201,13 @@ class FloorRoom {
   /// Gehört nicht zur Wohnung (z. B. „Ohne Raum“ im Netzgraph): zählt nicht
   /// für Umriss und Draußen. Wird nie gespeichert.
   final bool detached;
+
+  /// Offene Kanten (Kante i führt von Ecke i zur nächsten): Raumgrenze ohne
+  /// Wand, z. B. zwischen Küche und Wohnbereich.
+  final Set<int> open;
+
+  /// Ist Kante [edge] offen?
+  bool isOpen(int edge) => open.contains(edge);
 
   _RoomGeo get _geo => _geoCache[this] ??= _RoomGeo(points);
 
@@ -235,12 +247,14 @@ class FloorRoom {
     String? areaId,
     bool clearArea = false,
     List<GridPoint>? points,
+    Set<int>? open,
   }) => FloorRoom(
     id: id,
     name: name ?? this.name,
     areaId: clearArea ? null : (areaId ?? this.areaId),
     points: points ?? this.points,
     detached: detached,
+    open: open ?? this.open,
   );
 
   Map<String, dynamic> toJson() => {
@@ -248,6 +262,7 @@ class FloorRoom {
     'name': name,
     'areaId': areaId,
     'points': [for (final p in points) p.toJson()],
+    if (open.isNotEmpty) 'open': [...open]..sort(),
   };
 
   @override
@@ -257,10 +272,12 @@ class FloorRoom {
       other.name == name &&
       other.areaId == areaId &&
       other.detached == detached &&
-      listEquals(other.points, points);
+      listEquals(other.points, points) &&
+      setEquals(other.open, open);
 
   @override
-  int get hashCode => Object.hash(id, name, areaId, Object.hashAll(points));
+  int get hashCode =>
+      Object.hash(id, name, areaId, Object.hashAll(points), open.length);
 
   @override
   String toString() => 'FloorRoom($id, $points)';

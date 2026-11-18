@@ -135,3 +135,66 @@ bool pointInPolygon(List<Offset> poly, Offset p) {
   }
   return inside;
 }
+
+/// Räume, die [roomId] aus Sicht von [camera] verdecken würden: ihre
+/// aufgerichtete Hülle überdeckt den Boden von [roomId] und sie liegen
+/// näher an der Kamera. In der Draufsicht verdeckt nichts.
+Set<String> occludersOf(
+  Scene scene,
+  String roomId,
+  OrbitCamera camera,
+  Size size,
+) {
+  final target = scene.room(roomId);
+  if (target == null || camera.pitch < 0.05) return const {};
+  Offset at(Offset p, double z) =>
+      camera.project(V3(p.dx, p.dy, z), size).offset;
+  double depth(SceneRoom r) {
+    final c = r.labelAt;
+    return camera.project(V3(c.dx, c.dy, 0), size).depth;
+  }
+
+  final floor = convexHull([for (final p in target.outline) at(p, 0)]);
+  final d0 = depth(target);
+  final out = <String>{};
+  for (final r in scene.rooms) {
+    if (r.id == roomId) continue;
+    // Nur was vor dem Raum liegt (mit etwas Spielraum für Nachbarn daneben).
+    if (depth(r) <= d0 + 0.3) continue;
+    final hull = convexHull([
+      for (final p in r.outline) ...[at(p, 0), at(p, r.wallHeight)],
+    ]);
+    if (_convexOverlap(hull, floor)) out.add(r.id);
+  }
+  return out;
+}
+
+/// Überlappen sich zwei konvexe Polygone (Trennachsen)?
+bool _convexOverlap(List<Offset> a, List<Offset> b) {
+  if (a.length < 3 || b.length < 3) return false;
+  bool separated(List<Offset> p, List<Offset> q) {
+    for (var i = 0; i < p.length; i++) {
+      final e = p[(i + 1) % p.length] - p[i];
+      if (e.distance < 1e-9) continue;
+      final n = Offset(-e.dy, e.dx) / e.distance;
+      double proj(Offset v) => v.dx * n.dx + v.dy * n.dy;
+      var pMin = double.infinity, pMax = -double.infinity;
+      for (final v in p) {
+        final t = proj(v);
+        pMin = t < pMin ? t : pMin;
+        pMax = t > pMax ? t : pMax;
+      }
+      var qMin = double.infinity, qMax = -double.infinity;
+      for (final v in q) {
+        final t = proj(v);
+        qMin = t < qMin ? t : qMin;
+        qMax = t > qMax ? t : qMax;
+      }
+      // Kleine Berührungen (gemeinsame Kante) zählen nicht.
+      if (pMax <= qMin + 2 || qMax <= pMin + 2) return true;
+    }
+    return false;
+  }
+
+  return !separated(a, b) && !separated(b, a);
+}

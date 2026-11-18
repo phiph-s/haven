@@ -276,6 +276,7 @@ class Scene3DView extends StatefulWidget {
     this.foregroundBuilder,
     this.interactiveMarkers = false,
     this.hiddenObjects = const {},
+    this.revealRoomId,
   });
 
   final Scene scene;
@@ -341,6 +342,10 @@ class Scene3DView extends StatefulWidget {
   /// Möbel, die nicht gezeichnet werden (z. B. während ein Editor sie zieht).
   final Set<String> hiddenObjects;
 
+  /// Raum im Blick: alle Räume stehen, nur die, die ihn aus der Sicht der
+  /// Kamera verdecken würden, liegen flach. Ersetzt [raisedRooms].
+  final String? revealRoomId;
+
   /// Zeichnet über allem (z. B. Griffe eines Editors).
   final Widget Function(BuildContext context, SceneProjection p)?
   foregroundBuilder;
@@ -361,9 +366,7 @@ class _Scene3DViewState extends State<Scene3DView>
 
   Map<String, double> _targets() => {
     for (final r in _scene.rooms)
-      r.id: widget.raisedRooms == null || widget.raisedRooms!.contains(r.id)
-          ? 1.0
-          : 0.0,
+      r.id: _raised == null || _raised!.contains(r.id) ? 1.0 : 0.0,
   };
 
   /// Szene mit eingerückten Möbeln (passend zu Spalt und Eckenradius).
@@ -410,6 +413,7 @@ class _Scene3DViewState extends State<Scene3DView>
         Curves.easeInOutCubic.transform(_anim.value),
       );
     });
+    _raised = widget.raisedRooms;
     _heights = _targets();
     _stretch.addListener(() {
       final t = Curves.easeOutCubic.transform(_stretch.value);
@@ -446,13 +450,32 @@ class _Scene3DViewState extends State<Scene3DView>
       _c._view = this;
       _c.addListener(_changed);
     }
-    if (!_sameSet(old.raisedRooms, widget.raisedRooms) ||
-        old.scene != widget.scene) {
-      _heightFrom = {..._heights};
-      _heightTo = _targets();
-      _stretch.duration = widget.stretchDuration;
-      _stretch.forward(from: 0);
+    if (old.scene != widget.scene) _restretch();
+  }
+
+  /// Wirksame aufgerichtete Räume ([Scene3DView.raisedRooms] oder, mit
+  /// [Scene3DView.revealRoomId], alle außer den verdeckenden).
+  Set<String>? _raised;
+
+  void _restretch() {
+    if (!mounted) return;
+    _heightFrom = {..._heights};
+    _heightTo = _targets();
+    _stretch.duration = widget.stretchDuration;
+    _stretch.forward(from: 0);
+  }
+
+  /// Gewünschte aufgerichtete Räume für [cam].
+  Set<String>? _wantRaised(OrbitCamera cam, Size size) {
+    final reveal = widget.revealRoomId;
+    if (reveal == null || _scene.room(reveal) == null) {
+      return widget.raisedRooms;
     }
+    final hide = occludersOf(_scene, reveal, cam, size);
+    return {
+      for (final r in _scene.rooms)
+        if (!hide.contains(r.id)) r.id,
+    };
   }
 
   @override
@@ -678,6 +701,13 @@ class _Scene3DViewState extends State<Scene3DView>
           }
         }
         final cam = _c.camera;
+        // Aufgerichtete Räume: beim Anfahren zählt die Zielkamera (so
+        // springt nichts unterwegs), danach die aktuelle (Drehen).
+        final want = _wantRaised(_to ?? cam, size);
+        if (!_sameSet(want, _raised)) {
+          _raised = want;
+          WidgetsBinding.instance.addPostFrameCallback((_) => _restretch());
+        }
         final gpu = _gpu;
         // Jeder Neuaufbau heißt: Kamera, Animation, Auswahl oder Stil hat
         // sich geändert. Dann rendern, bis es wieder ruhig ist.
