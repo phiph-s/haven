@@ -695,7 +695,7 @@ class _Scene3DViewState extends State<Scene3DView>
         );
         // Gebakenes Licht in Scheiben mischen; was übrig bleibt, im
         // nächsten Bild.
-        if (gpu != null && gpu.flushLight()) _later(() {});
+        if (gpu != null && (gpu.flushLight() | gpu.fading)) _later(() {});
         final dpr = MediaQuery.maybeDevicePixelRatioOf(context) ?? 1.0;
         final maxDpr = widget.quality.maxPixelRatio;
         final markers = [

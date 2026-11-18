@@ -213,7 +213,14 @@ class GpuScene {
       node.shadowCastingMode = fs.ShadowCastingMode.off;
       final lines = _mat.lines(roomId);
       final edges = featureEdges(o.world);
-      final normal = _edgesNode('edges', edges, lines.edge);
+      // Türen und Fenster gehören zur Wand: ihre Linien bleiben auch bei
+      // Licht, Möbellinien blenden dann aus.
+      final wall = o.wallMounted;
+      final normal = _edgesNode(
+        'edges',
+        edges,
+        wall ? lines.structureEdge : lines.edge,
+      );
       final accent = _edgesNode('edges-selected', edges, _mat.accentEdge)
         ..visible = false;
       node.add(normal);
@@ -221,7 +228,13 @@ class GpuScene {
       // Detaillinien (Kissen, Fugen, Türaufschlag): leiser als Kanten.
       final details = liftedLines(o.world);
       if (details.isNotEmpty) {
-        node.add(_edgesNode('details', details, lines.detail));
+        node.add(
+          _edgesNode(
+            'details',
+            details,
+            wall ? lines.structureDetail : lines.detail,
+          ),
+        );
       }
       (parent ?? scene.root).add(node);
       _objects[o.id] = _ObjectNode(o, roomId, node, normal, accent)
@@ -682,12 +695,21 @@ class GpuScene {
     final tilt = style.edgesOnlyFromAbove
         ? 1 - _smooth(0.06, 0.42, cam.pitch)
         : 1.0;
-    final fadeKey = '$tilt|${_heights.values.join(',')}';
+    // Möbellinien nur bei ausgeschaltetem Licht: in einem hellen Raum
+    // zeichnen Licht und Schatten die Möbel, es bleibt die Wand. Der
+    // Wechsel blendet weich über.
+    _stepLit();
+    final fadeKey =
+        '$tilt|${_heights.values.join(',')}|${_lit.values.join(',')}';
     if (fadeKey != _lastFadeKey) {
       _lastFadeKey = fadeKey;
       _mat.fadeLines(null, tilt);
       for (final e in _heights.entries) {
-        _mat.fadeLines(e.key, 1 - e.value * (1 - tilt));
+        _mat.fadeLines(
+          e.key,
+          1 - e.value * (1 - tilt),
+          furniture: 1 - (_lit[e.key] ?? 0),
+        );
       }
     }
     // Glühbirnen nur über aufgerichteten Räumen.
@@ -730,6 +752,43 @@ class GpuScene {
   }
 
   Set<String> _hiddenObjects = const {};
+
+  /// Je Raum: wie weit sein Licht an ist (0 … 1, weich nachgeführt).
+  final Map<String, double> _lit = {};
+  final Stopwatch _litClock = Stopwatch()..start();
+
+  /// Blenden die Möbellinien noch (Licht wurde geschaltet)?
+  bool get fading => _fading;
+  bool _fading = false;
+
+  /// Dauer der Überblendung der Möbellinien.
+  static const double kLitFade = 0.35;
+
+  void _stepLit() {
+    final dt = _litClock.elapsedMicroseconds / 1e6;
+    _litClock.reset();
+    final on = <String>{
+      for (final e in _lampState.entries)
+        if (e.value.on && e.value.brightness > 0) ?_bulbRoom[e.key],
+    };
+    _fading = false;
+    for (final r in _roomNodes.keys) {
+      final target = on.contains(r) ? 1.0 : 0.0;
+      final cur = _lit[r];
+      if (cur == null) {
+        // Erstes Bild: ohne Überblendung.
+        _lit[r] = target;
+        continue;
+      }
+      if (cur == target) continue;
+      final step = math.min(dt, 0.1) / kLitFade;
+      final next = cur < target
+          ? math.min(target, cur + step)
+          : math.max(target, cur - step);
+      _lit[r] = next;
+      if (next != target) _fading = true;
+    }
+  }
 
   static bool _onWall(SceneObject o, Face3 wall) {
     final a = wall.points[0].xy, b = wall.points[1].xy;
@@ -907,10 +966,11 @@ class _Materials {
   });
 
   /// Deckkraft der Linien eines Raums.
-  void fadeLines(String? roomId, double alpha) {
+  void fadeLines(String? roomId, double alpha, {double furniture = 1}) {
     final l = lines(roomId);
-    if (l.alpha == alpha) return;
+    if (l.alpha == alpha && l.furniture == furniture) return;
     l.alpha = alpha;
+    l.furniture = furniture;
     _paintLines(l);
   }
 
@@ -998,9 +1058,11 @@ class _Materials {
   void _paintLines(_LineSet l) {
     final s = _style;
     for (final (m, a) in [
-      (l.edge, l.alpha),
+      (l.edge, l.alpha * l.furniture),
       (l.wall, l.alpha * s.roomEdgeOpacity),
-      (l.detail, l.alpha * 0.75),
+      (l.detail, l.alpha * 0.75 * l.furniture),
+      (l.structureEdge, l.alpha),
+      (l.structureDetail, l.alpha * 0.75),
     ]) {
       m.baseColorFactor = linearColor(s.ink, a);
       m.alphaMode = a < 1 ? fs.AlphaMode.blend : fs.AlphaMode.opaque;
@@ -1014,7 +1076,14 @@ class _LineSet {
   final fs.UnlitMaterial edge = fs.UnlitMaterial();
   final fs.UnlitMaterial wall = fs.UnlitMaterial();
   final fs.UnlitMaterial detail = fs.UnlitMaterial();
+
+  /// Türen und Fenster (blenden bei Licht nicht aus).
+  final fs.UnlitMaterial structureEdge = fs.UnlitMaterial();
+  final fs.UnlitMaterial structureDetail = fs.UnlitMaterial();
   double alpha = 1;
+
+  /// Anteil der Möbellinien (1 Licht aus … 0 Licht an), die Wandlinie bleibt.
+  double furniture = 1;
 }
 
 /// Richtung des Sonnenlichts (Haven-Koordinaten): von oben links hinten,

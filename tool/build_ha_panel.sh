@@ -63,6 +63,12 @@ rm -rf "$W/canvaskit/chromium" "$W/canvaskit/webparagraph"
 rm -f "$W"/canvaskit/skwasm* "$W"/canvaskit/wimp* "$W"/canvaskit/*.symbols
 # Kein Service Worker (veraltet, HA cacht über die Versions-URL), keine Maps.
 rm -f "$W/flutter_service_worker.js" "$W"/*.map "$W/.last_build_id"
+# flutter_scene legt in seine erzeugten Shader-Ordner ein .gitignore („*“).
+# Im Repo der Integration fehlten die Shader dann (HACS lädt das Repo), und
+# die 3D-Karte startete im Panel nicht. Die Dateien gehören ins Panel.
+find "$W" -name .gitignore -delete
+test -f "$W/assets/packages/flutter_scene/flutter_scene_generated/manifest.json" ||
+  { echo "Shader von flutter_scene fehlen im Build." >&2; exit 1; }
 
 test -f "$W/haven-panel.js" || { echo "haven-panel.js fehlt im Build (web/)." >&2; exit 1; }
 
