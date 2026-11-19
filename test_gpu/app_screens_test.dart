@@ -36,6 +36,7 @@ Future<void> shot(
   String location, {
   Map<String, Object> prefs = const {},
   Size size = const Size(412, 915),
+  double statusBar = 0,
 }) async {
   // ignore: invalid_use_of_visible_for_testing_member
   SharedPreferences.setMockInitialValues(prefs);
@@ -48,6 +49,7 @@ Future<void> shot(
   });
   tester.view.physicalSize = size * 2;
   tester.view.devicePixelRatio = 2;
+  tester.view.padding = FakeViewPadding(top: statusBar * 2);
   final container = ProviderContainer(
     overrides: [
       settingsStoreProvider.overrideWithValue(store),
@@ -119,10 +121,21 @@ void main() {
     // dunklen Design mit Regen.
     String sky(Map<String, Object> m) =>
         jsonEncode({'mode': 'manual', 'manual': m});
+    // Flach von oben bei klarer Sonne: keine Schattenflecken.
+    await shot(
+      tester,
+      'screen_sky_flat',
+      '/map',
+      prefs: {
+        'map_sky': sky({'hour': 13, 'day': 320, 'cloud': 0}),
+      },
+    );
     await shot(
       tester,
       'screen_sky_snow',
       '/map',
+      // Mit Statusleiste: der Himmel reicht bis an den Rand.
+      statusBar: 48,
       prefs: {
         'map_3d_tilt': true,
         'map_sky': sky({

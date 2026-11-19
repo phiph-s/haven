@@ -159,8 +159,11 @@ GoRouter buildRouter(Ref ref, {String? initialLocation}) {
             routes: [
               GoRoute(
                 path: Routes.map,
+                // Die Karte legt sich selbst in die sicheren Abstände: ihr
+                // Himmel reicht bis unter die Statusleiste.
                 builder: (c, s) => _page(
                   c,
+                  safeTop: false,
                   MapScreen(
                     // Nur für Screenshots (debug_launch.dart).
                     startMinutes: double.tryParse(

@@ -70,7 +70,7 @@ class GpuScene {
       // Ein Dach über allem: auch über den Spalten zwischen den Räumen
       // (sonst schiene die Sonne durch Spalt und Tür hinein).
       if (on) _roof ??= _roofNode();
-      _roof?.visible = on;
+      _syncRoof();
       for (final r in _receivers) {
         r.node?.lightChannelMask = quality.bakes && !on ? kBakedChannel : 0xFF;
         _dirty.add(r);
@@ -200,6 +200,14 @@ class GpuScene {
   }
 
   fs.Node? _roof;
+
+  /// Das Dach wirft nur Schatten, solange alle Räume aufgerichtet sind:
+  /// über flachen Räumen läge es sonst auf Wandhöhe und schattete den Boden
+  /// ab (Licht käme nur am Rand darunter durch).
+  void _syncRoof() {
+    _roof?.visible =
+        _sky != null && source.rooms.every((r) => (_heights[r.id] ?? 1) > 0.5);
+  }
 
   fs.Node? _roofNode() {
     if (source.rooms.isEmpty) return null;
@@ -1597,6 +1605,7 @@ class GpuScene {
       }
     }
     // Raumhöhe (0 flach … 1 voll): Raumknoten in der Höhe stauchen.
+    var roofChanged = false;
     for (final e in _roomNodes.entries) {
       final h = (heights[e.key] ?? 1).clamp(0.0, 1.0);
       if (_heights[e.key] != h) {
@@ -1604,8 +1613,10 @@ class GpuScene {
         e.value.scale = vm.Vector3(1, math.max(h, kFlat), 1);
         // Flache Räume haben keine Decke.
         _casters[e.key]?.visible = _sky != null && h > 0.5;
+        roofChanged = true;
       }
     }
+    if (roofChanged) _syncRoof();
     // Objekte über mehrere Räume: so hoch wie der höchste ihrer Räume.
     for (final o in _objects.values) {
       if (o.rooms.length < 2) continue;

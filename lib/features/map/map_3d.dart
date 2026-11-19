@@ -702,8 +702,11 @@ class _Map3DViewState extends ConsumerState<Map3DView> {
       extent: bounds,
       child: view,
     );
-    if (!widget.skyBackdrop) return layers;
-    return MapSkyBackdrop(north: plan.north, child: layers);
+    // Wolken und Regen nicht über den Rand hinaus (sonst z. B. in der
+    // Statusleiste, außerhalb jeder Ausblendung).
+    final clipped = ClipRect(child: layers);
+    if (!widget.skyBackdrop) return clipped;
+    return MapSkyBackdrop(north: plan.north, child: clipped);
   }
 }
 

@@ -86,41 +86,49 @@ class MapScreen extends ConsumerWidget {
     final has = p != null && !p.isEmpty;
     final dark = context.hv.isDark;
     final palette = ref.watch(houseViewProvider).palette(dark: dark);
+    // Statusleiste: der Inhalt liegt darunter, nur der Himmel der Karte
+    // reicht bis an den oberen Rand.
+    final bleed = MediaQuery.paddingOf(context).top;
     return AccentScope(
       palette: palette,
-      child: Stack(
-        children: [
-          if (has)
-            // Die Karte nutzt die ganze Fläche bis zum Rand (am Handy auch
-            // unter der Navigation), Kopf und Leisten liegen über ihr.
-            Positioned.fill(
-              child: _MapBody(
-                plan: p,
-                header: _MapHeader(plan: p),
-                startMinutes: startMinutes,
-                startInspect: startInspect,
-                startTap: startTap,
-              ),
-            )
-          else
-            Column(
-              children: [
-                _MapHeader(plan: has ? p : null),
-                Expanded(
-                  child: !plan.hasValue
-                      ? const SizedBox.shrink()
-                      : has
-                      ? _MapBody(
-                          plan: p,
-                          startMinutes: startMinutes,
-                          startInspect: startInspect,
-                          startTap: startTap,
-                        )
-                      : const _EmptyMap(),
+      child: SafeArea(
+        bottom: false,
+        child: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            if (has)
+              // Die Karte nutzt die ganze Fläche bis zum Rand (am Handy auch
+              // unter der Navigation), Kopf und Leisten liegen über ihr.
+              Positioned.fill(
+                child: _MapBody(
+                  plan: p,
+                  header: _MapHeader(plan: p),
+                  bleedTop: bleed,
+                  startMinutes: startMinutes,
+                  startInspect: startInspect,
+                  startTap: startTap,
                 ),
-              ],
-            ),
-        ],
+              )
+            else
+              Column(
+                children: [
+                  _MapHeader(plan: has ? p : null),
+                  Expanded(
+                    child: !plan.hasValue
+                        ? const SizedBox.shrink()
+                        : has
+                        ? _MapBody(
+                            plan: p,
+                            startMinutes: startMinutes,
+                            startInspect: startInspect,
+                            startTap: startTap,
+                          )
+                        : const _EmptyMap(),
+                  ),
+                ],
+              ),
+          ],
+        ),
       ),
     );
   }
@@ -246,6 +254,7 @@ class _MapBody extends ConsumerStatefulWidget {
   const _MapBody({
     required this.plan,
     this.header,
+    this.bleedTop = 0,
     this.startMinutes,
     this.startInspect,
     this.startTap,
@@ -257,6 +266,9 @@ class _MapBody extends ConsumerStatefulWidget {
 
   /// Handy: Kopf der Seite, liegt über der Karte.
   final Widget? header;
+
+  /// Statusleiste über der Karte: so weit reicht der Himmel nach oben.
+  final double bleedTop;
 
   @override
   ConsumerState<_MapBody> createState() => _MapBodyState();
@@ -858,10 +870,19 @@ class _MapBodyState extends ConsumerState<_MapBody> {
           final fadeIn = ((_topH + 36) / h).clamp(fadeTop, 0.6);
           final fadeBottom = (24 / h).clamp(0.0, 0.2);
           return Stack(
+            clipBehavior: Clip.none,
             children: [
               // Himmel hinter der Karte, auch unter Kopf und Statusleiste.
               if (v.controller == null && supported != false)
-                Positioned.fill(child: MapSkyBackdrop(north: v.plan.north)),
+                Positioned(
+                  top: -widget.bleedTop,
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  child: IgnorePointer(
+                    child: MapSkyBackdrop(north: v.plan.north),
+                  ),
+                ),
               Positioned.fill(
                 child: EntryAnimation(
                   index: 1,
