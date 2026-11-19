@@ -890,7 +890,10 @@ class _MapBodyState extends ConsumerState<_MapBody> {
                     child: SystemBars(
                       dark: _skyDark(v, supported) ?? context.hv.isDark,
                       child: _environment
-                          ? MapSkyBackdrop(north: v.plan.north)
+                          ? MapSkyBackdrop(
+                              north: v.plan.north,
+                              viewTop: widget.bleedTop,
+                            )
                           : ColoredBox(
                               color: mapGround(dark: context.hv.isDark),
                             ),

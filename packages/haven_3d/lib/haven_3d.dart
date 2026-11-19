@@ -25,7 +25,7 @@ export 'src/picking.dart';
 export 'src/quality.dart';
 export 'src/sample.dart';
 export 'src/sky.dart';
-export 'src/sky_view.dart' show SkyLayers;
+export 'src/sky_view.dart' show SkyLayers, SkyColors, paintSkyBackdrop;
 export 'src/shape.dart' show fitInside, roundedInset;
 export 'src/scene.dart';
 export 'src/style.dart';

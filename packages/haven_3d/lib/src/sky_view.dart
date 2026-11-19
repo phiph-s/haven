@@ -38,7 +38,8 @@ class SkyLayers extends StatefulWidget {
 
   final SceneSky sky;
 
-  /// Dunkles Design: immer Nachthimmel (Sterne), Sonne gedämpft.
+  /// Dunkles Design: Sonne etwas gedämpft (die Farben des Himmels kommen
+  /// vom Hintergrund, siehe [paintSkyBackdrop]).
   final bool dark;
 
   /// Verdeckte Ränder (Kopf, Leisten, Seitenspalte): Sonne und Mond stehen
@@ -187,7 +188,7 @@ class _SkyPainter extends CustomPainter {
   /// Bildschirmpunkt der Himmelsrichtung [dir] (Welt) auf der
   /// Himmelskugel, `null` wenn sie nicht im Bild liegt.
   Offset? _placed(_SkyFrame f, Size size, V3 dir) =>
-      _SkyDome(f, _free(f, size)).project(dir);
+      _SkyDome(f.camera, Offset.zero & size).project(dir);
 
   /// Sichtbare Fläche ohne die verdeckten Ränder (zu klein: alles).
   static Rect _free(_SkyFrame f, Size size) {
@@ -222,8 +223,7 @@ class _SkyPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     final f = frame();
     final s = f.sky;
-    // Dunkles Design: immer Nachthimmel.
-    final night = f.dark ? 1.0 : _night(s);
+    final night = _night(s);
     final cloud = s.cover;
     final home = _home(f, size);
     final sunUp = _smooth(-5, 2, s.sunElevation);
@@ -259,8 +259,7 @@ class _SkyPainter extends CustomPainter {
       if (moonA > 0.02 && moonAt != null) {
         _moon(canvas, moonAt, unit * 0.03, s, moonA);
       }
-      // Im dunklen Design gedämpft (ein Nachthimmel mit Sonne).
-      final sunA = sunUp * (1 - 0.85 * cloud) * (f.dark ? 0.55 : 1);
+      final sunA = sunUp * (1 - 0.85 * cloud) * (f.dark ? 0.8 : 1);
       if (sunA > 0.02 && sunAt != null) {
         _sun(canvas, sunAt, unit * 0.035, s, sunA);
       }
@@ -319,12 +318,12 @@ class _SkyPainter extends CustomPainter {
   }
 
   /// Sterne auf der Himmelskugel: Richtung (Welt, Länge 1, über dem
-  /// Horizont), Größe und Phase des Funkelns. Gleichmäßig verteilt.
+  /// Horizont oder darunter), Größe und Phase des Funkelns. Gleichmäßig verteilt.
   static final List<(V3, double, double)> _starField = () {
     final rnd = math.Random(7);
     final out = <(V3, double, double)>[];
-    while (out.length < 1400) {
-      final z = rnd.nextDouble();
+    while (out.length < 2800) {
+      final z = rnd.nextDouble() * 2 - 1;
       final a = rnd.nextDouble() * math.pi * 2;
       final r = math.sqrt(1 - z * z);
       // Ein paar helle, viele schwache.
@@ -340,13 +339,18 @@ class _SkyPainter extends CustomPainter {
 
   void _stars(Canvas canvas, Size size, _SkyFrame f, double a) {
     final p = Paint();
-    final dome = _SkyDome(f, _free(f, size));
+    final dome = _SkyDome(f.camera, Offset.zero & size);
+    final ground = skyGroundFade(f.camera);
     final bounds = (Offset.zero & size).inflate(4);
     for (final (d, r, ph) in _starField) {
       final at = dome.project(d);
       if (at == null || !bounds.contains(at)) continue;
-      // Zum Horizont hin im Dunst schwächer.
-      final haze = _smooth(0.02, 0.25, d.z);
+      // Zum Horizont hin im Dunst schwächer; unter dem Horizont nur, soweit
+      // der Boden weggeblendet ist (Draufsicht).
+      final haze = d.z >= 0
+          ? _smooth(0.02, 0.25, d.z)
+          : (1 - ground) * _smooth(0.02, 0.25, -d.z);
+      if (haze <= 0.01) continue;
       final tw = 0.7 + 0.3 * math.sin(f.time * 1.3 + ph);
       p.color = const Color(0xFFFFFFFF).withValues(alpha: a * tw * 0.85 * haze);
       canvas.drawCircle(at, r, p);
@@ -749,46 +753,115 @@ double lightningFlash(double t, double storm) {
       : math.exp(-(u - 0.2) * 9);
 }
 
-/// Himmelskugel: Richtungen (Welt) aufs Bild über eine virtuelle,
-/// perspektivische Himmelskamera. Sie dreht mit der Karte und schaut je
-/// nach Neigung höher (Draufsicht) oder flacher (schräg) in den Himmel. So
-/// liegen Sterne, Sonne und Mond fest am Himmel und ziehen beim Drehen auf
-/// Kreisbögen vorbei, statt sich zu verzerren.
+/// Farben des Hintergrunds: Himmel oben (Zenit), am Horizont und Boden
+/// darunter.
+@immutable
+class SkyColors {
+  const SkyColors({
+    required this.zenith,
+    required this.horizon,
+    required this.ground,
+  });
+  final Color zenith;
+  final Color horizon;
+  final Color ground;
+
+  @override
+  bool operator ==(Object other) =>
+      other is SkyColors &&
+      other.zenith == zenith &&
+      other.horizon == horizon &&
+      other.ground == ground;
+
+  @override
+  int get hashCode => Object.hash(zenith, horizon, ground);
+}
+
+/// Halber senkrechter Blickwinkel der Himmelskugel (perspektivisch, auch
+/// wenn die Karte orthografisch ist).
+const double _kSkyHalfFov = 55 * math.pi / 180;
+
+/// Himmelskugel: eine feste Kugel um die Szene. Richtungen (Welt) kommen
+/// über die Blickrichtung der Kartenkamera aufs Bild, perspektivisch mit
+/// [_kSkyHalfFov]. Drehen und Kippen bewegen Himmel und Wohnung gemeinsam;
+/// der Horizont liegt, wo er liegt (schräg oben im Bild, in der Draufsicht
+/// gar nicht sichtbar).
 class _SkyDome {
-  _SkyDome(_SkyFrame f, Rect area) : _center = area.center {
-    final b = f.camera.basis;
-    const up = V3(0, 0, 1);
-    // Bildschirm-oben als Himmelsrichtung (in der Draufsicht ist „unten“
-    // waagrecht, schräg zeigt es auch nach unten).
-    var h = V3(-b.down.x, -b.down.y, 0);
-    if (h.length < 1e-6) h = V3(-b.toCam.x, -b.toCam.y, 0);
-    if (h.length < 1e-6) h = const V3(0, 1, 0);
-    h = h.normalized;
-    final t = (f.camera.pitch / 1.2).clamp(0.0, 1.0);
-    final e = (62 - 34 * t) * math.pi / 180;
-    _fwd = h * math.cos(e) + up * math.sin(e);
-    var right = _fwd.cross(up).normalized;
-    // Gleiche Seite wie der Bildschirm.
-    if (right.dot(b.right) < 0) right = -right;
-    _right = right;
-    _up = _right.cross(_fwd).normalized;
-    if (_up.z < 0) _up = -_up;
-    // Etwa 110° Blickwinkel über die längere Seite.
-    _focal =
-        0.5 * math.max(area.width, area.height) / math.tan(55 * math.pi / 180);
+  _SkyDome(OrbitCamera cam, Rect view)
+    : _center = view.center,
+      _focal = (view.height / 2) / math.tan(_kSkyHalfFov) {
+    final b = cam.basis;
+    _right = b.right;
+    _down = b.down;
+    _fwd = -b.toCam;
   }
 
   final Offset _center;
-  late final V3 _fwd;
+  final double _focal;
   late final V3 _right;
-  late V3 _up;
-  late final double _focal;
+  late final V3 _down;
+  late final V3 _fwd;
 
   /// Bildpunkt der Richtung [dir], `null` hinter der Kamera.
   Offset? project(V3 dir) {
     final d = dir.normalized;
     final z = d.dot(_fwd);
     if (z <= 0.05) return null;
-    return _center + Offset(d.dot(_right) / z, -d.dot(_up) / z) * _focal;
+    return _center + Offset(d.dot(_right) / z, d.dot(_down) / z) * _focal;
   }
+
+  /// Höhe des Horizonts im Bild, `null` wenn die Kamera senkrecht nach
+  /// unten schaut (kein Himmel im Bild).
+  double? get horizonY {
+    final h = V3(_fwd.x, _fwd.y, 0);
+    if (h.length < 1e-4) return null;
+    final d = h.normalized;
+    final z = d.dot(_fwd);
+    if (z <= 1e-4) return null;
+    return _center.dy + _focal * d.dot(_down) / z;
+  }
+
+  /// Bildhöhe je Einheit des Tangens nahe der Bildmitte (für Abstände).
+  double get focal => _focal;
+}
+
+/// Wie viel Boden unter dem Horizont zu sehen ist (0 … 1): schräg ganz, zur
+/// Draufsicht hin blendet er weg (dort zeigt die Kugel Himmel und Sterne).
+double skyGroundFade(OrbitCamera camera) => _smooth(0.12, 0.5, camera.pitch);
+
+/// Hintergrund der Himmelskugel für [camera]: Himmel über dem Horizont
+/// (Zenit- in Horizontfarbe), darunter der Boden. [view] ist die Fläche der
+/// 3D-Ansicht in den Koordinaten von [canvas], [area] die zu füllende.
+void paintSkyBackdrop(
+  Canvas canvas,
+  Rect area,
+  Rect view,
+  OrbitCamera camera,
+  SkyColors colors,
+) {
+  final dome = _SkyDome(camera, view);
+  final y = dome.horizonY;
+  final paint = Paint();
+  // Zur Draufsicht hin blendet der Boden weg: dort ist Himmel.
+  final ground = Color.lerp(
+    colors.zenith,
+    colors.ground,
+    skyGroundFade(camera),
+  )!;
+  if (y == null) {
+    paint.color = ground;
+  } else {
+    // Zenitfarbe etwa 50° über dem Horizont, Boden kurz darunter.
+    final top = y - dome.focal * 1.2;
+    final blend = view.height * 0.05;
+    final y0 = math.min(area.top, top), y1 = math.max(area.bottom, y + blend);
+    double at(double v) => ((v - y0) / (y1 - y0)).clamp(0.0, 1.0);
+    paint.shader = ui.Gradient.linear(
+      Offset(0, y0),
+      Offset(0, y1),
+      [colors.zenith, colors.zenith, colors.horizon, ground],
+      [0, at(top), at(y), at(y + blend)],
+    );
+  }
+  canvas.drawRect(area, paint);
 }

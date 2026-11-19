@@ -636,6 +636,18 @@ class _Map3DViewState extends ConsumerState<Map3DView> {
   h3.SceneController get _c =>
       widget.controller ?? ref.read(map3dControllerProvider);
 
+  void _tiltGesture(double pitch) {
+    final s = ref.read(map3dSettingsProvider);
+    final n = ref.read(map3dSettingsProvider.notifier);
+    if (pitch > 0.3 && !s.tilt) {
+      Haptics.tick();
+      n.setTilt(true);
+    } else if (pitch < 0.05 && s.tilt) {
+      Haptics.tick();
+      n.setTilt(false);
+    }
+  }
+
   @override
   void didUpdateWidget(Map3DView old) {
     super.didUpdateWidget(old);
@@ -778,6 +790,9 @@ class _Map3DViewState extends ConsumerState<Map3DView> {
           // Szene weg). Durchsichtig nur auf Wunsch (Einstellungen).
           wallOpacity: settings.transparentWalls ? null : 1,
           floorOpacity: settings.transparentWalls ? null : 1,
+          // Dunkles Design: nachts unter dem Himmel deutlich dunkler, Räume
+          // mit Licht treten über ihr Raumlicht hervor.
+          skyMinAmbient: hv.isDark ? 0.24 : null,
         );
     final view = h3.Scene3DView(
       scene: scene,
@@ -836,6 +851,10 @@ class _Map3DViewState extends ConsumerState<Map3DView> {
               null => const SizedBox.shrink(),
             },
       onTap: widget.interactive ? _tap : null,
+      // Mit zwei Fingern aus der Draufsicht gekippt: Räume aufrichten (3D),
+      // ganz zurück in die Draufsicht: wieder 2D. Kamerafahrten der App
+      // (etwa ein angetippter Raum) zählen nicht.
+      onTiltGesture: widget.followSettings ? _tiltGesture : null,
       onLongPress: widget.interactive ? _hold : null,
       onSecondaryTap: widget.interactive ? _secondary : null,
     );
@@ -863,27 +882,55 @@ class _Map3DViewState extends ConsumerState<Map3DView> {
   }
 }
 
-/// Hintergrund des Himmels: Verlauf aus Tageszeit und Wetter, im hellen
-/// Design nach Weiß, im dunklen nach Schwarz.
+/// Hintergrund der Himmelskugel: Himmel über dem echten Horizont der
+/// Kartenkamera, darunter der Boden (Farben aus Tageszeit, Wetter und
+/// Design). [viewTop]: so weit reicht die Fläche über die 3D-Ansicht hinaus
+/// nach oben (z. B. hinter die Statusleiste).
 class MapSkyBackdrop extends ConsumerWidget {
-  const MapSkyBackdrop({super.key, required this.north, this.child});
+  const MapSkyBackdrop({
+    super.key,
+    required this.north,
+    this.child,
+    this.viewTop = 0,
+  });
   final double north;
   final Widget? child;
+  final double viewTop;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final w = ref.watch(mapWeatherProvider(north));
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: mapSkyGradient(w.sky, dark: context.hv.isDark),
-        ),
-      ),
+    final colors = mapSkyColors(w.sky, dark: context.hv.isDark);
+    final c = ref.watch(map3dControllerProvider);
+    return CustomPaint(
+      painter: _SkyBackdropPainter(c, colors, viewTop),
       child: child ?? const SizedBox.expand(),
     );
   }
+}
+
+class _SkyBackdropPainter extends CustomPainter {
+  _SkyBackdropPainter(this.controller, this.colors, this.viewTop)
+    : super(repaint: controller);
+  final h3.SceneController controller;
+  final h3.SkyColors colors;
+  final double viewTop;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final area = Offset.zero & size;
+    h3.paintSkyBackdrop(
+      canvas,
+      area,
+      Rect.fromLTRB(0, viewTop, size.width, size.height),
+      controller.camera,
+      colors,
+    );
+  }
+
+  @override
+  bool shouldRepaint(_SkyBackdropPainter old) =>
+      old.colors != colors || old.viewTop != viewTop;
 }
 
 /// Wolken, Regen und Schnee bewegen sich; Tests schalten das ab, damit

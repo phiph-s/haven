@@ -464,15 +464,44 @@ const kMapNightSky = Color(0xFF0A0E1E);
 Color mapGround({required bool dark}) =>
     dark ? kMapGroundDark : kMapGroundLight;
 
-/// Verlauf hinter der Karte (oben nach unten): hell vom Himmel der Tageszeit
-/// in den hellen Boden, dunkel immer vom Nachthimmel in den dunklen Boden.
-List<Color> mapSkyGradient(h3.SceneSky sky, {required bool dark}) {
-  if (dark) return const [kMapNightSky, kMapGroundDark];
+/// Farben der Himmelskugel nach Tageszeit und Wetter: hell ein klarer
+/// Taghimmel, dunkel derselbe gedämpft; nachts in beiden ein Nachthimmel.
+/// Der Boden unter dem Horizont ist die Fläche der Karte.
+h3.SkyColors mapSkyColors(h3.SceneSky sky, {required bool dark}) {
   final dayT = mapSkyDaylight(sky);
-  final top = Color.lerp(
-    kMapNightSky,
-    Color.lerp(const Color(0xFF8DB7E8), const Color(0xFFB7C0CA), sky.cover)!,
-    dayT,
-  )!;
-  return [top, kMapGroundLight];
+  Color day(Color clear, Color cloudy) => Color.lerp(clear, cloudy, sky.cover)!;
+  if (dark) {
+    return h3.SkyColors(
+      zenith: Color.lerp(
+        const Color(0xFF070A16),
+        day(const Color(0xFF1E2C47), const Color(0xFF2A2F38)),
+        dayT,
+      )!,
+      horizon: Color.lerp(
+        const Color(0xFF151B30),
+        day(const Color(0xFF34435F), const Color(0xFF3A3F48)),
+        dayT,
+      )!,
+      ground: kMapGroundDark,
+    );
+  }
+  return h3.SkyColors(
+    zenith: Color.lerp(
+      kMapNightSky,
+      day(const Color(0xFF7FAEE6), const Color(0xFFAEB8C4)),
+      dayT,
+    )!,
+    horizon: Color.lerp(
+      const Color(0xFF1D2540),
+      day(const Color(0xFFCFE1F3), const Color(0xFFD7DBE0)),
+      dayT,
+    )!,
+    ground: kMapGroundLight,
+  );
+}
+
+/// Himmel oben und Boden unten (für die Lesbarkeit des Kopfs).
+List<Color> mapSkyGradient(h3.SceneSky sky, {required bool dark}) {
+  final c = mapSkyColors(sky, dark: dark);
+  return [c.zenith, c.ground];
 }

@@ -38,6 +38,7 @@ class SceneStyle {
     this.roomEdgeOpacity = 1,
     this.shadowFill = 0.3,
     this.wallGlow = 0,
+    this.skyMinAmbient = 0.42,
   });
 
   /// Hell: fast weiße Möbel auf warmem Grau, wie die Haven-Karte am Tag.
@@ -140,6 +141,11 @@ class SceneStyle {
   /// trübem Himmelslicht hell.
   final double wallGlow;
 
+  /// Mindestens so viel Grundlicht unter dem Himmel (nachts): hell lesbar,
+  /// im dunklen Design niedriger, damit Räume ohne Licht nachts dunkel
+  /// werden und beleuchtete (Raumlicht) hervortreten.
+  final double skyMinAmbient;
+
   /// Deckkraft der Raumumrisse (Wandoberkanten) im Verhältnis zu den
   /// Möbelkanten.
   final double roomEdgeOpacity;
@@ -211,6 +217,7 @@ class SceneStyle {
     double? roomEdgeOpacity,
     double? shadowFill,
     double? wallGlow,
+    double? skyMinAmbient,
   }) => SceneStyle(
     ink: ink ?? this.ink,
     surface: surface,
@@ -228,6 +235,7 @@ class SceneStyle {
     roomEdgeOpacity: roomEdgeOpacity ?? this.roomEdgeOpacity,
     shadowFill: shadowFill ?? this.shadowFill,
     wallGlow: wallGlow ?? this.wallGlow,
+    skyMinAmbient: skyMinAmbient ?? this.skyMinAmbient,
     wallOpacity: wallOpacity ?? this.wallOpacity,
     floorOpacity: floorOpacity ?? this.floorOpacity,
     cutaway: cutaway ?? this.cutaway,
@@ -257,6 +265,7 @@ class SceneStyle {
       other.roomEdgeOpacity == roomEdgeOpacity &&
       other.shadowFill == shadowFill &&
       other.wallGlow == wallGlow &&
+      other.skyMinAmbient == skyMinAmbient &&
       other.wallOpacity == wallOpacity &&
       other.floorOpacity == floorOpacity &&
       other.cutaway == cutaway &&
@@ -284,6 +293,7 @@ class SceneStyle {
     roomEdgeOpacity,
     shadowFill,
     wallGlow,
+    skyMinAmbient,
     wallOpacity,
     floorOpacity,
     cutaway,

@@ -1635,7 +1635,8 @@ class GpuScene {
     final sky = _sky;
     if (sky != null) {
       final l = sky.light;
-      scene.environmentIntensity = 0.9 * math.max(l.ambient, kSkyMinAmbient);
+      scene.environmentIntensity =
+          0.9 * math.max(l.ambient, style.skyMinAmbient);
       scene.directionalLight = fs.DirectionalLight(
         direction: toFs(l.direction).normalized(),
         color: linearColor(l.color).xyz,
@@ -2485,10 +2486,6 @@ const int kOutsideChannel = 0x80;
 
 /// Wie viel dunkler Geräte als Möbel sind (Anteil zur Farbe `dark`).
 const double kDeviceShade = 0.15;
-
-/// Mindestens so viel Grundlicht unter dem Himmel (nachts sonst fast
-/// schwarze Möbel): so ruhig wie ohne Himmel (`SceneStyle.evening`).
-const double kSkyMinAmbient = 0.42;
 
 /// Reichweite des Echtzeitlichts einer Lampe in Metern.
 const double kLampRange = 7;

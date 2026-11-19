@@ -441,6 +441,7 @@ class Scene3DView extends StatefulWidget {
     this.selected = const {},
     this.focusRoomId,
     this.onTap,
+    this.onTiltGesture,
     this.fitOnStart = true,
     this.markerBuilder,
     this.raisedRooms,
@@ -473,6 +474,11 @@ class Scene3DView extends StatefulWidget {
   final Set<String> selected;
   final String? focusRoomId;
   final ValueChanged<SceneHit?>? onTap;
+
+  /// Neigung (pitch) nach einer Geste des Nutzers, die die Kamera kippt
+  /// (zwei Finger senkrecht, Drehen mit der Maus). Nicht bei Kamerafahrten
+  /// der App.
+  final ValueChanged<double>? onTiltGesture;
   final bool fitOnStart;
   final Widget Function(BuildContext context, SceneMarker marker)?
   markerBuilder;
@@ -853,31 +859,86 @@ class _Scene3DViewState extends State<Scene3DView>
     _stop();
     _startCam = _c.camera;
     _startFocal = d.localFocalPoint;
+    _tilting = null;
+    _pointers = d.pointerCount;
+    _rotation0 = 0;
+    _scale0 = 1;
   }
+
+  int _pointers = 0;
+  double _rotation0 = 0;
+  double _scale0 = 1;
+
+  /// Zwei Finger: nach etwas Bewegung entschieden, ob sie kippen (beide
+  /// senkrecht in dieselbe Richtung) oder zoomen, schieben und drehen.
+  bool? _tilting;
 
   int _buttons = 0;
 
   void _onScaleUpdate(ScaleUpdateDetails d) {
+    if (d.pointerCount != _pointers) {
+      // Finger dazu oder weg: neu verankern (der Mittelpunkt springt).
+      _pointers = d.pointerCount;
+      _startCam = _c.camera;
+      _startFocal = d.localFocalPoint;
+      _rotation0 = d.rotation;
+      _scale0 = d.scale;
+      return;
+    }
     final s = _startCam;
     if (s == null) return;
     final delta = d.localFocalPoint - _startFocal;
     final keys = HardwareKeyboard.instance;
     if (d.pointerCount > 1) {
+      // Drehung seit dem Verankern, auf ±π (Flutter meldet 0 … 2π).
+      final rotation = math.atan2(
+        math.sin(d.rotation - _rotation0),
+        math.cos(d.rotation - _rotation0),
+      );
+      final scaleBy = _scale0 > 0 ? d.scale / _scale0 : d.scale;
+      if (_tilting == null) {
+        // Bewegungen vergleichbar machen (Pixel): Finger kommen nicht
+        // gleichzeitig, das sieht kurz nach Drehen oder Zoomen aus.
+        final zoomed = (scaleBy - 1).abs() * 200;
+        final turned = rotation.abs() * 100;
+        if (math.max(delta.distance, math.max(zoomed, turned)) < 14) return;
+        final dy = delta.dy.abs();
+        _tilting =
+            widget.gestures == SceneGestures.map &&
+            dy > 1.6 * delta.dx.abs() &&
+            dy > 1.2 * turned &&
+            dy > 1.2 * zoomed;
+        if (_tilting!) {
+          // Ab hier kippen, ohne Sprung.
+          _startCam = _c.camera;
+          _startFocal = d.localFocalPoint;
+          _rotation0 = d.rotation;
+          _scale0 = d.scale;
+          return;
+        }
+      }
+      if (_tilting!) {
+        // Nach oben ziehen kippt in die Schrägansicht (wie in Karten-Apps).
+        final pitch = (s.pitch - delta.dy * 0.006).clamp(0.0, 1.2);
+        _c.camera = s.copyWith(pitch: pitch);
+        widget.onTiltGesture?.call(pitch);
+        return;
+      }
       // Um den Mittelpunkt der Finger zoomen, mitschieben und drehen.
-      final scale = (s.scale * d.scale).clamp(4.0, 600.0);
+      final scale = (s.scale * scaleBy).clamp(4.0, 600.0);
       final k = scale / s.scale;
       final mid = _size.center(Offset.zero);
       var rel = (_startFocal - mid - s.pan) * k;
       if (s.pitch < 0.05) {
         // Draufsicht: das Bild dreht sich um die Kamera-Mitte; so
         // verschieben, dass der Punkt unter den Fingern bleibt.
-        final c = math.cos(d.rotation), si = math.sin(d.rotation);
+        final c = math.cos(rotation), si = math.sin(rotation);
         rel = Offset(rel.dx * c - rel.dy * si, rel.dx * si + rel.dy * c);
       }
       _c.camera = s.copyWith(
         scale: scale,
         pan: d.localFocalPoint - mid - rel,
-        yaw: s.yaw + d.rotation,
+        yaw: s.yaw + rotation,
       );
       return;
     }
@@ -896,6 +957,7 @@ class _Scene3DViewState extends State<Scene3DView>
         yaw: s.yaw + delta.dx * 0.008,
         pitch: s.pitch - delta.dy * 0.008,
       );
+      widget.onTiltGesture?.call(_c.camera.pitch);
     }
   }
 
