@@ -22,6 +22,7 @@ export 'src/model.dart';
 export 'src/picking.dart';
 export 'src/quality.dart';
 export 'src/sample.dart';
+export 'src/sky.dart';
 export 'src/shape.dart' show fitInside, roundedInset;
 export 'src/scene.dart';
 export 'src/style.dart';

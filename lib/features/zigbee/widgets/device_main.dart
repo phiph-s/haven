@@ -11,6 +11,8 @@ import '../../../core/widgets/haven_switch.dart';
 import '../../../core/widgets/segmented.dart';
 import '../../../data/models/zigbee.dart';
 import '../../../data/room_view.dart';
+import '../../climate/heating_providers.dart';
+import '../../climate/heating_widgets.dart';
 import '../../climate/thermostat_widgets.dart';
 import '../../room/widgets/brightness_slider.dart';
 import '../../room/widgets/color_controls.dart';
@@ -55,12 +57,32 @@ class ZbMainFunction extends ConsumerWidget {
       case ZbType.climate:
         return _ClimateMain(view: view);
       case ZbType.thermostat:
+        final climate = view.entities
+            .where((e) => e.domain == 'climate')
+            .firstOrNull
+            ?.entityId;
+        // Teil einer Heizungsregelung: der Raum vorn, dieses Thermostat als
+        // Zeile darunter.
+        final heat = ref.watch(
+          heatingOfDeviceProvider((ieee: view.ieee, entityId: climate)),
+        );
+        if (heat != null) {
+          final r = (ieee: view.ieee, entityId: climate);
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              RoomHeatingCard(roomId: heat.areaId, heat: heat),
+              const SizedBox(height: 12),
+              ThermostatRow(
+                thermostat: r,
+                onOpen: () => showThermostatSheet(context, r),
+              ),
+            ],
+          );
+        }
         return ThermostatMain(
           ieee: view.ieee,
-          entityId: view.entities
-              .where((e) => e.domain == 'climate')
-              .firstOrNull
-              ?.entityId,
+          entityId: climate,
           compact: compact,
         );
       case ZbType.motion:

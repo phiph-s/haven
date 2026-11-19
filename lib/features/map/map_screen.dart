@@ -6,7 +6,12 @@ import 'package:flutter/rendering.dart';
 import 'package:go_router/go_router.dart';
 import 'package:haven_3d/haven_3d.dart'
     as h3
-    show SceneController, SceneHeatmap, SceneProjection, SceneQuality;
+    show
+        DeviceTint,
+        SceneController,
+        SceneHeatmap,
+        SceneProjection,
+        SceneQuality;
 import 'package:material_ui/material_ui.dart';
 
 import '../../core/adaptive/breakpoints.dart';
@@ -887,6 +892,7 @@ class _MapBodyState extends ConsumerState<_MapBody> {
                             nodes: v.nodes,
                             nodeBuilder: v.nodeBuilder,
                             heatmap: v.heatmap3d,
+                            deviceTints: v.tints3d,
                             controller: v.controller,
                             overlayBuilder: v.overlay3d,
                             quality: v.quality,
@@ -1094,6 +1100,7 @@ class _MapBodyState extends ConsumerState<_MapBody> {
                           nodes: v.nodes,
                           nodeBuilder: v.nodeBuilder,
                           heatmap: v.heatmap3d,
+                          deviceTints: v.tints3d,
                           controller: v.controller,
                           overlayBuilder: v.overlay3d,
                           quality: v.quality,
@@ -1310,6 +1317,20 @@ class _MapBodyState extends ConsumerState<_MapBody> {
         );
       },
       heatmap3d: heatmapOf(data, plan.grid.cellMeters),
+      // Klima: Heizkörper rot pulsierend, solange sie heizen, sonst blau.
+      tints3d: kind == HeatKind.temperature
+          ? {
+              for (final r in readings.items)
+                if (r.thermostat)
+                  r.entityId: r.heating
+                      ? const h3.DeviceTint(
+                          kHeatingLinkColor,
+                          pulse: true,
+                          glow: 0.9,
+                        )
+                      : const h3.DeviceTint(kWindowLinkColor, glow: 0.25),
+            }
+          : const {},
       // Klima: Leitungen im Boden von Thermometern und Fenstern zu den
       // Thermostaten ihrer Heizungsregelung.
       overlay3d: links.isEmpty
@@ -1564,6 +1585,7 @@ class _LayerView {
     this.onRoomTap,
     this.onOutsideTap,
     this.heatmap3d,
+    this.tints3d = const {},
     this.controller,
     this.overlay3d,
     this.quality,
@@ -1579,6 +1601,9 @@ class _LayerView {
 
   /// Färbung der Böden (Temperatur, Feuchte, Bewegung).
   final h3.SceneHeatmap? heatmap3d;
+
+  /// Geräte eingefärbt (siehe `Map3DView.deviceTints`).
+  final Map<String, h3.DeviceTint> tints3d;
 
   /// Eigene Szene und Kamera (Funknetz), sonst die Karte der App.
   final h3.SceneController? controller;

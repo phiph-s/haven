@@ -389,6 +389,7 @@ class Map3DView extends ConsumerStatefulWidget {
     this.nodes = const [],
     this.nodeBuilder,
     this.heatmap,
+    this.deviceTints = const {},
     this.onNodeTap,
     this.onNodeLongPress,
     this.onNodeSecondaryTap,
@@ -412,6 +413,10 @@ class Map3DView extends ConsumerStatefulWidget {
   final List<FloorNode> nodes;
   final FloorNodeBuilder? nodeBuilder;
   final h3.SceneHeatmap? heatmap;
+
+  /// Geräte eingefärbt (Marker-ID → Tönung), z. B. Heizkörper rot beim
+  /// Heizen, sonst blau (Klima).
+  final Map<String, h3.DeviceTint> deviceTints;
   final ValueChanged<FloorNode>? onNodeTap;
   final ValueChanged<FloorNode>? onNodeLongPress;
   final ValueChanged<FloorNode>? onNodeSecondaryTap;
@@ -561,6 +566,17 @@ class _Map3DViewState extends ConsumerState<Map3DView> {
     // schon mit dem richtigen Stand), danach bei jeder Änderung.
     ref.listen(snapshotProvider, (_, s) => syncMapOpenings(c, scene, s));
     syncMapOpenings(c, scene, ref.read(snapshotProvider));
+    // Geräte färben (Klima: Heizkörper), nur Änderungen.
+    final tints = widget.deviceTints;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      for (final id in c.deviceTints.keys.toList()) {
+        if (!tints.containsKey(id)) c.setDeviceTint(id, null);
+      }
+      for (final e in tints.entries) {
+        c.setDeviceTint(e.key, e.value);
+      }
+    });
     // Sonne wie draußen: Stand aus `sun.sun`, gedreht nach Norden des Plans.
     final sun = mapSunOf(ref, plan.north);
     if (sun != null && sun != _sun) {

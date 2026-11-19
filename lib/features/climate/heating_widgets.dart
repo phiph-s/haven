@@ -490,9 +490,14 @@ class _Footer extends StatelessWidget {
     ];
     return Padding(
       padding: const EdgeInsets.only(top: 4),
-      child: Row(
+      // Bricht bei wenig Platz um (Kartenpanel, Inspektor).
+      child: Wrap(
+        alignment: WrapAlignment.spaceBetween,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        spacing: 6,
+        runSpacing: 6,
         children: [
-          Expanded(child: Wrap(spacing: 6, runSpacing: 6, children: chips)),
+          Wrap(spacing: 6, runSpacing: 6, children: chips),
           TextButton.icon(
             onPressed: () {
               Haptics.tap();

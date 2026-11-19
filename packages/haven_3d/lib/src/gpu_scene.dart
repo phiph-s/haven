@@ -12,6 +12,7 @@ import 'heatmap.dart';
 import 'lightbake.dart';
 import 'model.dart';
 import 'quality.dart';
+import 'sky.dart';
 import 'scene.dart';
 import 'shape.dart';
 import 'style.dart';
@@ -49,6 +50,107 @@ class GpuScene {
   /// [setSunDirection].
   V3 _sunDir;
   V3 get sunDirection => _sunDir;
+
+  /// Himmel: Sonne, Mond und Wetter (siehe [SceneSky]). Licht und Schatten
+  /// kommen dann in Echtzeit, unsichtbare Decken und Wände werfen Schatten,
+  /// so fällt Licht nur durch Fenster und Türen. `null`: zurück zum
+  /// Kartenlicht (Sonne aus [setSunDirection], gebaken).
+  void setSky(SceneSky? sky) {
+    if (sky == _sky) return;
+    final was = _sky != null;
+    _sky = sky;
+    if (was != (sky != null)) {
+      final on = sky != null;
+      for (final r in source.rooms) {
+        final c = on ? (_casters[r.id] ??= _casterOf(r)) : _casters[r.id];
+        c?.visible = on && (_heights[r.id] ?? 1) > 0.5;
+      }
+      // Ein Dach über allem: auch über den Spalten zwischen den Räumen
+      // (sonst schiene die Sonne durch Spalt und Tür hinein).
+      if (on) _roof ??= _roofNode();
+      _roof?.visible = on;
+      for (final r in _receivers) {
+        r.node?.lightChannelMask = quality.bakes && !on ? kBakedChannel : 0xFF;
+        _dirty.add(r);
+      }
+      for (final o in _objects.values) {
+        o.node.shadowCastingMode = on
+            ? fs.ShadowCastingMode.on
+            : fs.ShadowCastingMode.off;
+      }
+    }
+    _applyLighting();
+  }
+
+  SceneSky? _sky;
+  SceneSky? get sky => _sky;
+
+  fs.Node? _roof;
+
+  fs.Node? _roofNode() {
+    if (source.rooms.isEmpty) return null;
+    var minX = double.infinity, minY = double.infinity;
+    var maxX = -double.infinity, maxY = -double.infinity, h = 0.0;
+    for (final r in source.rooms) {
+      for (final p in r.outline) {
+        minX = math.min(minX, p.dx);
+        minY = math.min(minY, p.dy);
+        maxX = math.max(maxX, p.dx);
+        maxY = math.max(maxY, p.dy);
+      }
+      h = math.max(h, r.wallHeight);
+    }
+    const m = 0.3;
+    final z = h + 0.01;
+    final acc = _MeshAcc()
+      ..addFace(
+        Face3([
+          V3(minX - m, minY - m, z),
+          V3(maxX + m, minY - m, z),
+          V3(maxX + m, maxY + m, z),
+          V3(minX - m, maxY + m, z),
+        ], const V3(0, 0, -1)),
+        twoSided: true,
+      );
+    final node = fs.Node(name: 'roof')
+      ..mesh = fs.Mesh(
+        acc.geometry(),
+        fs.PhysicallyBasedMaterial()..alphaMode = fs.AlphaMode.opaque,
+      )
+      ..shadowCastingMode = fs.ShadowCastingMode.shadowsOnly;
+    scene.add(node);
+    return node;
+  }
+
+  /// Unsichtbare Schattenwerfer eines Raums: Wände (mit Löchern für Türen
+  /// und Fenster) und eine Decke auf Wandhöhe.
+  final Map<String, fs.Node> _casters = {};
+
+  fs.Node _casterOf(SceneRoom r) {
+    final acc = _MeshAcc();
+    for (final f in _wallFaces[r.id] ?? const <Face3>[]) {
+      acc.addFace(f, twoSided: true);
+    }
+    final outer = _outer[r.id];
+    if (outer != null && outer.length >= 3) {
+      final h = r.wallHeight;
+      acc.addFace(
+        Face3([for (final p in outer) V3(p.dx, p.dy, h)], const V3(0, 0, -1)),
+        twoSided: true,
+      );
+    }
+    final node = fs.Node(name: 'casters:${r.id}')
+      // Undurchsichtig: durchscheinende Materialien werfen keinen Schatten.
+      ..mesh = acc.isEmpty
+          ? null
+          : fs.Mesh(
+              acc.geometry(),
+              fs.PhysicallyBasedMaterial()..alphaMode = fs.AlphaMode.opaque,
+            )
+      ..shadowCastingMode = fs.ShadowCastingMode.shadowsOnly;
+    _roomNodes[r.id]?.add(node);
+    return node;
+  }
 
   /// Sonne aus einer anderen Richtung (Tageszeit, Lage der Wohnung):
   /// Echtzeitsonne sofort, die gebakenen Schatten in Scheiben (siehe
@@ -542,7 +644,9 @@ class GpuScene {
     ];
     final mesh = fs.Mesh.primitives(
       primitives: [
-        for (final (g, m) in parts) fs.MeshPrimitive(g, _mat.surface(m)),
+        for (final (g, m) in parts)
+          // Glas wirft keinen Schatten (Sonne durchs Fenster).
+          fs.MeshPrimitive(g, _mat.surface(m))..castsShadow = m != Mat.glass,
       ],
     );
     node.mesh = mesh;
@@ -557,7 +661,10 @@ class GpuScene {
     }
     // Keine Echtzeit-Schatten: Sonne und Lampen sind auf Böden und
     // Oberseiten gebaken (mit voller Möbelhöhe, auch in flachen Räumen).
-    node.shadowCastingMode = fs.ShadowCastingMode.off;
+    // Mit Himmel werfen Möbel echte Schatten (Sonne durchs Fenster).
+    node.shadowCastingMode = _sky != null
+        ? fs.ShadowCastingMode.on
+        : fs.ShadowCastingMode.off;
     final lines = _mat.lines(roomId);
     final edges = featureEdges(o.world);
     // Türen und Fenster gehören zur Wand: ihre Linien bleiben auch bei
@@ -868,7 +975,8 @@ class GpuScene {
     }
 
     final sun = r.sun;
-    if (sun != null && style.sun > 0) {
+    // Mit Himmel kommt die Sonne in Echtzeit (mit Schatten durch Fenster).
+    if (sun != null && style.sun > 0 && _sky == null) {
       final ks = kSunIntensity * style.sun / math.pi;
       add(sun, r.sunOpen, ks * albedo.x, ks * albedo.y, ks * albedo.z);
     }
@@ -1018,9 +1126,11 @@ class GpuScene {
     final r = _Receiver(bake, mat, color);
     _paintReceiver(r);
     _receivers.add(r);
-    return fs.Node(name: name, mesh: fs.Mesh(_receiverGeometry(bake), mat))
-      // Ohne Baking (Entwurf) bescheint die Sonne die Fläche in Echtzeit.
-      ..lightChannelMask = quality.bakes ? kBakedChannel : 0xFF;
+    return r
+        .node = fs.Node(name: name, mesh: fs.Mesh(_receiverGeometry(bake), mat))
+      // Ohne Baking (Entwurf) und mit Himmel (`setSky`) bescheint die
+      // Sonne die Fläche in Echtzeit.
+      ..lightChannelMask = quality.bakes && _sky == null ? kBakedChannel : 0xFF;
   }
 
   void _paintReceiver(_Receiver r) {
@@ -1167,6 +1277,27 @@ class GpuScene {
         ? fs.AntiAliasingMode.auto
         : fs.AntiAliasingMode.fxaa;
     scene.toneMapping = fs.ToneMappingMode.pbrNeutral;
+    final sky = _sky;
+    if (sky != null) {
+      final l = sky.light;
+      scene.environmentIntensity = 0.9 * l.ambient;
+      scene.directionalLight = fs.DirectionalLight(
+        direction: toFs(l.direction).normalized(),
+        color: linearColor(l.color).xyz,
+        intensity: kSunIntensity * kSkySunScale * l.intensity,
+        // Alles in Echtzeit, mit Schatten: Decken und Wände (unsichtbar)
+        // lassen Licht nur durch Fenster und Türen.
+        channelMask: 0xFF,
+        castsShadow: l.intensity > 0.002,
+        shadowSoftness: l.softness,
+        shadowMaxDistance: kCameraDistance + 20,
+        shadowCascadeCount: 1,
+        shadowMapResolution: 2048,
+        shadowCasterFaces: fs.ShadowCasterFaces.both,
+        shadowFilter: fs.DirectionalShadowFilter.fixedPcf,
+      );
+      return;
+    }
     scene.environmentIntensity = 0.9 * style.ambient;
     scene.directionalLight = style.sun <= 0
         ? null
@@ -1271,6 +1402,8 @@ class GpuScene {
       if (_heights[e.key] != h) {
         _heights[e.key] = h;
         e.value.scale = vm.Vector3(1, math.max(h, kFlat), 1);
+        // Flache Räume haben keine Decke.
+        _casters[e.key]?.visible = _sky != null && h > 0.5;
       }
     }
     // Objekte über mehrere Räume: so hoch wie der höchste ihrer Räume.
@@ -1326,6 +1459,7 @@ class GpuScene {
     // zeichnen Licht und Schatten die Möbel, es bleibt die Wand. Der
     // Wechsel blendet weich über.
     _stepLit();
+    _stepPulse();
     final fadeKey =
         '$tilt|${_heights.values.join(',')}|${_lit.values.join(',')}';
     if (fadeKey != _lastFadeKey) {
@@ -1415,8 +1549,75 @@ class GpuScene {
   final Stopwatch _litClock = Stopwatch()..start();
 
   /// Blenden die Möbellinien noch (Licht wurde geschaltet)?
-  bool get fading => _fading;
+  bool get fading => _fading || _pulsing.isNotEmpty;
   bool _fading = false;
+
+  // --- Tönung von Geräten (z. B. Heizkörper rot beim Heizen) -----------------
+
+  final Map<String, DeviceTint> _tints = {};
+
+  /// Pulsierende Materialien je Gerät (Stärke wird je Bild gesetzt).
+  final Map<String, List<fs.PhysicallyBasedMaterial>> _pulsing = {};
+  final Stopwatch _pulseClock = Stopwatch()..start();
+
+  /// Gerät [markerId] einfärben und leuchten lassen ([tint] `null`: normal).
+  /// Pulsierend hält die Ansicht in Bewegung, solange es pulsiert.
+  void setDeviceTint(String markerId, DeviceTint? tint) {
+    if (_tints[markerId] == tint) return;
+    if (tint == null) {
+      _tints.remove(markerId);
+    } else {
+      _tints[markerId] = tint;
+    }
+    _applyTint(markerId);
+  }
+
+  void _applyTint(String markerId) {
+    final o = _objects['device:$markerId'];
+    _pulsing.remove(markerId);
+    if (o == null) return;
+    o.baseMesh ??= o.mesh;
+    final tint = _tints[markerId];
+    if (tint == null) {
+      o.mesh = o.baseMesh;
+    } else {
+      final mats = <fs.PhysicallyBasedMaterial>[];
+      o.mesh = fs.Mesh.primitives(
+        primitives: [
+          for (final (g, m) in o.parts)
+            fs.MeshPrimitive(g, () {
+              final base = _mat.surface(m);
+              final c = linearColor(tint.color);
+              final mat = fs.PhysicallyBasedMaterial()
+                ..baseColorFactor = linearColor(
+                  Color.lerp(style.base(m), tint.color, 0.6)!,
+                )
+                ..metallicFactor = base.metallicFactor
+                ..roughnessFactor = base.roughnessFactor
+                ..emissiveFactor = vm.Vector4(c.x, c.y, c.z, 1)
+                ..emissiveStrength = tint.glow;
+              mats.add(mat);
+              return mat;
+            }()),
+        ],
+      );
+      if (tint.pulse) _pulsing[markerId] = mats;
+    }
+    if (!o.ghosted) o.node.mesh = o.mesh;
+  }
+
+  void _stepPulse() {
+    if (_pulsing.isEmpty) return;
+    final t = _pulseClock.elapsedMilliseconds / 1000;
+    // Etwa alle 1,6 s ein Atemzug.
+    final k = 0.35 + 0.65 * (0.5 + 0.5 * math.sin(t * 2 * math.pi / 1.6));
+    for (final e in _pulsing.entries) {
+      final g = _tints[e.key]?.glow ?? 1;
+      for (final m in e.value) {
+        m.emissiveStrength = g * k;
+      }
+    }
+  }
 
   /// Dauer der Überblendung der Möbellinien.
   static const double kLitFade = 0.35;
@@ -1572,6 +1773,9 @@ class _ObjectNode {
 
   /// Körper mit den gemeinsamen Materialien (ohne Heatmap-Tönung).
   fs.Mesh? mesh;
+
+  /// Ungetönter Körper (siehe `setDeviceTint`).
+  fs.Mesh? baseMesh;
   List<(fs.Geometry, Mat)> parts = const [];
 
   /// Waagerechte Oberseiten (gebakene Flächen), für die Heatmap-Färbung.
@@ -1850,6 +2054,10 @@ V3 sunDirectionOf(
 /// Stärke der Sonne (mal `SceneStyle.sun`).
 const double kSunIntensity = 2.4;
 
+/// Sonne unter einem Himmel (`setSky`) am klaren Mittag, relativ zu
+/// [kSunIntensity]: draußen ist es heller als im Kartenlicht.
+const double kSkySunScale = 1.8;
+
 /// Lichtkanal der Flächen mit gebakenem Lampenlicht: nur die Sonne (alle
 /// Kanäle) erreicht sie, Lampen nicht (sonst doppelt).
 const int kBakedChannel = 0x40;
@@ -1920,6 +2128,9 @@ double _overlap(Offset a0, Offset a1, Offset b0, Offset b1) {
 class _Receiver {
   _Receiver(this.bake, this.material, this.color);
   final LightReceiver bake;
+
+  /// Knoten der Fläche (Lichtkanäle umschalten, siehe `setSky`).
+  fs.Node? node;
   final fs.PhysicallyBasedMaterial material;
   final Color Function(SceneStyle) color;
   final Map<String, Float32List> lamps = {};

@@ -20,6 +20,8 @@ import '../automations/motion_widgets.dart';
 import '../zigbee/widgets/zb_common.dart' show showZbSheet;
 import '../zigbee/zigbee_providers.dart';
 import '../zigbee/zigbee_screen.dart' show zigbeeDevicePath;
+import '../climate/heating_providers.dart';
+import '../climate/heating_widgets.dart';
 import '../climate/thermostat_providers.dart';
 import '../climate/thermostat_widgets.dart';
 import 'heatmap.dart';
@@ -469,15 +471,25 @@ class SensorPanel extends ConsumerWidget {
             48,
           );
 
+    // Raumthermometer einer Heizungsregelung: die Regelung oben.
+    final heat = kind == HeatKind.temperature
+        ? ref.watch(heatingOfDeviceProvider((ieee: null, entityId: entityId)))
+        : null;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         MapPanelHead(
           title: f.name,
           subtitle: kind == HeatKind.temperature
-              ? 'Temperatursensor'
+              ? (heat == null
+                    ? 'Temperatursensor'
+                    : 'Temperatursensor · misst für die Heizung')
               : 'Feuchtesensor',
         ),
+        if (heat != null) ...[
+          RoomHeatingCard(roomId: heat.areaId, heat: heat),
+          const SizedBox(height: 16),
+        ],
         Text(
           cur == null
               ? 'Kein Wert'
@@ -966,16 +978,31 @@ class ThermostatPanel extends ConsumerWidget {
     final name =
         t?.name ??
         shortDeviceName(ref.watch(entityProvider(entityId))?.name ?? entityId);
+    // Teil einer Heizungsregelung: der Raum steht vorn, das einzelne
+    // Thermostat darunter als Zeile (Drehen dort ändert ohnehin den Raum).
+    final heat = ref.watch(
+      heatingOfDeviceProvider((ieee: r.ieee, entityId: r.entityId)),
+    );
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         MapPanelHead(
-          title: name,
-          subtitle: t?.roomName == null
-              ? 'Thermostat'
-              : 'Thermostat · ${t!.roomName}',
+          title: heat == null ? name : 'Heizung · ${t?.roomName ?? name}',
+          subtitle: heat == null
+              ? (t?.roomName == null
+                    ? 'Thermostat'
+                    : 'Thermostat · ${t!.roomName}')
+              : '$name ist Teil der Raumregelung',
         ),
-        ThermostatControl(thermostat: r, dialSize: 220),
+        if (heat != null) ...[
+          RoomHeatingCard(roomId: heat.areaId, heat: heat),
+          const SizedBox(height: 12),
+          ThermostatRow(
+            thermostat: r,
+            onOpen: () => showThermostatSheet(context, r),
+          ),
+        ] else
+          ThermostatControl(thermostat: r, dialSize: 220),
         if (r.ieee != null)
           Padding(
             padding: const EdgeInsets.only(top: 14),

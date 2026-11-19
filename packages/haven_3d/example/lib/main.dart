@@ -3,6 +3,8 @@ import 'dart:math' as math;
 import 'package:haven_3d/haven_3d.dart';
 import 'package:material_ui/material_ui.dart';
 
+import 'sky_demo.dart';
+
 void main() => runApp(const DemoApp());
 
 class DemoApp extends StatefulWidget {
@@ -20,7 +22,10 @@ class _DemoAppState extends State<DemoApp> {
     title: 'Haven 3D',
     debugShowCheckedModeBanner: false,
     theme: ThemeData(brightness: _dark ? Brightness.dark : Brightness.light),
-    home: DemoPage(dark: _dark, onDark: (v) => setState(() => _dark = v)),
+    // `?sky` öffnet gleich die Testszene für Tag und Nacht.
+    home: Uri.base.queryParameters.containsKey('sky')
+        ? const SkyDemoPage()
+        : DemoPage(dark: _dark, onDark: (v) => setState(() => _dark = v)),
   );
 }
 
@@ -308,6 +313,15 @@ class _DemoPageState extends State<DemoPage> {
                       label: const Text('Dunkel'),
                       selected: widget.dark,
                       onSelected: widget.onDark,
+                    ),
+                    ActionChip(
+                      avatar: const Icon(Icons.wb_twilight, size: 18),
+                      label: const Text('Tag & Nacht'),
+                      onPressed: () => Navigator.of(context).push(
+                        MaterialPageRoute<void>(
+                          builder: (_) => const SkyDemoPage(),
+                        ),
+                      ),
                     ),
                   ],
                 ),

@@ -11,6 +11,7 @@ double _area(List<Offset> p) {
 }
 
 void main() {
+  stepTests();
   const square = [Offset(0, 0), Offset(4, 0), Offset(4, 3), Offset(0, 3)];
 
   test('Einrücken verkleinert das Rechteck rundum', () {
@@ -93,4 +94,44 @@ void main() {
     expect(shape.every((p) => p.dx > 0.05), isTrue);
     expect(shape.length, greaterThan(4));
   });
+}
+
+void stepTests() {
+  test(
+    'Offene und geschlossene Kante auf einer Linie: Stufe statt Schräge',
+    () {
+      // Flur: Oberkante (0,0)-(3,0) geschlossen, (3,0)-(8,0) offen.
+      const flur = [
+        Offset(0, 0),
+        Offset(3, 0),
+        Offset(8, 0),
+        Offset(8, 4),
+        Offset(0, 4),
+      ];
+      final s = roundedInset(flur, inset: 0.1, open: const {1});
+      // Der offene Teil liegt genau auf der Raumgrenze, der geschlossene
+      // 0,1 darunter, nichts dazwischen ist schräg.
+      final top = [
+        for (final p in s)
+          if (p.dy < 0.2) p,
+      ];
+      expect(
+        top.where((p) => p.dy.abs() < 1e-9).length,
+        greaterThanOrEqualTo(2),
+      );
+      expect(
+        top.where((p) => (p.dy - 0.1).abs() < 1e-9).length,
+        greaterThanOrEqualTo(2),
+      );
+      for (final p in top) {
+        expect(
+          p.dy.abs() < 1e-9 || (p.dy - 0.1).abs() < 1e-9,
+          isTrue,
+          reason: '$p',
+        );
+      }
+      // Die Stufe sitzt bei x = 3.
+      expect(top.where((p) => (p.dx - 3).abs() < 1e-9).length, 2);
+    },
+  );
 }

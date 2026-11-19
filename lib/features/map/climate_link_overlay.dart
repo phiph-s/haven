@@ -4,10 +4,12 @@ import 'package:haven_3d/haven_3d.dart' as h3;
 import 'package:material_ui/material_ui.dart';
 
 import '../../core/theme/tokens.dart';
-import '../climate/thermostat_dial.dart' show kHeatColor;
 import 'climate_links.dart';
 
-/// Kühles Blau der Fensterleitungen (offenes Fenster hält die Heizung an).
+/// Rot: die Leitung lässt gerade heizen.
+const Color kHeatingLinkColor = Color(0xFFE5483B);
+
+/// Blau: alles andere (ruhend, offenes Fenster).
 const Color kWindowLinkColor = Color(0xFF5AB0FF);
 
 /// Leitungen der Klima-Karte als Linien im Boden der 3D-Szene. Wirkt eine
@@ -121,14 +123,13 @@ class ClimateLinkPainter extends CustomPainter {
     return pts;
   }
 
+  /// Rot nur, solange die Leitung heizen lässt, sonst blau (ein offenes
+  /// Fenster pulsiert blau).
   Color _color(ClimateLink l) => switch (l.state) {
     ClimateLinkState.released => hv.tx3,
-    ClimateLinkState.idle =>
-      l.kind == ClimateLinkKind.window
-          ? kWindowLinkColor.withValues(alpha: 0.55)
-          : kHeatColor.withValues(alpha: 0.5),
+    ClimateLinkState.idle => kWindowLinkColor.withValues(alpha: 0.6),
     ClimateLinkState.active =>
-      l.kind == ClimateLinkKind.window ? kWindowLinkColor : kHeatColor,
+      l.kind == ClimateLinkKind.window ? kWindowLinkColor : kHeatingLinkColor,
   };
 
   @override

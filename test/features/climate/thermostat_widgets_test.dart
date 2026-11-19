@@ -10,8 +10,10 @@ import 'package:haven/data/storage/settings_store.dart';
 import 'package:haven/dev/fake_floor_plan.dart';
 import 'package:haven/dev/fake_repository.dart';
 import 'package:haven/features/map/climate_link_overlay.dart';
+import 'package:haven/features/map/map_3d.dart' show Map3DView;
 import 'package:haven/features/climate/thermostat_dial.dart';
 import 'package:haven/features/climate/thermostat_settings.dart';
+import 'package:haven/features/climate/heating_widgets.dart';
 import 'package:haven/features/climate/thermostat_widgets.dart';
 import 'package:haven/features/map/floor_plan_store.dart';
 import 'package:haven/features/map/map_panels.dart';
@@ -48,6 +50,7 @@ Future<(ProviderContainer, _Spy)> _pump(
   Map<String, Object> prefs = const {},
   ThemeMode? mode,
   bool desktop = false,
+  bool heating = true,
 }) async {
   SharedPreferences.setMockInitialValues({
     ...prefs,
@@ -56,6 +59,11 @@ Future<(ProviderContainer, _Spy)> _pump(
   final store = SettingsStore(await SharedPreferences.getInstance());
   final repo = _Spy();
   await tester.runAsync(repo.start);
+  // Ohne Raumregelung: das Thermostat zeigt seine eigene Steuerung.
+  if (!heating) {
+    await tester.runAsync(() => repo.deleteHeating('salon'));
+    repo.sets.clear();
+  }
   tester.view.physicalSize = desktop
       ? const Size(1400 * 2, 900 * 2)
       : const Size(412 * 2.625, 915 * 2.625);
@@ -109,7 +117,7 @@ void main() {
     testWidgets('zeigt Zustand, Rad, Betriebsarten, Boost und Werte', (
       tester,
     ) async {
-      await _pump(tester, '/zigbee/device/$_salon');
+      await _pump(tester, '/zigbee/device/$_salon', heating: false);
       expect(find.byType(ThermostatMain), findsOneWidget);
       expect(find.byType(ThermostatDial), findsOneWidget);
       expect(find.text('Heizt auf 21 °C'), findsOneWidget);
@@ -127,7 +135,11 @@ void main() {
     testWidgets('Betriebsart Eco setzt preset, der Sollwert folgt', (
       tester,
     ) async {
-      final (c, spy) = await _pump(tester, '/zigbee/device/$_salon');
+      final (c, spy) = await _pump(
+        tester,
+        '/zigbee/device/$_salon',
+        heating: false,
+      );
       await tester.tap(find.text('Eco'));
       await _settle(tester);
       expect(spy.sets.last.$1, _salon);
@@ -143,7 +155,11 @@ void main() {
     testWidgets('Plus stellt in Schritten, ein Befehl für mehrere Tipps', (
       tester,
     ) async {
-      final (c, spy) = await _pump(tester, '/zigbee/device/$_salon');
+      final (c, spy) = await _pump(
+        tester,
+        '/zigbee/device/$_salon',
+        heating: false,
+      );
       final plus = find.bySemanticsLabel('Wärmer');
       await tester.tap(plus);
       await tester.pump(const Duration(milliseconds: 200));
@@ -157,7 +173,11 @@ void main() {
     });
 
     testWidgets('Aus sperrt das Rad und die Knöpfe', (tester) async {
-      final (c, spy) = await _pump(tester, '/zigbee/device/$_salon');
+      final (c, spy) = await _pump(
+        tester,
+        '/zigbee/device/$_salon',
+        heating: false,
+      );
       // „Ventil offen“ ist breit: die Reihe scrollt.
       await tester.ensureVisible(find.text('Aus').first);
       await tester.pumpAndSettle();
@@ -172,7 +192,11 @@ void main() {
     });
 
     testWidgets('Boost startet mit gewählter Dauer', (tester) async {
-      final (c, _) = await _pump(tester, '/zigbee/device/$_salon');
+      final (c, _) = await _pump(
+        tester,
+        '/zigbee/device/$_salon',
+        heating: false,
+      );
       await _scrollTo(tester, find.text('Starten'));
       await tester.tap(find.text('Starten'));
       await _settle(tester);
@@ -183,7 +207,11 @@ void main() {
     });
 
     testWidgets('Einstellungen deutsch, Temperatur per Plus', (tester) async {
-      final (c, spy) = await _pump(tester, '/zigbee/device/$_salon');
+      final (c, spy) = await _pump(
+        tester,
+        '/zigbee/device/$_salon',
+        heating: false,
+      );
       await _scrollTo(tester, find.text('Komforttemperatur'));
       expect(find.text('Wochenplan'), findsOneWidget);
       expect(find.text('Temperaturen'), findsOneWidget);
@@ -203,7 +231,11 @@ void main() {
     testWidgets('Wochenplan: Tag ändern und für alle Tage speichern', (
       tester,
     ) async {
-      final (c, spy) = await _pump(tester, '/zigbee/device/$_salon');
+      final (c, spy) = await _pump(
+        tester,
+        '/zigbee/device/$_salon',
+        heating: false,
+      );
       await _scrollTo(tester, find.byType(WeekScheduleCard));
       await tester.tap(find.bySemanticsLabel(RegExp('^Montag:')));
       await _settle(tester);
@@ -257,7 +289,7 @@ void main() {
 
     testWidgets('hell und dunkel ohne Fehler', (tester) async {
       for (final m in [ThemeMode.light, ThemeMode.dark]) {
-        await _pump(tester, '/zigbee/device/$_salon', mode: m);
+        await _pump(tester, '/zigbee/device/$_salon', mode: m, heating: false);
         expect(tester.takeException(), isNull);
         expect(find.byType(ThermostatDial), findsOneWidget);
       }
@@ -299,6 +331,12 @@ void main() {
       );
       expect(marker, findsOneWidget);
       expect(find.text('→ 21°'), findsWidgets);
+      // Klima: Heizkörper rot pulsierend, solange er heizt.
+      final tint = tester
+          .widget<Map3DView>(find.byType(Map3DView))
+          .deviceTints['climate.thermostat_salon'];
+      expect(tint?.pulse, isTrue);
+      expect(tint?.color, kHeatingLinkColor);
       // Klima: Leitungen von den Thermometern zum Thermostat im Boden.
       expect(find.byType(ClimateLinkOverlay), findsOneWidget);
       expect(
@@ -310,7 +348,31 @@ void main() {
       await tester.tap(marker);
       await _settle(tester);
       expect(find.byType(ThermostatPanel), findsOneWidget);
+      // Teil der Raumregelung: der Raum oben, das Thermostat als Zeile.
+      expect(find.byType(RoomHeatingCard), findsOneWidget);
+      expect(find.byType(ThermostatRow), findsOneWidget);
+      expect(find.byType(ThermostatDial), findsNothing);
+      expect(find.text('Heizung · Salon'), findsOneWidget);
+    });
+
+    testWidgets('Thermostat ohne Raumregelung: eigene Steuerung', (
+      tester,
+    ) async {
+      await _pump(
+        tester,
+        '/map',
+        prefs: {'map_layer': 'temperature'},
+        heating: false,
+      );
+      await tester.tap(
+        find.byWidgetPredicate(
+          (w) =>
+              w is ThermostatMarker && w.entityId == 'climate.thermostat_salon',
+        ),
+      );
+      await _settle(tester);
       expect(find.byType(ThermostatDial), findsOneWidget);
+      expect(find.byType(RoomHeatingCard), findsNothing);
       expect(find.text('Thermostat · Salon'), findsOneWidget);
     });
 
@@ -321,6 +383,7 @@ void main() {
         tester,
         '/map',
         prefs: {'map_layer': 'temperature'},
+        heating: false,
       );
       await tester.tap(
         find.byWidgetPredicate(

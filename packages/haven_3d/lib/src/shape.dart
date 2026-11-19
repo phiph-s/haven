@@ -27,21 +27,28 @@ List<Offset> roundedInset(
   final (pts, openAfter) = _dedupe(outline, open);
   if (pts.length < 3) return pts;
   final ccw = _area(pts) > 0;
-  final inner = inset > 0 ? _offset(pts, inset, ccw, openAfter) : pts;
-  if (radius <= 0) return inner;
   final n = pts.length;
+  final (inner, src) = inset > 0
+      ? _offset(pts, inset, ccw, openAfter)
+      : (pts, [for (var i = 0; i < n; i++) i]);
+  if (radius <= 0) return inner;
   bool reflex(int i) {
     final a = pts[(i - 1 + n) % n], b = pts[i], c = pts[(i + 1) % n];
     final cross = (b - a).dx * (c - b).dy - (b - a).dy * (c - b).dx;
     return ccw ? cross < 0 : cross > 0;
   }
 
+  bool sharp(int i) =>
+      openAfter.contains(i) ||
+      openAfter.contains((i - 1 + n) % n) ||
+      (convexOnly && reflex(i));
   return _fillet(inner, radius, segments, {
-    for (var i = 0; i < n; i++)
-      if (openAfter.contains(i) ||
-          openAfter.contains((i - 1 + n) % n) ||
-          (convexOnly && reflex(i)))
-        i,
+    for (var j = 0; j < inner.length; j++)
+      // Stufen (eine Ecke wurde zu zwei Punkten) bleiben ebenfalls spitz.
+      if (sharp(src[j]) ||
+          src[(j + 1) % inner.length] == src[j] ||
+          src[(j - 1 + inner.length) % inner.length] == src[j])
+        j,
   });
 }
 
@@ -86,8 +93,15 @@ double _area(List<Offset> p) {
 }
 
 /// Jede Kante um [d] nach innen schieben (offene Kanten nicht), neue Ecken
-/// als Schnittpunkte.
-List<Offset> _offset(List<Offset> p, double d, bool ccw, Set<int> open) {
+/// als Schnittpunkte. Liegen zwei Kanten auf einer Linie, aber nur eine ist
+/// offen (die Wand endet mitten auf der Raumgrenze), entsteht an der Ecke
+/// eine Stufe aus zwei Punkten. Liefert auch die Ursprungsecke je Punkt.
+(List<Offset>, List<int>) _offset(
+  List<Offset> p,
+  double d,
+  bool ccw,
+  Set<int> open,
+) {
   final n = p.length;
   Offset inward(Offset a, Offset b) {
     final e = b - a;
@@ -98,6 +112,7 @@ List<Offset> _offset(List<Offset> p, double d, bool ccw, Set<int> open) {
   }
 
   final out = <Offset>[];
+  final src = <int>[];
   for (var i = 0; i < n; i++) {
     final prev = p[(i - 1 + n) % n], cur = p[i], next = p[(i + 1) % n];
     final n0 = inward(prev, cur), n1 = inward(cur, next);
@@ -105,9 +120,24 @@ List<Offset> _offset(List<Offset> p, double d, bool ccw, Set<int> open) {
     final d1 = open.contains(i) ? 0.0 : d;
     final a0 = prev + n0 * d0, a1 = cur + n0 * d0;
     final b0 = cur + n1 * d1, b1 = next + n1 * d1;
-    out.add(_intersect(a0, a1, b0, b1) ?? cur + (n0 * d0 + n1 * d1) / 2);
+    final x = _intersect(a0, a1, b0, b1);
+    if (x != null) {
+      out.add(x);
+      src.add(i);
+    } else if ((d0 - d1).abs() > 1e-9) {
+      // Auf einer Linie, verschieden weit: Stufe.
+      out
+        ..add(a1)
+        ..add(b0);
+      src
+        ..add(i)
+        ..add(i);
+    } else {
+      out.add(a1);
+      src.add(i);
+    }
   }
-  return out;
+  return (out, src);
 }
 
 Offset? _intersect(Offset a0, Offset a1, Offset b0, Offset b1) {

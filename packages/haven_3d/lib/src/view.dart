@@ -16,6 +16,7 @@ import 'model.dart';
 import 'picking.dart';
 import 'quality.dart';
 import 'scene.dart';
+import 'sky.dart';
 import 'style.dart';
 import 'support.dart';
 
@@ -120,6 +121,10 @@ class SceneController extends ChangeNotifier {
       // Zustände aus [setLamp] gelten auch nach einem Neuaufbau.
       for (final e in _lamps.entries) {
         _gpu!.setLamp(e.key, e.value);
+      }
+      if (_sky != null) _gpu!.setSky(_sky);
+      for (final e in _tints.entries) {
+        _gpu!.setDeviceTint(e.key, e.value);
       }
     } else {
       _gpu!.restyle(style);
@@ -232,6 +237,35 @@ class SceneController extends ChangeNotifier {
   }
 
   V3? _sun;
+  SceneSky? _sky;
+  final Map<String, DeviceTint> _tints = {};
+
+  /// Gerät [id] (Marker-ID) einfärben und leuchten lassen, z. B. einen
+  /// Heizkörper rot pulsierend, solange er heizt. `null` hebt das auf. Gilt
+  /// auch für eine später gebaute Szene.
+  void setDeviceTint(String id, DeviceTint? tint) {
+    if (_tints[id] == tint) return;
+    if (tint == null) {
+      _tints.remove(id);
+    } else {
+      _tints[id] = tint;
+    }
+    _gpu?.setDeviceTint(id, tint);
+    _view?._wake();
+  }
+
+  /// Aktuelle Tönungen (Marker-ID → Tönung).
+  Map<String, DeviceTint> get deviceTints => Map.unmodifiable(_tints);
+
+  /// Himmel mit Tag und Nacht, Mond und Wetter (siehe [SceneSky]): Licht und
+  /// Schatten in Echtzeit, Sonne und Mond scheinen durch die Fenster.
+  /// `null`: Kartenlicht. Gilt auch für eine später gebaute Szene.
+  void setSky(SceneSky? sky) {
+    if (_sky == sky) return;
+    _sky = sky;
+    _gpu?.setSky(sky);
+    _view?._wake();
+  }
 
   /// Richtung des Sonnenlichts (von der Sonne zum Boden, Weltkoordinaten),
   /// z. B. nach Tageszeit und Lage der Wohnung. Gilt auch für eine später

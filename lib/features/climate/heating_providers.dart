@@ -226,3 +226,30 @@ final heatingOutdoorSourcesProvider = Provider<List<HeatingSource>>((ref) {
     areas: ref.watch(zigbeeEntityAreasProvider),
   );
 });
+
+/// Heizungsregelung, zu der ein Gerät gehört: Thermostat (IEEE) oder
+/// Raumthermometer bzw. Fensterkontakt (Entity, auch eine andere Entity
+/// desselben Zigbee-Geräts). `null`, wenn es zu keiner gehört.
+final heatingOfDeviceProvider =
+    Provider.family<RoomHeating?, ({String? ieee, String? entityId})>((ref, k) {
+      final rooms = ref.watch(heatingProvider).value?.rooms ?? const [];
+      if (rooms.isEmpty) return null;
+      final zb = ref.watch(zigbeeProvider.select((z) => z.devices));
+      final device = k.ieee != null
+          ? zb.where((d) => d.ieee == k.ieee).firstOrNull
+          : (k.entityId == null
+                ? null
+                : zb
+                      .where((d) => d.haEntities.contains(k.entityId))
+                      .firstOrNull);
+      final ieee = k.ieee ?? device?.ieee;
+      final ids = {?k.entityId, ...?device?.haEntities};
+      for (final r in rooms) {
+        if (ieee != null && r.config.trvs.contains(ieee)) return r;
+        if (r.config.sensors.any(ids.contains) ||
+            r.config.windows.any(ids.contains)) {
+          return r;
+        }
+      }
+      return null;
+    });
