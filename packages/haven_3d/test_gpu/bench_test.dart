@@ -16,6 +16,10 @@ void main() {
       final sw = Stopwatch()..start();
       final g = GpuScene(sampleScene(), SceneStyle.dark(), quality: q);
       final build = sw.elapsedMilliseconds;
+      // Nur Geometrie (Licht später im Hintergrund).
+      sw.reset();
+      GpuScene(sampleScene(), SceneStyle.dark(), quality: q, deferBake: true);
+      final geo = sw.elapsedMilliseconds;
       sw.reset();
       const n = 20;
       for (var i = 0; i < n; i++) {
@@ -56,7 +60,7 @@ void main() {
       final theme = sw.elapsedMicroseconds / 1000;
       // ignore: avoid_print
       print(
-        '${q.name}: Aufbau $build ms, setLamp ${lamp.toStringAsFixed(1)} ms, '
+        '${q.name}: Aufbau $build ms (ohne Baking $geo ms), setLamp ${lamp.toStringAsFixed(1)} ms, '
         'Akzentwechsel ${accent.toStringAsFixed(2)} ms, '
         '${ids.length} Lampen aus: ${all.toStringAsFixed(1)} ms in $frames '
         'Bildern (max ${worst.toStringAsFixed(1)} ms), '

@@ -2,6 +2,7 @@ import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui' show Color, Offset, Size;
 
+import 'package:flutter/foundation.dart' show compute, kIsWeb;
 import 'package:flutter_scene/scene.dart' as fs;
 import 'package:vector_math/vector_math.dart' as vm;
 
@@ -41,6 +42,7 @@ class GpuScene {
     this.quality = SceneQuality.high,
     Map<String, bool?> open = const {},
     V3? sun,
+    this.deferBake = false,
   }) : _sunDir = sun ?? kSunDirection {
     _openState.addAll(open);
     _build();
@@ -273,17 +275,19 @@ class GpuScene {
     _sunDir = dir;
     _applyLighting();
     if (!quality.bakes) return;
-    final zones = <String, Set<String>>{};
-    for (final id in _roomReceivers.keys) {
-      (zones[source.lightZones[id] ?? id] ??= {}).add(id);
-    }
-    for (final z in zones.values) {
-      final occ = _zoneOccluders(z);
-      for (final id in z) {
-        for (final i in _roomReceivers[id]!) {
-          final r = _receivers[i];
+    if (_baking) _staleSun = true;
+    _queueSunBake();
+  }
+
+  /// Sonne neu backen, als Aufträge für [flushLight].
+  void _queueSunBake() {
+    for (final z in _zones()) {
+      final occ = _zoneOccluders(z.keys.toSet());
+      for (final l in z.values) {
+        for (final r in l) {
+          final t = _sunTask(r, occ.objects);
           _jobs.add(() {
-            _bakeSunInto(r, occ.objects);
+            _applyBake(runBakeTask(t));
             _dirty.add(r);
           });
         }
@@ -291,12 +295,33 @@ class GpuScene {
     }
   }
 
-  void _bakeSunInto(_Receiver r, LightOccluders occ) {
-    r.sun = bakeSun(r.bake, -_sunDir, occ, samples: quality.bakeSamples);
-    final cos = math.max(0.0, (-_sunDir).normalized.z);
-    r.sunOpen = Float32List(r.bake.width * r.bake.height)
-      ..fillRange(0, r.bake.width * r.bake.height, cos);
+  SunBakeTask _sunTask(_Receiver r, LightOccluders occ) => SunBakeTask(
+    _receivers.indexOf(r),
+    r.bake,
+    quality.bakeSamples,
+    toSun: -_sunDir,
+    occluders: occ,
+  );
+
+  /// Ergebnis eines Bake-Auftrags in seine Fläche legen (ohne Neumischen).
+  void _applyBake(BakeResult b) {
+    if (b.receiver < 0 || b.receiver >= _receivers.length) return;
+    final r = _receivers[b.receiver];
+    final id = b.lampId;
+    if (id == null) {
+      r.sun = b.lit;
+      r.sunOpen = b.open;
+    } else if (b.lit == null) {
+      r.lamps.remove(id);
+      r.lampsOpen.remove(id);
+    } else {
+      r.lamps[id] = b.lit!;
+      r.lampsOpen[id] = b.open!;
+    }
   }
+
+  /// Baking nicht im Konstruktor, sondern über [bakeInBackground].
+  final bool deferBake;
 
   /// Qualitätsstufe; ändert sich nur mit einem neuen [GpuScene] (Baking).
   final SceneQuality quality;
@@ -640,17 +665,16 @@ class GpuScene {
     }
 
     if (quality.bakes) {
+      if (deferBake) {
+        // Erst die Geometrie zeigen, Licht folgt aus dem Hintergrund.
+        _bakePending = true;
+        _dirty.addAll(_receivers);
+        return;
+      }
       // Je Lichtzone: Lampen leuchten in alle Räume der Zone, Wände halten
       // das Licht auf (nur offene Wände und Türen lassen es durch).
-      final zones = <String, Set<String>>{};
-      for (final id in _roomReceivers.keys) {
-        (zones[source.lightZones[id] ?? id] ??= {}).add(id);
-      }
-      for (final z in zones.values) {
-        _bakeZone({
-          for (final id in z)
-            id: [for (final i in _roomReceivers[id]!) _receivers[i]],
-        });
+      for (final z in _zones()) {
+        _bakeZone(z);
       }
     }
   }
@@ -847,6 +871,7 @@ class GpuScene {
   /// Gebakenes Lampenlicht der Zone von [roomId] neu, als Aufträge für
   /// [flushLight] (wenige Millisekunden je Bild).
   void _rebakeZoneOf(String roomId) {
+    if (_baking) _staleRooms.add(roomId);
     final zone = source.lightZones[roomId] ?? roomId;
     final byRoom = {
       for (final e in _roomReceivers.entries)
@@ -1292,7 +1317,7 @@ class GpuScene {
 
   /// Licht von Lampe [m] auf Fläche [r] backen. [own]: die Fläche liegt im
   /// Raum der Lampe (Wände halten dort nichts auf).
-  void _bakePair(
+  LampBakeTask _lampTask(
     SceneMarker m,
     _Receiver r, {
     required bool own,
@@ -1315,77 +1340,127 @@ class GpuScene {
       cone = null;
       gain = 0.35;
     }
-    Float32List scaled(Float32List v) {
-      if (gain != 1) {
-        for (var i = 0; i < v.length; i++) {
-          v[i] *= gain;
-        }
-      }
-      return v;
-    }
-
-    if (own) {
-      final open = Float32List(r.bake.width * r.bake.height);
-      r.lamps[m.id] = scaled(
-        bakeLamp(
-          r.bake,
-          pos,
-          occ.objects,
-          samples: quality.bakeSamples,
-          unshadowed: open,
-          cone: cone,
-          axis: axis,
-        ),
-      );
-      r.lampsOpen[m.id] = scaled(open);
-      return;
-    }
-    // Nachbarraum der Zone: erst billig prüfen, ob durch Tür oder offene
-    // Wand überhaupt Licht ankommt.
-    final through = bakeLamp(
+    return LampBakeTask(
+      _receivers.indexOf(r),
       r.bake,
-      pos,
-      occ.walls,
-      samples: 1,
-      cone: cone,
+      quality.bakeSamples,
+      lampId: m.id,
+      position: pos,
       axis: axis,
+      cone: cone,
+      gain: gain,
+      own: own,
+      objects: occ.objects,
+      lamp: occ.lamp,
+      walls: occ.walls,
     );
-    if (!through.any((v) => v > 0)) {
-      r.lamps.remove(m.id);
-      r.lampsOpen.remove(m.id);
-      return;
-    }
-    r.lamps[m.id] = scaled(
-      bakeLamp(
-        r.bake,
-        pos,
-        occ.lamp,
-        samples: quality.bakeSamples,
-        cone: cone,
-        axis: axis,
-      ),
-    );
-    r.lampsOpen[m.id] = scaled(through);
   }
 
-  void _bakeZone(Map<String, List<_Receiver>> byRoom) {
+  /// Licht von Lampe [m] auf Fläche [r] backen. [own]: die Fläche liegt im
+  /// Raum der Lampe (Wände halten dort nichts auf).
+  void _bakePair(
+    SceneMarker m,
+    _Receiver r, {
+    required bool own,
+    required ({
+      LightOccluders objects,
+      LightOccluders lamp,
+      LightOccluders walls,
+    })
+    occ,
+  }) => _applyBake(runBakeTask(_lampTask(m, r, own: own, occ: occ)));
+
+  /// Alle Bake-Aufträge einer Lichtzone (Sonne und Lampen).
+  List<BakeTask> _zoneTasks(Map<String, List<_Receiver>> byRoom) {
     final receivers = [for (final l in byRoom.values) ...l];
     final occ = _zoneOccluders(byRoom.keys.toSet());
-    for (final r in receivers) {
-      _bakeSunInto(r, occ.objects);
+    return [
+      for (final r in receivers) _sunTask(r, occ.objects),
+      for (final m in source.markers)
+        if (m.kind == MarkerKind.light &&
+            m.lamp != null &&
+            byRoom.containsKey(source.markerRoom[m.id]))
+          for (final e in byRoom.entries)
+            for (final r in e.value)
+              _lampTask(m, r, own: e.key == source.markerRoom[m.id], occ: occ),
+    ];
+  }
+
+  /// Alle Lichtzonen der Szene, Räume mit ihren Flächen.
+  List<Map<String, List<_Receiver>>> _zones() {
+    final zones = <String, Set<String>>{};
+    for (final id in _roomReceivers.keys) {
+      (zones[source.lightZones[id] ?? id] ??= {}).add(id);
     }
-    for (final m in source.markers) {
-      if (m.kind != MarkerKind.light || m.lamp == null) continue;
-      final home = source.markerRoom[m.id];
-      if (!byRoom.containsKey(home)) continue;
-      for (final e in byRoom.entries) {
-        for (final r in e.value) {
-          _bakePair(m, r, own: e.key == home, occ: occ);
-        }
+    return [
+      for (final z in zones.values)
+        {
+          for (final id in z)
+            id: [for (final i in _roomReceivers[id]!) _receivers[i]],
+        },
+    ];
+  }
+
+  bool _baking = false;
+
+  /// Das erste Baking läuft noch (siehe [bakeInBackground]).
+  bool get baking => _baking;
+
+  /// Während des Bakings im Hintergrund geänderte Räume und Sonne: danach
+  /// neu (das Ergebnis aus dem Hintergrund ist für sie veraltet).
+  final Set<String> _staleRooms = {};
+  bool _staleSun = false;
+
+  /// Erstes Baking (bei `deferBake`) im Hintergrund: in einem eigenen Isolate
+  /// über [compute], im Web (ohne Isolates) in Scheiben über [flushLight].
+  /// Bis dahin zeigt die Szene ungebakenes Licht.
+  Future<void> bakeInBackground() async {
+    if (!_bakePending) return;
+    _bakePending = false;
+    final tasks = [for (final z in _zones()) ..._zoneTasks(z)];
+    if (kIsWeb) {
+      for (final t in tasks) {
+        _jobs.add(() {
+          _applyBake(runBakeTask(t));
+          _dirty.add(_receivers[t.receiver]);
+        });
       }
+      return;
     }
-    for (final r in receivers) {
-      _relight(r);
+    _baking = true;
+    try {
+      final results = await compute(
+        runBakeTasks,
+        tasks,
+        debugLabel: 'haven_3d bake',
+      );
+      for (final b in results) {
+        _applyBake(b);
+      }
+      _dirty.addAll(_receivers);
+    } finally {
+      _baking = false;
+    }
+    if (_staleSun) {
+      _staleSun = false;
+      _queueSunBake();
+    }
+    for (final id in [..._staleRooms]) {
+      _rebakeZoneOf(id);
+    }
+    _staleRooms.clear();
+  }
+
+  bool _bakePending = false;
+
+  void _bakeZone(Map<String, List<_Receiver>> byRoom) {
+    for (final t in _zoneTasks(byRoom)) {
+      _applyBake(runBakeTask(t));
+    }
+    for (final l in byRoom.values) {
+      for (final r in l) {
+        _relight(r);
+      }
     }
   }
 
@@ -2079,6 +2154,7 @@ class _Materials {
       ..alphaMode = s.wallOpacity < 1
           ? fs.AlphaMode.blend
           : fs.AlphaMode.opaque;
+    final glow = linearColor(s.wall, 1);
     for (final (m, a) in [
       (wallSelected, math.max(0.9, s.wallOpacity)),
       (wallFront, 0.22),
@@ -2088,6 +2164,11 @@ class _Materials {
         ..roughnessFactor = 1
         ..baseColorFactor = linearColor(s.wall, a)
         ..alphaMode = fs.AlphaMode.blend;
+    }
+    for (final m in [wall, wallSelected, wallFront]) {
+      m
+        ..emissiveFactor = glow
+        ..emissiveStrength = s.wallGlow;
     }
     _applyLineColors();
   }

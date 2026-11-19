@@ -317,3 +317,124 @@ Float32List bakeSun(
   }
   return _blur(out, r.width, r.height);
 }
+
+// ---- Aufträge (reine Daten, auch in einem Isolate rechenbar) --------------
+
+/// Ein Bake-Auftrag für Fläche Nummer [receiver]: nur Daten, kein GPU-Objekt,
+/// damit ihn ein Hintergrund-Isolate rechnen kann ([runBakeTasks]).
+sealed class BakeTask {
+  const BakeTask(this.receiver, this.surface, this.samples);
+  final int receiver;
+  final LightReceiver surface;
+  final int samples;
+}
+
+/// Sonne aus Richtung [toSun] (von der Fläche zur Sonne).
+final class SunBakeTask extends BakeTask {
+  const SunBakeTask(
+    super.receiver,
+    super.surface,
+    super.samples, {
+    required this.toSun,
+    required this.occluders,
+  });
+  final V3 toSun;
+  final LightOccluders occluders;
+}
+
+/// Lampe [lampId] an [position]. [own]: die Fläche liegt im Raum der Lampe,
+/// sonst kommt Licht nur durch Türen und offene Wände ([walls]).
+final class LampBakeTask extends BakeTask {
+  const LampBakeTask(
+    super.receiver,
+    super.surface,
+    super.samples, {
+    required this.lampId,
+    required this.position,
+    required this.axis,
+    required this.cone,
+    required this.gain,
+    required this.own,
+    required this.objects,
+    required this.lamp,
+    required this.walls,
+  });
+  final String lampId;
+  final V3 position, axis;
+  final double? cone;
+  final double gain;
+  final bool own;
+  final LightOccluders objects, lamp, walls;
+}
+
+/// Ergebnis eines [BakeTask]: Licht mit und ohne Schatten. [lampId] `null`
+/// heißt Sonne; [lit] `null`: kein Licht (Lampe aus der Fläche nehmen).
+class BakeResult {
+  const BakeResult(this.receiver, this.lampId, this.lit, this.open);
+  final int receiver;
+  final String? lampId;
+  final Float32List? lit, open;
+}
+
+BakeResult runBakeTask(BakeTask t) {
+  final r = t.surface;
+  switch (t) {
+    case SunBakeTask():
+      final cos = math.max(0.0, t.toSun.normalized.z);
+      return BakeResult(
+        t.receiver,
+        null,
+        bakeSun(r, t.toSun, t.occluders, samples: t.samples),
+        Float32List(r.width * r.height)..fillRange(0, r.width * r.height, cos),
+      );
+    case LampBakeTask():
+      Float32List scaled(Float32List v) {
+        if (t.gain != 1) {
+          for (var i = 0; i < v.length; i++) {
+            v[i] *= t.gain;
+          }
+        }
+        return v;
+      }
+      if (t.own) {
+        final open = Float32List(r.width * r.height);
+        final lit = bakeLamp(
+          r,
+          t.position,
+          t.objects,
+          samples: t.samples,
+          unshadowed: open,
+          cone: t.cone,
+          axis: t.axis,
+        );
+        return BakeResult(t.receiver, t.lampId, scaled(lit), scaled(open));
+      }
+      // Nachbarraum der Zone: erst billig prüfen, ob durch Tür oder offene
+      // Wand überhaupt Licht ankommt.
+      final through = bakeLamp(
+        r,
+        t.position,
+        t.walls,
+        samples: 1,
+        cone: t.cone,
+        axis: t.axis,
+      );
+      if (!through.any((v) => v > 0)) {
+        return BakeResult(t.receiver, t.lampId, null, null);
+      }
+      final lit = bakeLamp(
+        r,
+        t.position,
+        t.lamp,
+        samples: t.samples,
+        cone: t.cone,
+        axis: t.axis,
+      );
+      return BakeResult(t.receiver, t.lampId, scaled(lit), scaled(through));
+  }
+}
+
+/// Alle [tasks] rechnen (für `compute`: oberste Ebene, nur Daten).
+List<BakeResult> runBakeTasks(List<BakeTask> tasks) => [
+  for (final t in tasks) runBakeTask(t),
+];

@@ -107,30 +107,91 @@ class SceneController extends ChangeNotifier {
     return _fitted!;
   }
 
-  GpuScene _gpuFor(Scene scene, SceneStyle style, SceneQuality quality) {
-    final key = (scene, style.roomGap, style.roomRadius, quality);
-    if (_gpuKey != key || _gpu == null) {
-      _gpuKey = key;
-      _gpu = GpuScene(
-        _fittedFor(scene, style),
-        style,
-        quality: quality,
-        open: _open,
-        sun: _sun,
-      );
-      // Zustände aus [setLamp] gelten auch nach einem Neuaufbau.
-      for (final e in _lamps.entries) {
-        _gpu!.setLamp(e.key, e.value);
-      }
-      if (_sky != null) _gpu!.setSky(_sky);
-      if (_ground != null) _gpu!.setGround(_ground);
-      for (final e in _tints.entries) {
-        _gpu!.setDeviceTint(e.key, e.value);
-      }
-    } else {
-      _gpu!.restyle(style);
+  /// Szene im Aufbau hinter dem Platzhalter: Schlüssel und Zähler (ein
+  /// neuer Aufbau macht einen laufenden ungültig).
+  Object? _buildingKey;
+  int _buildToken = 0;
+  bool _disposed = false;
+
+  GpuScene _makeGpu(Scene scene, SceneStyle style, SceneQuality quality) {
+    final g = GpuScene(
+      _fittedFor(scene, style),
+      style,
+      quality: quality,
+      open: _open,
+      sun: _sun,
+      deferBake: true,
+    );
+    _applyStates(g);
+    return g;
+  }
+
+  /// Zustände aus [setLamp] und Co. gelten auch nach einem Neuaufbau.
+  void _applyStates(GpuScene g) {
+    for (final e in _lamps.entries) {
+      g.setLamp(e.key, e.value);
     }
-    return _gpu!;
+    if (_sky != null) g.setSky(_sky);
+    if (_ground != null) g.setGround(_ground);
+    for (final e in _tints.entries) {
+      g.setDeviceTint(e.key, e.value);
+    }
+  }
+
+  /// GPU-Szene zu [scene]. Das Licht wird immer im Hintergrund gebacken
+  /// (eigener Isolate). Mit [background] entsteht auch die Geometrie erst
+  /// nach dem nächsten Bild und die Szene erscheint fertig: bis dahin
+  /// `null` (der Platzhalter steht dort). Ohne: sofort, das Licht kommt nach.
+  GpuScene? _gpuFor(
+    Scene scene,
+    SceneStyle style,
+    SceneQuality quality, {
+    bool background = false,
+  }) {
+    final key = (scene, style.roomGap, style.roomRadius, quality);
+    if (_gpuKey == key && _gpu != null) {
+      _gpu!.restyle(style);
+      return _gpu;
+    }
+    if (!background) {
+      _buildingKey = null;
+      _buildToken++;
+      _gpuKey = key;
+      final g = _gpu = _makeGpu(scene, style, quality);
+      g.bakeInBackground().then((_) {
+        if (!_disposed) notifyListeners();
+      });
+      return g;
+    }
+    if (_buildingKey == key) return null;
+    _buildingKey = key;
+    final token = ++_buildToken;
+    _gpu = null;
+    _gpuKey = null;
+    Future<void> build() async {
+      if (token != _buildToken || _disposed) return;
+      final g = _makeGpu(scene, style, quality);
+      await g.bakeInBackground();
+      if (token != _buildToken || _disposed) return;
+      _applyStates(g);
+      _gpu = g;
+      _gpuKey = key;
+      _buildingKey = null;
+      notifyListeners();
+    }
+
+    // Erst ein Bild mit Platzhalter (z. B. Seitenwechsel), dann bauen.
+    SchedulerBinding.instance
+      ..addPostFrameCallback((_) => Timer.run(build))
+      ..scheduleFrame();
+    return null;
+  }
+
+  @override
+  void dispose() {
+    _disposed = true;
+    _buildToken++;
+    super.dispose();
   }
 
   // --- Kamera-Verlauf (Zurück) --------------------------------------------
@@ -359,6 +420,7 @@ class Scene3DView extends StatefulWidget {
     this.roomLabelBuilder,
     this.insets = EdgeInsets.zero,
     this.placeholder,
+    this.buildBehindPlaceholder = false,
     this.overlayBuilder,
     this.foregroundBuilder,
     this.interactiveMarkers = false,
@@ -418,6 +480,11 @@ class Scene3DView extends StatefulWidget {
   /// gebacken), steht dieses Widget an ihrer Stelle, z. B. die 2D-Karte.
   /// Danach blendet die Szene über. Ohne: bis dahin leer.
   final Widget? placeholder;
+
+  /// Neue Szenen (anderer Grundriss, Qualität) hinter dem [placeholder]
+  /// aufbauen und erst fertig zeigen, statt die Oberfläche anzuhalten.
+  /// Sonst entsteht die Geometrie sofort und das Licht kommt nach.
+  final bool buildBehindPlaceholder;
 
   /// Zeichnet über der Szene, unter den Geräten (z. B. Verbindungslinien).
   final Widget Function(BuildContext context, SceneProjection p)?
@@ -483,8 +550,15 @@ class _Scene3DViewState extends State<Scene3DView>
 
   /// Keine GPU (Tests): Geräte, Beschriftungen und Overlays ohne Bild.
   bool _headless = false;
-  GpuScene? get _gpu =>
-      _ready ? _c._gpuFor(widget.scene, widget.style, widget.quality) : null;
+  GpuScene? get _gpu => _ready
+      ? _c._gpuFor(
+          widget.scene,
+          widget.style,
+          widget.quality,
+          background:
+              widget.placeholder != null && widget.buildBehindPlaceholder,
+        )
+      : null;
 
   OrbitCamera? _startCam;
   Offset _startFocal = Offset.zero;
@@ -808,6 +882,12 @@ class _Scene3DViewState extends State<Scene3DView>
           WidgetsBinding.instance.addPostFrameCallback((_) => _restretch());
         }
         final gpu = _gpu;
+        // Neue Szene entsteht hinter dem Platzhalter: der kommt zurück.
+        if (gpu == null && _ready && _shown && widget.buildBehindPlaceholder) {
+          _shown = false;
+          _showing = false;
+          _placeholderGone = false;
+        }
         // Jeder Neuaufbau heißt: Kamera, Animation, Auswahl oder Stil hat
         // sich geändert. Dann rendern, bis es wieder ruhig ist.
         if (!_headless) _wake(inBuild: true);

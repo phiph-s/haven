@@ -22,7 +22,6 @@ import '../../core/router/router.dart';
 import '../../core/state/providers.dart';
 import '../../core/theme/tokens.dart';
 import '../../core/widgets/accent_scope.dart';
-import '../../core/widgets/animated_palette.dart';
 import '../../core/widgets/entry_animation.dart';
 import '../../core/widgets/haptics.dart';
 import '../../core/widgets/haven_button.dart';
@@ -91,15 +90,6 @@ class MapScreen extends ConsumerWidget {
       palette: palette,
       child: Stack(
         children: [
-          Positioned(
-            left: 0,
-            right: 0,
-            top: 0,
-            height: 320,
-            child: IgnorePointer(
-              child: MeshGlow(palette: palette, style: MeshStyle.ambient),
-            ),
-          ),
           if (has)
             // Die Karte nutzt die ganze Fläche bis zum Rand (am Handy auch
             // unter der Navigation), Kopf und Leisten liegen über ihr.
@@ -861,11 +851,17 @@ class _MapBodyState extends ConsumerState<_MapBody> {
       child: LayoutBuilder(
         builder: (context, box) {
           final h = box.maxHeight;
-          // Oben blendet die Karte hinter dem Kopf aus, unten am Rand.
-          final fadeTop = (_topH / h).clamp(0.0, 0.5);
+          // Oben ist die Karte (Haus, Wolken, Regen) unter dem Kopf ganz aus
+          // und blendet darunter weich ein; der Himmel liegt dahinter und reicht
+          // bis unter die Statusleiste. Unten blendet sie am Rand aus.
+          final fadeTop = ((_topH - 12) / h).clamp(0.0, 0.5);
+          final fadeIn = ((_topH + 36) / h).clamp(fadeTop, 0.6);
           final fadeBottom = (24 / h).clamp(0.0, 0.2);
           return Stack(
             children: [
+              // Himmel hinter der Karte, auch unter Kopf und Statusleiste.
+              if (v.controller == null && supported != false)
+                Positioned.fill(child: MapSkyBackdrop(north: v.plan.north)),
               Positioned.fill(
                 child: EntryAnimation(
                   index: 1,
@@ -880,7 +876,7 @@ class _MapBodyState extends ConsumerState<_MapBody> {
                         Color(0xFF000000),
                         Color(0x00000000),
                       ],
-                      stops: [fadeTop * 0.55, fadeTop, 1 - fadeBottom, 1],
+                      stops: [fadeTop, fadeIn, 1 - fadeBottom, 1],
                     ).createShader(rect),
                     child: supported == false
                         ? const Map3DUnsupported()
@@ -898,6 +894,7 @@ class _MapBodyState extends ConsumerState<_MapBody> {
                             quality: v.quality,
                             // Himmel nur auf der Wohnungskarte, nicht im Funknetz.
                             sky: v.controller == null,
+                            skyBackdrop: false,
                             onNodeTap: v.onNodeTap,
                             onNodeLongPress: _holdNode,
                             onNodeSecondaryTap: _secondaryNode,
@@ -1072,11 +1069,17 @@ class _MapBodyState extends ConsumerState<_MapBody> {
     return LayoutBuilder(
       builder: (context, box) {
         final h = box.maxHeight;
-        // Wie am Handy: oben blendet die Karte hinter dem Kopf aus.
-        final fadeTop = (_topH / h).clamp(0.0, 0.5);
+        // Oben ist die Karte (Haus, Wolken, Regen) unter dem Kopf ganz aus
+        // und blendet darunter weich ein; der Himmel liegt dahinter und reicht
+        // bis unter die Statusleiste. Unten blendet sie am Rand aus.
+        final fadeTop = ((_topH - 12) / h).clamp(0.0, 0.5);
+        final fadeIn = ((_topH + 36) / h).clamp(fadeTop, 0.6);
         final fadeBottom = (24 / h).clamp(0.0, 0.2);
         return Stack(
           children: [
+            // Himmel hinter der Karte, auch unter Kopf und Statusleiste.
+            if (v.controller == null && supported != false)
+              Positioned.fill(child: MapSkyBackdrop(north: v.plan.north)),
             Positioned.fill(
               child: EntryAnimation(
                 index: 1,
@@ -1091,7 +1094,7 @@ class _MapBodyState extends ConsumerState<_MapBody> {
                       Color(0xFF000000),
                       Color(0x00000000),
                     ],
-                    stops: [fadeTop * 0.55, fadeTop, 1 - fadeBottom, 1],
+                    stops: [fadeTop, fadeIn, 1 - fadeBottom, 1],
                   ).createShader(rect),
                   child: supported == false
                       ? const Map3DUnsupported()
@@ -1109,6 +1112,7 @@ class _MapBodyState extends ConsumerState<_MapBody> {
                           quality: v.quality,
                           // Himmel nur auf der Wohnungskarte, nicht im Funknetz.
                           sky: v.controller == null,
+                          skyBackdrop: false,
                           onNodeTap: v.onNodeTap,
                           onNodeLongPress: _holdNode,
                           onNodeSecondaryTap: _secondaryNode,

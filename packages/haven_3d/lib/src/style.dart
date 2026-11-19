@@ -37,6 +37,7 @@ class SceneStyle {
     this.edgesOnlyFromAbove = true,
     this.roomEdgeOpacity = 1,
     this.shadowFill = 0.3,
+    this.wallGlow = 0,
   });
 
   /// Hell: fast weiße Möbel auf warmem Grau, wie die Haven-Karte am Tag.
@@ -46,7 +47,11 @@ class SceneStyle {
     surface: Color(0xFFE3E1DC),
     soft: Color(0xFFDDDAD3),
     floor: Color(0xFFF3F2EE),
-    wall: Color(0xFFDCD9D3),
+    // Wände hell, etwas deckender und leicht selbst leuchtend: auch vor
+    // dem Himmel und bei trübem Wetter nicht grau.
+    wall: Color(0xFFF1EFEB),
+    wallOpacity: 0.55,
+    wallGlow: 0.22,
     // Raumumrisse leise, die Möbelkanten tragen die Zeichnung.
     roomEdgeOpacity: 0.38,
     accent: Color(0xFF2F7DF6),
@@ -107,6 +112,10 @@ class SceneStyle {
   /// Anteil des Lichts (Sonne, Lampen), der als Streulicht in die Schatten
   /// fällt, in der Farbe der Quelle: 0 harte, dunkle Schatten, 1 keine.
   final double shadowFill;
+
+  /// Eigenes Leuchten der Wände in ihrer Farbe (0 … 1): hält sie auch bei
+  /// trübem Himmelslicht hell.
+  final double wallGlow;
 
   /// Deckkraft der Raumumrisse (Wandoberkanten) im Verhältnis zu den
   /// Möbelkanten.
@@ -177,6 +186,7 @@ class SceneStyle {
     double? roomRadius,
     double? roomEdgeOpacity,
     double? shadowFill,
+    double? wallGlow,
   }) => SceneStyle(
     ink: ink,
     surface: surface,
@@ -193,6 +203,7 @@ class SceneStyle {
     roomRadius: roomRadius ?? this.roomRadius,
     roomEdgeOpacity: roomEdgeOpacity ?? this.roomEdgeOpacity,
     shadowFill: shadowFill ?? this.shadowFill,
+    wallGlow: wallGlow ?? this.wallGlow,
     wallOpacity: wallOpacity ?? this.wallOpacity,
     floorOpacity: floorOpacity ?? this.floorOpacity,
     cutaway: cutaway ?? this.cutaway,
@@ -221,6 +232,7 @@ class SceneStyle {
       other.roomRadius == roomRadius &&
       other.roomEdgeOpacity == roomEdgeOpacity &&
       other.shadowFill == shadowFill &&
+      other.wallGlow == wallGlow &&
       other.wallOpacity == wallOpacity &&
       other.floorOpacity == floorOpacity &&
       other.cutaway == cutaway &&
@@ -247,6 +259,7 @@ class SceneStyle {
     roomRadius,
     roomEdgeOpacity,
     shadowFill,
+    wallGlow,
     wallOpacity,
     floorOpacity,
     cutaway,

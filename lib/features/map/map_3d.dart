@@ -410,6 +410,7 @@ class Map3DView extends ConsumerStatefulWidget {
     this.followSettings = true,
     this.markerKind,
     this.sky = false,
+    this.skyBackdrop = true,
   });
 
   final HavenFloorPlan plan;
@@ -470,6 +471,11 @@ class Map3DView extends ConsumerStatefulWidget {
   /// siehe [mapWeatherProvider]): Licht und Schatten in Echtzeit, Sonne und
   /// Mond durch die Fenster, Hintergrund als Himmelsverlauf.
   final bool sky;
+
+  /// Mit [sky]: den Verlauf des Himmels selbst malen. Die Karte malt ihn
+  /// lieber selbst ([MapSkyBackdrop]) außerhalb ihrer Ausblendung oben, damit
+  /// er bis unter die Statusleiste reicht.
+  final bool skyBackdrop;
 
   @override
   ConsumerState<Map3DView> createState() => _Map3DViewState();
@@ -636,6 +642,9 @@ class _Map3DViewState extends ConsumerState<Map3DView> {
           : h3.SceneGestures.none,
       insets: widget.insets,
       placeholder: Map3DLoader(plan: plan, insets: widget.insets),
+      // Neuer Grundriss (Nordung, Abgleich mit HA): Aufbau und Licht im
+      // Hintergrund, solange steht der Lader dort.
+      buildBehindPlaceholder: true,
       // Fokus: alle Räume stehen, nur die davor liegen flach. Sonst je nach
       // Ansicht alle (schräg) oder keiner (Draufsicht).
       revealRoomId: widget.raisedRoomId,
@@ -684,23 +693,39 @@ class _Map3DViewState extends ConsumerState<Map3DView> {
     );
     if (weather == null) return view;
     final bounds = planBoundsMeters(plan);
+    final layers = h3.SkyLayers(
+      sky: weather.sky,
+      // „Bewegung reduzieren“ im System: Himmel steht still.
+      animate: mapSkyAnimations && !MediaQuery.disableAnimationsOf(context),
+      controller: c,
+      center: h3.V3(bounds.center.dx, bounds.center.dy, 0),
+      extent: bounds,
+      child: view,
+    );
+    if (!widget.skyBackdrop) return layers;
+    return MapSkyBackdrop(north: plan.north, child: layers);
+  }
+}
+
+/// Hintergrund des Himmels: Verlauf aus Tageszeit und Wetter, im hellen
+/// Design nach Weiß, im dunklen nach Schwarz.
+class MapSkyBackdrop extends ConsumerWidget {
+  const MapSkyBackdrop({super.key, required this.north, this.child});
+  final double north;
+  final Widget? child;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final w = ref.watch(mapWeatherProvider(north));
     return DecoratedBox(
       decoration: BoxDecoration(
         gradient: LinearGradient(
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
-          colors: mapSkyGradient(weather.sky, dark: hv.isDark),
+          colors: mapSkyGradient(w.sky, dark: context.hv.isDark),
         ),
       ),
-      child: h3.SkyLayers(
-        sky: weather.sky,
-        // „Bewegung reduzieren“ im System: Himmel steht still.
-        animate: mapSkyAnimations && !MediaQuery.disableAnimationsOf(context),
-        controller: c,
-        center: h3.V3(bounds.center.dx, bounds.center.dy, 0),
-        extent: bounds,
-        child: view,
-      ),
+      child: child ?? const SizedBox.expand(),
     );
   }
 }
