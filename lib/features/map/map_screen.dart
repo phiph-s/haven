@@ -1290,6 +1290,8 @@ class _MapBodyState extends ConsumerState<_MapBody> {
       onNodeTap: _tapNode,
       onRoomTap: _tapRoom,
       card: _StatusCard(lights: lights),
+      // Aktive Sensoren leuchten auf (ohne Licht in den Raum).
+      tints3d: sensorTintsOf(plan, snap, context.hv.acc),
     );
   }
 

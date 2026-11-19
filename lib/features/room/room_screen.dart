@@ -12,6 +12,7 @@ import '../../core/widgets/haven_card.dart';
 import '../../core/widgets/haven_sheet.dart';
 import '../../core/widgets/haven_switch.dart';
 import '../../core/widgets/section_header.dart';
+import '../home/room_render.dart';
 import '../../data/room_view.dart';
 import '../climate/thermostat_widgets.dart';
 import 'room_hero.dart';
@@ -221,6 +222,11 @@ class _RoomBody extends ConsumerWidget {
                 const SizedBox(width: 62),
             ],
           ),
+        ),
+        // Der Raum mit seinem Licht (aus der Kachel hierher geflogen).
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: RoomRenderHeader(roomId: room.id),
         ),
         Padding(
           padding: const EdgeInsets.fromLTRB(20, 2, 20, 14),

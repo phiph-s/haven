@@ -1,7 +1,10 @@
 import 'dart:math' as math;
+import 'dart:ui' show Color;
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:haven/data/models/entity_state.dart';
 import 'package:haven/data/models/floor_plan.dart';
+import 'package:haven/data/models/snapshot.dart';
 import 'package:haven/features/map/map_3d.dart';
 import 'package:haven_3d/haven_3d.dart' as h3;
 
@@ -81,6 +84,40 @@ void main() {
     expect(h3.coneFactor(mid, cone, 0.05), 1);
     expect(h3.coneFactor(mid, cone, 1), lessThan(0.6));
     expect(h3.coneFactor(math.cos(cone * 1.01), cone, 1), 0);
+  });
+
+  test('Aktive Sensoren leuchten auf, inaktive nicht', () {
+    EntityState bs(String id, String state, String dc) =>
+        EntityState(id, state, {'device_class': dc});
+    final snap = HavenSnapshot(
+      entities: {
+        for (final e in [
+          bs('binary_sensor.bewegung', 'on', 'motion'),
+          bs('binary_sensor.rauch', 'on', 'smoke'),
+          bs('binary_sensor.fenster', 'on', 'window'),
+          bs('binary_sensor.ruhig', 'off', 'motion'),
+        ])
+          e.entityId: e,
+        'light.decke': const EntityState('light.decke', 'on'),
+      },
+    );
+    final plan = HavenFloorPlan(
+      placements: [
+        for (final id in snap.entities.keys)
+          FloorPlacement(entityId: id, x: 1, y: 1),
+      ],
+    );
+    const acc = Color(0xFF2F7DF6);
+    final t = sensorTintsOf(plan, snap, acc);
+    expect(t.keys, {
+      'binary_sensor.bewegung',
+      'binary_sensor.rauch',
+      'binary_sensor.fenster',
+    });
+    expect(t['binary_sensor.bewegung']!.pulse, isTrue);
+    expect(t['binary_sensor.bewegung']!.color, acc);
+    expect(t['binary_sensor.rauch']!.color, const Color(0xFFE5484D));
+    expect(t['binary_sensor.fenster']!.pulse, isFalse);
   });
 
   mountTests();

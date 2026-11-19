@@ -1,3 +1,4 @@
+import 'package:flutter/gestures.dart' show DragStartBehavior;
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -8,41 +9,100 @@ import '../../../core/adaptive/hover.dart';
 import '../../../core/state/providers.dart';
 import '../../../core/theme/tokens.dart';
 import '../../../core/widgets/animated_palette.dart';
+import '../../../core/widgets/haptics.dart';
 import '../../../core/widgets/press_scale.dart';
 import '../../../data/room_view.dart';
 import '../../../core/router/router.dart';
 import '../../room/room_hero.dart';
 import '../../../core/light/room_palette.dart';
+import '../room_render.dart';
 import '../weather_text.dart';
 
 /// Raumkachel: Lichtfarbe als Glow, Temperatur und Feuchte. Tippen schaltet,
-/// Halten oder der Pfeil öffnet den Raum (Sheet von unten).
-class RoomTile extends ConsumerWidget {
+/// Halten oder der Pfeil öffnet den Raum (Sheet von unten), waagrecht ziehen
+/// dimmt. Mit Bildern aus Home Assistant zeigt sie den Raum mit seinem
+/// Licht (live zusammengesetzt), mit Heizungsregelung oder genau einem
+/// Thermostat ein Thermometer am Rand.
+class RoomTile extends ConsumerStatefulWidget {
   const RoomTile({super.key, required this.roomId, this.wide = false});
 
   final String roomId;
   final bool wide;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<RoomTile> createState() => _RoomTileState();
+}
+
+class _RoomTileState extends ConsumerState<RoomTile> {
+  /// Das Raumbild (Start des Übergangs in die Raumseite).
+  final _render = GlobalKey();
+
+  /// Helligkeit beim Ziehen (Vorschau, Prozent), `null` sonst.
+  int? _dim;
+  int _dimStart = 100;
+  double _dragDx = 0;
+
+  String get roomId => widget.roomId;
+
+  @override
+  Widget build(BuildContext context) {
     final view = ref.watch(roomViewProvider(roomId));
     if (view == null) return const SizedBox.shrink();
     final hv = context.hv;
     final palette = view.palette(dark: hv.isDark);
     final repo = ref.read(repositoryProvider);
+    final renders = ref.watch(roomRendersAvailableProvider);
+    final images = renders
+        ? ref.watch(roomLayersProvider((roomId: roomId, dark: hv.isDark))).value
+        : null;
+    final climate = tileClimateOf(ref, roomId, view.temperature);
+    final edge = climate == null ? 0.0 : ThermoEdge.width;
 
     void open() {
       HapticFeedback.mediumImpact();
+      RoomRenderFlight.launch(roomId, _render);
       context.push(Routes.room(roomId));
     }
 
+    final dim = _dim;
     final status = view.lamps.isEmpty
         ? 'Keine Lampen'
+        : dim != null
+        ? 'Helligkeit $dim %'
         : !view.anyOn
         ? 'Aus'
         : view.lampsOn.length == 1
-        ? '${_short(view.lampsOn.first.name, view.name)} · ${view.brightness} %'
+        ? '${_shortName(view.lampsOn.first.name, view.name)} · ${view.brightness} %'
         : '${view.lampsOn.length} Lichter · ${view.brightness} %';
+
+    // Waagrecht ziehen dimmt alle Lampen des Raums (Vorschau im Bild, beim
+    // Loslassen an HA).
+    void dragStart(DragStartDetails _) {
+      if (view.lamps.isEmpty) return;
+      _dimStart = view.anyOn ? view.brightness : 0;
+      _dragDx = 0;
+      setState(() => _dim = _dimStart);
+    }
+
+    void dragUpdate(DragUpdateDetails d) {
+      if (_dim == null) return;
+      _dragDx += d.delta.dx;
+      final w = context.size?.width ?? 200;
+      final v = (_dimStart + _dragDx / w * 100).round().clamp(1, 100);
+      if (v != _dim) setState(() => _dim = v);
+    }
+
+    void dragEnd([DragEndDetails? _]) {
+      final v = _dim;
+      if (v == null) return;
+      Haptics.tick();
+      repo.setRoomBrightness(roomId, v);
+      setState(() => _dim = null);
+    }
+
+    final height = renders
+        ? (widget.wide ? 176.0 : 168.0)
+        : (widget.wide ? 150.0 : 132.0);
 
     return Semantics(
       button: true,
@@ -68,6 +128,12 @@ class RoomTile extends ConsumerWidget {
                   onSelected: () => repo.toggleRoom(roomId),
                 ),
             ]),
+        // Ab dem Aufsetzen zählen: die Helligkeit folgt dem Finger genau.
+        dragStartBehavior: DragStartBehavior.down,
+        onHorizontalDragStart: dragStart,
+        onHorizontalDragUpdate: dragUpdate,
+        onHorizontalDragEnd: dragEnd,
+        onHorizontalDragCancel: dragEnd,
         child: PressScale(
           hoverScale: 1.015,
           onTap: () {
@@ -77,12 +143,29 @@ class RoomTile extends ConsumerWidget {
           },
           onLongPress: open,
           child: SizedBox(
-            height: wide ? 150 : 132,
+            height: height,
             child: Stack(
               children: [
                 Positioned.fill(child: TileSurface(palette: palette)),
+                // Der Raum mit seinem Licht, ganz sichtbar links vom
+                // Thermometer, oben in der Kachel (unten stehen Name und
+                // Status).
+                if (images != null)
+                  Positioned(
+                    left: 8,
+                    top: 6,
+                    right: edge + 4,
+                    bottom: 40,
+                    child: IgnorePointer(
+                      child: RoomRenderView(
+                        key: _render,
+                        images: images,
+                        dimPercent: dim,
+                      ),
+                    ),
+                  ),
                 Padding(
-                  padding: const EdgeInsets.all(14),
+                  padding: EdgeInsets.fromLTRB(14, 14, 14 + edge, 14),
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -90,14 +173,16 @@ class RoomTile extends ConsumerWidget {
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          _IconDot(palette: palette),
-                          Flexible(
-                            child: FittedBox(
-                              fit: BoxFit.scaleDown,
-                              alignment: Alignment.centerRight,
-                              child: _Climate(view: view),
+                          _IconDot(palette: palette, small: images != null),
+                          // Mit Thermometer steht die Temperatur dort.
+                          if (climate == null)
+                            Flexible(
+                              child: FittedBox(
+                                fit: BoxFit.scaleDown,
+                                alignment: Alignment.centerRight,
+                                child: _Climate(view: view),
+                              ),
                             ),
-                          ),
                         ],
                       ),
                       Padding(
@@ -129,8 +214,16 @@ class RoomTile extends ConsumerWidget {
                     ],
                   ),
                 ),
+                if (climate != null)
+                  Positioned(
+                    right: 0,
+                    top: 0,
+                    bottom: 0,
+                    width: ThermoEdge.width,
+                    child: ThermoEdge(climate: climate, name: view.name),
+                  ),
                 Positioned(
-                  right: 0,
+                  right: edge,
                   bottom: 0,
                   child: Semantics(
                     container: true,
@@ -174,32 +267,37 @@ class RoomTile extends ConsumerWidget {
       ),
     );
   }
+}
 
-  static String _short(String lamp, String room) =>
-      lamp.replaceAll(room, '').replaceAll(RegExp(r'\s+'), ' ').trim().isEmpty
-      ? lamp
-      : lamp.replaceAll(room, '').replaceAll(RegExp(r'\s+'), ' ').trim();
+/// Lampenname ohne den Raumnamen („Decke“ statt „Salon Decke“).
+String _shortName(String lamp, String room) {
+  final rest = lamp.replaceAll(room, '').replaceAll(RegExp(r'\s+'), ' ').trim();
+  return rest.isEmpty ? lamp : rest;
 }
 
 class _IconDot extends StatelessWidget {
-  const _IconDot({required this.palette});
+  const _IconDot({required this.palette, this.small = false});
   final RoomPalette palette;
+
+  /// Kleiner über dem Raumbild.
+  final bool small;
 
   @override
   Widget build(BuildContext context) {
     final hv = context.hv;
+    final d = small ? 30.0 : 38.0;
     return AnimatedPalette(
       palette: palette,
       builder: (context, p) => Container(
-        width: 38,
-        height: 38,
+        width: d,
+        height: d,
         decoration: BoxDecoration(
           shape: BoxShape.circle,
           color: Color.lerp(hv.s2, p.primary, p.intensity > 0 ? 1 : 0),
         ),
         child: Icon(
           Icons.lightbulb_rounded,
-          size: 20,
+          size: small ? 16 : 20,
           color: p.isOn ? p.onAccent : hv.tx3,
         ),
       ),

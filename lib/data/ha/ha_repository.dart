@@ -227,6 +227,7 @@ class HaRepository extends BaseRepository {
     final data = (event as Map?)?['data'] as Map?;
     if (data?['kind'] == 'automations') return _auto.notifyChanged();
     if (data?['kind'] == 'heating') return _heat.notifyChanged();
+    if (data?['kind'] == 'render') return _renderCtrl.add(null);
     final kind = AppDataKind.parse(data?['kind']);
     if (kind == null) return;
     if (kind == AppDataKind.prefs) {
@@ -1011,8 +1012,24 @@ class HaRepository extends BaseRepository {
   @override
   Future<RenderStatus?> renderStatus() async {
     if (!_features.contains('render')) return null;
-    return _render.status();
+    return _render.status(files: _features.contains('render_files'));
   }
+
+  @override
+  Future<Uint8List> renderFile(String set, String name) {
+    if (!_features.contains('render_files')) {
+      throw HavenException(
+        'Home Assistant kann die Bilder noch nicht zurückgeben',
+        code: 'not_supported',
+      );
+    }
+    return _render.file(set, name);
+  }
+
+  final _renderCtrl = StreamController<void>.broadcast();
+
+  @override
+  Stream<void> get renderChanges => _renderCtrl.stream;
 
   @override
   Future<void> uploadRenders(

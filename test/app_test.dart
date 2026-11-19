@@ -1,6 +1,8 @@
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:haven/features/home/room_render.dart';
+import 'package:haven/features/home/widgets/room_tile.dart';
 import 'package:haven/app.dart';
 import 'package:haven/core/state/providers.dart';
 import 'package:haven/core/widgets/haven_sheet.dart';
@@ -63,7 +65,14 @@ void main() {
     expect(find.text('Kochbereich'), findsOneWidget);
     expect(find.text('Waschraum'), findsOneWidget);
     expect(find.textContaining('Tischlampe'), findsWidgets);
-    expect(find.text('22,2°'), findsOneWidget);
+    // Räume mit Heizungsregelung: Thermometer am Kachelrand mit der
+    // Raumtemperatur der Regelung und dem Ziel (mit Grad-Zeichen).
+    final thermo = find.descendant(
+      of: find.byType(ThermoEdge),
+      matching: find.byType(Text),
+    );
+    final texts = [for (final e in thermo.evaluate()) (e.widget as Text).data];
+    expect(texts, containsAll(['21,3', '21,0°']));
     expect(find.text('kein Sensor'), findsWidgets);
     expect(find.text('Strom jetzt'), findsOneWidget);
     expect(find.textContaining('142', findRichText: true), findsWidgets);
@@ -84,6 +93,37 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Aus'), findsNWidgets(2));
     expect(find.text('Lampe · 100 %'), findsOneWidget);
+  });
+
+  testWidgets('Waagrecht ziehen auf der Kachel dimmt den Raum', (tester) async {
+    _phone(tester);
+    await tester.runAsync(() async => tester.pumpWidget(await _app()));
+    await tester.pumpAndSettle();
+    // Waschraum ist aus: nach rechts ziehen schaltet ihn gedimmt ein.
+    final tile = find.ancestor(
+      of: find.text('Waschraum'),
+      matching: find.byType(RoomTile),
+    );
+    final w = tester.getSize(tile).width;
+    final gesture = await tester.startGesture(tester.getCenter(tile));
+    await gesture.moveBy(Offset(w * 0.2, 0));
+    await gesture.moveBy(Offset(w * 0.2, 0));
+    await tester.pump();
+    expect(find.textContaining('Helligkeit'), findsOneWidget);
+    await gesture.up();
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Helligkeit'), findsNothing);
+    final status = find.descendant(
+      of: tile,
+      matching: find.textContaining('Lampe ·'),
+    );
+    expect(status, findsOneWidget);
+    final pct = int.parse(
+      RegExp(
+        r'(\d+) %',
+      ).firstMatch((tester.widget<Text>(status)).data!)!.group(1)!,
+    );
+    expect(pct, inInclusiveRange(30, 50));
   });
 
   testWidgets(

@@ -801,11 +801,14 @@ class GpuScene {
       for (final e in byMat.entries)
         if (!e.value.isEmpty) (e.value.geometry(), e.key),
     ];
+    // Geräte etwas dunkler als Möbel (aber kaum), damit man sie erkennt.
+    final device = o.kind.startsWith('device:');
     final mesh = fs.Mesh.primitives(
       primitives: [
         for (final (g, m) in parts)
           // Glas wirft keinen Schatten (Sonne durchs Fenster).
-          fs.MeshPrimitive(g, _mat.surface(m))..castsShadow = m != Mat.glass,
+          fs.MeshPrimitive(g, device ? _mat.device(m) : _mat.surface(m))
+            ..castsShadow = m != Mat.glass,
       ],
     );
     node.mesh = mesh;
@@ -1508,7 +1511,7 @@ class GpuScene {
     final sky = _sky;
     if (sky != null) {
       final l = sky.light;
-      scene.environmentIntensity = 0.9 * l.ambient;
+      scene.environmentIntensity = 0.9 * math.max(l.ambient, kSkyMinAmbient);
       scene.directionalLight = fs.DirectionalLight(
         direction: toFs(l.direction).normalized(),
         color: linearColor(l.color).xyz,
@@ -2149,6 +2152,26 @@ class _Materials {
     return mat;
   }
 
+  final Map<Mat, fs.PhysicallyBasedMaterial> _devices = {};
+
+  /// Material eines Geräts: wie [surface], nur leicht dunkler; dunkle
+  /// Teile deutlich weniger dunkel als bei Möbeln (Bildschirm, Kochfeld).
+  fs.PhysicallyBasedMaterial device(Mat m) => _devices.putIfAbsent(m, () {
+    final mat = fs.PhysicallyBasedMaterial();
+    _paintDevice(mat, m);
+    return mat;
+  });
+
+  void _paintDevice(fs.PhysicallyBasedMaterial mat, Mat m) {
+    _paint(mat, m);
+    if (m == Mat.glass) return;
+    final s = _style;
+    final c = m == Mat.dark
+        ? Color.lerp(s.surface, s.dark, 0.45)!
+        : Color.lerp(s.base(m), s.dark, kDeviceShade)!;
+    mat.baseColorFactor = linearColor(c, 1);
+  }
+
   void _paint(fs.PhysicallyBasedMaterial mat, Mat m) {
     final s = _style;
     mat.metallicFactor = 0;
@@ -2184,6 +2207,9 @@ class _Materials {
     _style = s;
     for (final e in _surfaces.entries) {
       _paint(e.value, e.key);
+    }
+    for (final e in _devices.entries) {
+      _paintDevice(e.value, e.key);
     }
     floor
       ..metallicFactor = 0
@@ -2315,6 +2341,13 @@ const int kBakedChannel = 0x40;
 
 /// Lichtkanal für alles außerhalb der Räume.
 const int kOutsideChannel = 0x80;
+
+/// Wie viel dunkler Geräte als Möbel sind (Anteil zur Farbe `dark`).
+const double kDeviceShade = 0.15;
+
+/// Mindestens so viel Grundlicht unter dem Himmel (nachts sonst fast
+/// schwarze Möbel): so ruhig wie ohne Himmel (`SceneStyle.evening`).
+const double kSkyMinAmbient = 0.3;
 
 /// Reichweite des Echtzeitlichts einer Lampe in Metern.
 const double kLampRange = 7;

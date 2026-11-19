@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'haven_repository.dart';
 import 'render_api.dart';
@@ -87,6 +88,15 @@ abstract class BaseRepository implements HavenRepository {
     'Bilder für Widgets gibt es hier nicht',
     code: 'not_supported',
   );
+
+  @override
+  Future<Uint8List> renderFile(String set, String name) => throw HavenException(
+    'Bilder für Widgets gibt es hier nicht',
+    code: 'not_supported',
+  );
+
+  @override
+  Stream<void> get renderChanges => const Stream.empty();
 
   // ---- Heizungsregelung: ohne Unterstützung (Unterklassen überschreiben) --
 

@@ -10,6 +10,7 @@ export 'src/devices.dart';
 export 'src/edges.dart' show Edge3, featureEdges;
 export 'src/gpu_scene.dart' show kSunDirection, sunDirectionOf;
 export 'src/heatmap.dart';
+export 'src/layer_paint.dart';
 export 'src/layers.dart';
 export 'src/furniture/catalog.dart'
     show

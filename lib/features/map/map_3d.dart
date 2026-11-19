@@ -336,6 +336,58 @@ h3.V3? mapSunOf(WidgetRef ref, double north) {
   return h3.sunDirectionOf(pos.$1, pos.$2, north: north);
 }
 
+/// Aktive Sensoren leuchten auf der Karte (nur Eigenleuchten in ihrer
+/// Farbe, keine Lichtquelle, also kein Licht und keine Schatten im Raum):
+/// Alarm (Rauch, Wasser, Gas …) rot pulsierend, Bewegung und Anwesenheit
+/// in [accent] pulsierend, offene Kontakte ruhig blau, sonst ruhig [accent].
+Map<String, h3.DeviceTint> sensorTintsOf(
+  HavenFloorPlan plan,
+  HavenSnapshot snap,
+  Color accent,
+) {
+  const alarm = {
+    'smoke',
+    'moisture',
+    'gas',
+    'carbon_monoxide',
+    'safety',
+    'problem',
+    'tamper',
+    'heat',
+  };
+  const motion = {
+    'motion',
+    'occupancy',
+    'presence',
+    'moving',
+    'vibration',
+    'sound',
+  };
+  const opening = {'door', 'window', 'opening', 'garage_door'};
+  return {
+    for (final p in plan.placements)
+      if (snap.entity(p.entityId) case final e?
+          when e.entityId.startsWith('binary_sensor.') && e.state == 'on')
+        p.entityId: switch (e.deviceClass) {
+          final c? when alarm.contains(c) => const h3.DeviceTint(
+            Color(0xFFE5484D),
+            pulse: true,
+            glow: 1,
+          ),
+          final c? when motion.contains(c) => h3.DeviceTint(
+            accent,
+            pulse: true,
+            glow: 0.8,
+          ),
+          final c? when opening.contains(c) => const h3.DeviceTint(
+            Color(0xFF5AB0FF),
+            glow: 0.6,
+          ),
+          _ => h3.DeviceTint(accent, glow: 0.5),
+        },
+  };
+}
+
 /// Lichtzustand einer Lampe für die Szene.
 h3.LampState lampStateOf(Lamp l) {
   if (!l.on || !l.available) return h3.LampState.off;

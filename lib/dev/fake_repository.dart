@@ -1,5 +1,7 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:math';
+import 'dart:typed_data';
 
 import '../core/light/color_math.dart';
 import '../data/base_repository.dart';
@@ -109,10 +111,42 @@ class FakeRepository extends BaseRepository {
 
   String? _renderKey;
   Set<String> _renderSets = const {};
+  Map<String, Uint8List> _renderFiles = const {};
+  final _renderCtrl = StreamController<void>.broadcast();
 
   @override
-  Future<RenderStatus?> renderStatus() async =>
-      RenderStatus(key: _renderKey, sets: _renderSets);
+  Future<RenderStatus?> renderStatus() async {
+    final info = <String, RenderSetInfo>{};
+    for (final set in _renderSets) {
+      final meta = _renderFiles['$set/meta.json'];
+      if (meta == null) continue;
+      final m = jsonDecode(utf8.decode(meta)) as Map<String, dynamic>;
+      final view = (m['view'] as Map?) ?? const {};
+      info[set] = RenderSetInfo(
+        room: view['room'] as String?,
+        theme: '${m['theme'] ?? ''}',
+        lamps: [...((m['lamps'] as Map?)?.keys.map((k) => '$k') ?? const [])],
+      );
+    }
+    return RenderStatus(
+      key: _renderKey,
+      sets: _renderSets,
+      info: info,
+      files: true,
+    );
+  }
+
+  @override
+  Future<Uint8List> renderFile(String set, String name) async {
+    final f = _renderFiles['$set/$name'];
+    if (f == null) {
+      throw HavenException('$set/$name gibt es nicht', code: 'not_found');
+    }
+    return f;
+  }
+
+  @override
+  Stream<void> get renderChanges => _renderCtrl.stream;
 
   @override
   Future<void> uploadRenders(
@@ -131,6 +165,8 @@ class FakeRepository extends BaseRepository {
     }
     _renderKey = key;
     _renderSets = {for (final f in files) f.path.split('/').first};
+    _renderFiles = {for (final f in files) f.path: f.bytes};
+    _renderCtrl.add(null);
   }
 
   @override

@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
 import '../render_api.dart';
 import 'ha_client.dart';
@@ -14,10 +15,30 @@ class HaRender {
   /// Rohe Bytes je Stück (Base64 macht daraus ein Drittel mehr).
   static const chunkSize = 256 * 1024;
 
-  Future<RenderStatus?> status() async {
+  Future<RenderStatus?> status({bool files = false}) async {
     final r = await client.send({'type': 'haven/render/status'});
     if (r is! Map || r['available'] != true) return null;
-    return RenderStatus.fromJson(Map<String, dynamic>.from(r));
+    return RenderStatus.fromJson(Map<String, dynamic>.from(r), files: files);
+  }
+
+  /// Datei eines Satzes in Stücken lesen (`haven/render/file`).
+  Future<Uint8List> file(String set, String name) async {
+    final out = BytesBuilder(copy: false);
+    var size = -1;
+    while (size < 0 || out.length < size) {
+      final r = await client.send({
+        'type': 'haven/render/file',
+        'set': set,
+        'name': name,
+        'offset': out.length,
+      });
+      final m = Map<String, dynamic>.from(r as Map);
+      size = (m['size'] as num).toInt();
+      final data = base64Decode(m['data'] as String);
+      if (data.isEmpty) break;
+      out.add(data);
+    }
+    return out.takeBytes();
   }
 
   Future<void> upload(
