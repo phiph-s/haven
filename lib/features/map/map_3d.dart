@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:math' as math;
+import 'dart:ui' show lerpDouble;
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:haven_3d/haven_3d.dart' as h3;
@@ -626,12 +627,22 @@ class _Map3DViewState extends ConsumerState<Map3DView> {
     });
     final byId = {for (final n in widget.nodes) n.id: n};
     // Mit Himmel in hell und dunkel dasselbe Licht und dieselben Farben,
-    // nur der Hintergrund unterscheidet sich.
-    final style =
-        (weather != null || !hv.isDark
-                ? h3.SceneStyle.light()
-                : h3.SceneStyle.dark())
-            .copyWith(accent: hv.acc);
+    // nur der Hintergrund unterscheidet sich. Im dunklen Design werden die
+    // Linien mit der Nacht hell wie im dunklen Stil (tagsüber blieben helle
+    // Linien auf hellen Böden unsichtbar). In Stufen, damit die Szene nicht
+    // bei jeder Minute neu einfärbt.
+    final night = weather != null && hv.isDark
+        ? 1 - (mapSkyDaylight(weather.sky) * 20).round() / 20
+        : 0.0;
+    final light = h3.SceneStyle.light();
+    final dark = h3.SceneStyle.dark();
+    final style = (weather != null || !hv.isDark ? light : dark).copyWith(
+      accent: hv.acc,
+      ink: night > 0 ? Color.lerp(light.ink, dark.ink, night) : null,
+      roomEdgeOpacity: night > 0
+          ? lerpDouble(light.roomEdgeOpacity, dark.roomEdgeOpacity, night)
+          : null,
+    );
     final view = h3.Scene3DView(
       scene: scene,
       controller: c,

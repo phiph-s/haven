@@ -65,7 +65,8 @@ class SceneStyle {
 
   /// Dunkel: Abend, wenig Umgebungslicht, die Lampen tragen das Bild.
   factory SceneStyle.dark() => const SceneStyle(
-    ink: Color(0xFF9AA0AA),
+    // Linien hell: vor dunklen Böden und Wänden gut zu sehen.
+    ink: Color(0xFFC2C7CF),
     // Helle Grundfarben, wenig Licht: Dunkel kommt vom Licht, nicht von
     // der Farbe. So hellen Lampen die Möbel sichtbar warm auf.
     surface: Color(0xFFB4B8BF),
@@ -80,7 +81,7 @@ class SceneStyle {
     // Etwas Grundlicht: unbeleuchtete Räume bleiben dunkel, aber lesbar.
     ambient: 0.27,
     sun: 0.1,
-    roomEdgeOpacity: 0.6,
+    roomEdgeOpacity: 0.85,
     // Abends streut das Lampenlicht stärker in die Schatten.
     shadowFill: 0.5,
     wallOpacity: 0.62,
@@ -171,6 +172,7 @@ class SceneStyle {
   };
 
   SceneStyle copyWith({
+    Color? ink,
     Color? accent,
     double? wallOpacity,
     double? floorOpacity,
@@ -188,7 +190,7 @@ class SceneStyle {
     double? shadowFill,
     double? wallGlow,
   }) => SceneStyle(
-    ink: ink,
+    ink: ink ?? this.ink,
     surface: surface,
     soft: soft,
     floor: floor,

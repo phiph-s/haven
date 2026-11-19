@@ -449,8 +449,12 @@ final mapWeatherProvider = Provider.family<MapWeather, double>((ref, north) {
 
 /// Farben des Hintergrunds der Karte unter diesem Himmel: oben der Himmel
 /// nach Tageszeit und Wolken, unten weiß (hell) bzw. schwarz (dunkel).
+/// Tageslicht des Himmels: 0 Nacht … 1 Tag (Sonne höher als etwa 12°).
+double mapSkyDaylight(h3.SceneSky sky) =>
+    ((sky.sunElevation + 8) / 20).clamp(0.0, 1.0);
+
 List<Color> mapSkyGradient(h3.SceneSky sky, {required bool dark}) {
-  final dayT = ((sky.sunElevation + 8) / 20).clamp(0.0, 1.0);
+  final dayT = mapSkyDaylight(sky);
   final top = Color.lerp(
     const Color(0xFF0B1020),
     Color.lerp(const Color(0xFF8DB7E8), const Color(0xFFB7C0CA), sky.cover)!,

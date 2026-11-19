@@ -133,6 +133,7 @@ class SceneController extends ChangeNotifier {
     }
     if (_sky != null) g.setSky(_sky);
     if (_ground != null) g.setGround(_ground);
+    g.scene.exposure = _exposure;
     for (final e in _tints.entries) {
       g.setDeviceTint(e.key, e.value);
     }
@@ -295,6 +296,19 @@ class SceneController extends ChangeNotifier {
     if (_lamps[id] == state) return;
     _lamps[id] = state;
     _gpu?.setLamp(id, state);
+    _view?._lightChanged();
+  }
+
+  double _exposure = 1;
+
+  /// Belichtung vor dem Tone-Mapping (1 = normal). Unter 1 brennen helle
+  /// Flächen nicht aus, etwa für Lichtebenen, die später außerhalb der GPU
+  /// zusammengesetzt und wieder aufgehellt werden.
+  double get exposure => _exposure;
+  set exposure(double v) {
+    if (_exposure == v) return;
+    _exposure = v;
+    _gpu?.scene.exposure = v;
     _view?._wake();
   }
 
@@ -309,7 +323,7 @@ class SceneController extends ChangeNotifier {
     if (_ground == ground) return;
     _ground = ground;
     _gpu?.setGround(ground);
-    _view?._wake();
+    _view?._lightChanged();
   }
 
   /// Gerät [id] (Marker-ID) einfärben und leuchten lassen, z. B. einen
@@ -336,7 +350,7 @@ class SceneController extends ChangeNotifier {
     if (_sky == sky) return;
     _sky = sky;
     _gpu?.setSky(sky);
-    _view?._wake();
+    _view?._lightChanged();
   }
 
   /// Richtung des Sonnenlichts (von der Sonne zum Boden, Weltkoordinaten),
@@ -346,7 +360,7 @@ class SceneController extends ChangeNotifier {
     if (_sun == direction) return;
     _sun = direction;
     _gpu?.setSunDirection(direction);
-    _view?._wake();
+    _view?._lightChanged();
   }
 
   /// Vorschau eines Geräts beim Platzieren (siehe `GpuScene.setPreview`).
@@ -369,7 +383,7 @@ class SceneController extends ChangeNotifier {
     if (_open.containsKey(id) && _open[id] == open) return;
     _open[id] = open;
     _gpu?.setObjectOpen(id, open);
-    _view?._wake();
+    _view?._lightChanged();
   }
 
   /// Perspektive ein- oder ausblenden (animiert, Maßstab bleibt).
@@ -685,6 +699,15 @@ class _Scene3DViewState extends State<Scene3DView>
     } else {
       _later(() => _active = true);
     }
+  }
+
+  /// Licht hat sich geändert: neu bauen, damit [GpuScene.flushLight] die
+  /// gebakenen Flächen (Böden, Oberseiten) gleich mischt. [_wake] allein
+  /// baut nicht neu, solange die Ansicht schon läuft; dann käme das Licht
+  /// erst nach der Ruhezeit.
+  void _lightChanged() {
+    _wake();
+    _later(() {});
   }
 
   /// setState, auch wenn der Aufruf mitten aus einem Build kommt (etwa aus

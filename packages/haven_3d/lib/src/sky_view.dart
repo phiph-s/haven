@@ -17,8 +17,8 @@ import 'view.dart';
 /// Richtung zu ihnen wird mit der Kamera auf den Bildschirm projiziert, so
 /// passen sie zu den Schatten. Alles ist 2D und billig: Wolken sind einmal
 /// vorgerenderte Bilder, die nur verschoben werden, Sterne ein fester
-/// Punktsatz. Die Animation (Wolkenzug, Funkeln) läuft nur, solange es
-/// Wolken oder Sterne gibt.
+/// Punktsatz. Die Animation läuft nur bei Regen, Schnee oder Gewitter;
+/// Wolken und Sterne stehen still.
 ///
 /// [child] ist die 3D-Ansicht (durchsichtiger Hintergrund); der Himmel liegt
 /// dahinter, Blendung und ein Teil der Wolken davor.
@@ -64,21 +64,14 @@ class _SkyLayersState extends State<SkyLayers>
   final ValueNotifier<double> _time = ValueNotifier(0);
   List<ui.Image>? _clouds;
 
-  void _tick(Duration d) {
-    final t = d.inMilliseconds / 1000;
-    final s = widget.sky;
-    // Nur Wolken: langsam, etwa 10 Bilder je Sekunde genügen.
-    final calm = s.wetness <= 0.02 && s.snow <= 0.02 && s.storm <= 0.02;
-    if (calm && t >= _time.value && t - _time.value < 0.1) return;
-    _time.value = t;
-  }
+  void _tick(Duration d) => _time.value = d.inMilliseconds / 1000;
 
   bool get _moving {
     final s = widget.sky;
     return widget.animate &&
-        // Nur Wolken, Regen, Schnee und Gewitter bewegen sich; Sterne stehen
-        // still (spart in der App die ganze Nacht Bilder).
-        (s.cover > 0.02 || s.wetness > 0.02 || s.snow > 0.02 || s.storm > 0.02);
+        // Nur Regen, Schnee und Gewitter bewegen sich; Wolken und Sterne
+        // stehen still (spart in der App Bilder, den ganzen Tag lang).
+        (s.wetness > 0.02 || s.snow > 0.02 || s.storm > 0.02);
   }
 
   void _sync() {
@@ -368,7 +361,7 @@ class _SkyPainter extends CustomPainter {
   }
 
   /// Wolken in der Welt: auf einem Ring um die Wohnung, ein paar Meter über
-  /// dem Dach, langsam kreisend. Sie drehen mit der Kamera mit.
+  /// dem Dach, fest an ihrem Platz. Sie drehen mit der Kamera mit.
   void _clouds(
     Canvas canvas,
     Size size,
@@ -399,10 +392,10 @@ class _SkyPainter extends CustomPainter {
       final dist = 3.5 + rnd.nextDouble() * 4;
       final z = f.height * 0.5 + rnd.nextDouble() * 0.8;
       final meters = (6 + rnd.nextDouble() * 4) * (0.85 + cloud * 0.4);
-      final speed =
-          (0.012 + rnd.nextDouble() * 0.02) * (rnd.nextBool() ? 1 : -1);
       final img = f.clouds[i % f.clouds.length];
-      final at = _around(area, a0 + f.time * speed, dist);
+      // Fest an ihrem Platz: ziehende Wolken lenkten ab (und sprangen auf
+      // dem gestauchten Ring an den Seiten schnell hinüber).
+      final at = _around(area, a0, dist);
       final vp = f.camera.project(V3(at.dx, at.dy, z), size);
       // Näher an der Kamera als die Mitte der Wohnung: davor.
       final mid = f.camera.project(V3(area.center.dx, area.center.dy, z), size);

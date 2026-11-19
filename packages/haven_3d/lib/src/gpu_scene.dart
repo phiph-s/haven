@@ -71,8 +71,10 @@ class GpuScene {
       // (sonst schiene die Sonne durch Spalt und Tür hinein).
       if (on) _roof ??= _roofNode();
       _syncRoof();
+      // Flächen behalten den gebakenen Kanal: Sonne und Mond (Kanal 0xFF)
+      // erreichen sie trotzdem in Echtzeit, Lampen nur gebaken. Mit allen
+      // Kanälen fiele Lampenlicht ungehindert auf die Böden der Nachbarräume.
       for (final r in _receivers) {
-        r.node?.lightChannelMask = quality.bakes && !on ? kBakedChannel : 0xFF;
         _dirty.add(r);
       }
       for (final o in _objects.values) {
@@ -1277,9 +1279,10 @@ class GpuScene {
     _receivers.add(r);
     return r
         .node = fs.Node(name: name, mesh: fs.Mesh(_receiverGeometry(bake), mat))
-      // Ohne Baking (Entwurf) und mit Himmel (`setSky`) bescheint die
-      // Sonne die Fläche in Echtzeit.
-      ..lightChannelMask = quality.bakes && _sky == null ? kBakedChannel : 0xFF;
+      // Lampen nur gebaken (Wände halten ihr Licht auf). Ohne Baking
+      // (Entwurf) alles in Echtzeit. Mit Himmel (`setSky`) erreicht die
+      // Sonne die Fläche trotzdem in Echtzeit (sie leuchtet in alle Kanäle).
+      ..lightChannelMask = quality.bakes ? kBakedChannel : 0xFF;
   }
 
   void _paintReceiver(_Receiver r) {
@@ -1759,6 +1762,13 @@ class GpuScene {
   final Map<String, double> _lit = {};
   final Stopwatch _litClock = Stopwatch()..start();
 
+  /// Lichtwechsel ohne Überblendung (für fertige Bilder, siehe
+  /// `LayerRenderer`): Möbellinien springen sofort auf den neuen Stand.
+  bool instantLight = false;
+
+  /// Raum, dessen Möbellinien Lampe [id] ausblendet (`null`: draußen).
+  String? lampRoom(String id) => _bulbRoom[id];
+
   /// Blenden die Möbellinien noch (Licht wurde geschaltet)?
   bool get fading => _fading || _pulsing.isNotEmpty;
   bool _fading = false;
@@ -1844,7 +1854,7 @@ class GpuScene {
     for (final r in _roomNodes.keys) {
       final target = on.contains(r) ? 1.0 : 0.0;
       final cur = _lit[r];
-      if (cur == null) {
+      if (cur == null || instantLight) {
         // Erstes Bild: ohne Überblendung.
         _lit[r] = target;
         continue;
