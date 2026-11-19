@@ -70,6 +70,10 @@ android {
                 logger.warn("WARNUNG: Kein Release-Schlüssel (android/key.properties oder HAVEN_KEYSTORE*). Der Release-Build wird mit dem Debug-Schlüssel signiert und taugt nicht zur Veröffentlichung.")
                 signingConfigs.getByName("debug")
             }
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro",
+            )
         }
     }
 }
