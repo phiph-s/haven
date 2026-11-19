@@ -79,6 +79,9 @@ class GpuScene {
   /// Wand), für das Baking.
   final Map<String, V3> _lampWorld = {};
 
+  /// Richtung des Lichtkegels je Lampe (Welt).
+  final Map<String, V3> _lampAxis = {};
+
   final Map<String, LampState> _lampState = {};
 
   /// Gebakenes Lampenlicht: Empfangsflächen (Böden, Möbel-Oberseiten) und
@@ -298,10 +301,11 @@ class GpuScene {
     for (final m in source.markers) {
       final roomId = source.markerRoom[m.id];
       final spec = m.model == null ? null : deviceSpec(m.model);
+      final how = spec?.mountOf(m.mount);
       // Montagepunkt: Wandgeräte an die nächste Wand, zum Raum gedreht.
       var at = m.position.xy;
       var rot = 0.0;
-      if (spec != null && spec.wall && roomId != null) {
+      if (spec != null && spec.isWall(how) && roomId != null) {
         final pose = _wallPose(at, roomId);
         if (pose != null) (at, rot) = pose;
       }
@@ -310,8 +314,8 @@ class GpuScene {
         _addObject(
           SceneObject(
             id: 'device:${m.id}',
-            kind: 'device:${spec.id}',
-            model: spec.model(),
+            kind: 'device:${spec.id}${spec.isWall(how) ? '@wall' : ''}',
+            model: spec.model(how),
             position: mount,
             rotation: rot,
             roomId: roomId,
@@ -331,6 +335,16 @@ class GpuScene {
           vm.Vector3(0, 1, 0),
           rot * math.pi / 180,
         );
+      // Lichtquelle und Kegel folgen der Montage: Kind-Knoten gekippt um x
+      // (gleicher Sinn wie in haven), der Kegel zeigt dann mit.
+      final tilt = switch (how) {
+        DeviceMount.wall => -math.pi / 2,
+        DeviceMount.up => math.pi,
+        _ => 0.0,
+      };
+      final holder = fs.Node(name: 'mount:${m.id}')
+        ..rotation = vm.Quaternion.axisAngle(vm.Vector3(1, 0, 0), tilt);
+      node.add(holder);
       _lampMask[m.id] = roomId == null ? 0xFF : _maskOf(roomId);
       _lampState[m.id] = lamp;
       _lampCone[m.id] = spec?.lamp?.cone;
@@ -338,8 +352,8 @@ class GpuScene {
         ..position = toFs(V3(0, 0, spec?.lamp?.lightZ ?? 0));
       final light = _lightComponent(m.id, lamp);
       lightNode.addComponent(light);
-      node.add(lightNode);
-      final glow = spec?.glowModel();
+      holder.add(lightNode);
+      final glow = spec?.glowModel(how);
       final geo = glow == null || glow.faces.isEmpty
           ? _bulbGeometry
           : (() {
@@ -358,7 +372,12 @@ class GpuScene {
       _lampNodes[m.id] = light;
       _bulbs[m.id] = bulb;
       _bulbRoom[m.id] = roomId;
-      _lampWorld[m.id] = mount + V3(0, 0, spec?.lamp?.lightZ ?? 0);
+      final rad = rot * math.pi / 180;
+      _lampWorld[m.id] =
+          mount + (spec?.lightOffset(how) ?? V3.zero).rotateZ(rad);
+      _lampAxis[m.id] = (spec?.lightAxis(how) ?? const V3(0, 0, -1)).rotateZ(
+        rad,
+      );
       scene.add(node);
     }
 
@@ -378,14 +397,16 @@ class GpuScene {
     }
   }
 
-  /// Türöffnungen (Welt) für [_cutDoors], einmal je Szene.
-  late final List<({Offset a, Offset b, double height})> _doors = [
-    for (final o in source.objects) ?o.doorOpening,
+  /// Öffnungen von Türen und Fenstern (Welt) für [_cutDoors], einmal je
+  /// Szene.
+  late final List<({Offset a, Offset b, double z0, double z1})> _doors = [
+    for (final o in source.objects) ?o.wallOpening,
   ];
 
-  /// Wand [w] ohne die Türen darin: Stücke links und rechts in voller
-  /// Höhe, über der Tür ein Sturz. Türen wirken auf beide Räume, deren
-  /// Wände die Tür berühren (gleich auf welcher Seite sie steht).
+  /// Wand [w] ohne die Türen und Fenster darin: Stücke links und rechts in
+  /// voller Höhe, über der Öffnung ein Sturz, unter einem Fenster die
+  /// Brüstung. Öffnungen wirken auf alle Wände, die sie berühren (beide
+  /// Räume, gleich auf welcher Seite, auch über eine Raumgrenze hinweg).
   List<Face3> _cutDoors(Face3 w) {
     if (_doors.isEmpty) return [w];
     final a = w.points[0].xy, b = w.points[1].xy;
@@ -396,7 +417,7 @@ class GpuScene {
     final u = e / len;
     double along(Offset p) => (p - a).dx * u.dx + (p - a).dy * u.dy;
     double across(Offset p) => ((p - a).dx * u.dy - (p - a).dy * u.dx).abs();
-    final cuts = <(double, double, double)>[];
+    final cuts = <(double, double, double, double)>[];
     for (final d in _doors) {
       final o = d.b - d.a;
       if (o.distance < 1e-6) continue;
@@ -405,7 +426,9 @@ class GpuScene {
       if (par > 0.2 || across(d.a) > 0.3 || across(d.b) > 0.3) continue;
       final t0 = math.max(0.0, math.min(along(d.a), along(d.b)));
       final t1 = math.min(len, math.max(along(d.a), along(d.b)));
-      if (t1 - t0 > 0.05) cuts.add((t0, t1, math.min(d.height, h)));
+      if (t1 - t0 > 0.05) {
+        cuts.add((t0, t1, math.min(d.z0, h), math.min(d.z1, h)));
+      }
     }
     if (cuts.isEmpty) return [w];
     cuts.sort((x, y) => x.$1.compareTo(y.$1));
@@ -425,10 +448,13 @@ class GpuScene {
 
     final out = <Face3>[];
     var t = 0.0;
-    for (final (t0, t1, top) in cuts) {
+    for (final (t0, t1, bottom, top) in cuts) {
       if (t0 > t + 1e-3) out.add(piece(t, t0, 0, h));
       final from = math.max(t, t0);
-      if (t1 > from && top < h - 0.02) out.add(piece(from, t1, top, h));
+      if (t1 > from) {
+        if (bottom > 0.02) out.add(piece(from, t1, 0, bottom));
+        if (top < h - 0.02) out.add(piece(from, t1, top, h));
+      }
       t = math.max(t, t1);
     }
     if (len > t + 1e-3) out.add(piece(t, len, 0, h));
@@ -438,10 +464,18 @@ class GpuScene {
   /// Knoten eines Möbelstücks (Körper, gebakene Oberseiten, Kanten) bauen
   /// und in seinen Raum hängen.
   _ObjectNode _addObject(SceneObject o) {
-    final roomId = source.objectRoom[o.id];
-    final parent = roomId == null ? null : _roomNodes[roomId];
+    // Geräte stehen nicht in `source.objects`: ihr Raum kommt mit.
+    final roomId = source.objectRoom[o.id] ?? o.roomId;
+    // Über mehrere Räume (Tür, Fenster zwischen zwei Räumen oder über eine
+    // Raumgrenze): nicht im Raumknoten, steht, solange einer der Räume
+    // steht (siehe [sync]).
+    final rooms = source.objectRooms[o.id] ?? {?roomId};
+    final spans = rooms.length > 1;
+    final parent = roomId == null || spans ? null : _roomNodes[roomId];
     final node = fs.Node(name: 'object:${o.id}')
-      ..lightChannelMask = _maskOf(roomId);
+      ..lightChannelMask = spans
+          ? rooms.fold<int>(0, (m, r) => m | _maskOf(r))
+          : _maskOf(roomId);
     final byMat = <Mat, _MeshAcc>{};
     final tops = <Face3>[];
     for (final f in o.world.faces) {
@@ -509,6 +543,7 @@ class GpuScene {
     }
     (parent ?? scene.root).add(node);
     return _objects[o.id] = _ObjectNode(o, roomId, node, normal, accent)
+      ..rooms = rooms
       ..mesh = mesh
       ..parts = parts
       ..tops = topPolys;
@@ -526,9 +561,12 @@ class GpuScene {
     if (cur == null || !cur.object.wallMounted) return;
     if (_openState.containsKey(id) && _openState[id] == open) return;
     _openState[id] = open;
-    final parent = cur.roomId == null ? null : _roomNodes[cur.roomId];
-    (parent ?? scene.root).remove(cur.node);
-    _addObject(cur.object.withOpen(open));
+    cur.node.parent?.remove(cur.node);
+    final next = _addObject(cur.object.withOpen(open));
+    if (cur.height != null) {
+      next.node.scale = vm.Vector3(1, math.max(cur.height!, kFlat), 1);
+      next.height = cur.height;
+    }
     // Auswahl, Ausblendung und Tönung beim nächsten sync neu anwenden.
     _selected = const {'\u0000'};
     _hiddenObjects = const {'\u0000'};
@@ -639,6 +677,7 @@ class GpuScene {
     Offset at = Offset.zero,
     double z = 0,
     String? roomId,
+    DeviceMount? mount,
   }) {
     if (model == null) {
       final n = _previewNode;
@@ -648,11 +687,13 @@ class GpuScene {
       return;
     }
     final spec = deviceSpec(model);
-    if (model != _previewModel || _previewNode == null) {
+    final how = spec.mountOf(mount);
+    final key = '$model@${how?.name}';
+    if (key != _previewModel || _previewNode == null) {
       final old = _previewNode;
       if (old != null) scene.root.remove(old);
-      final m = spec.model();
-      final g = spec.glowModel();
+      final m = spec.model(how);
+      final g = spec.glowModel(how);
       final acc = _MeshAcc();
       for (final f in [...m.faces, ...?g?.faces]) {
         acc.addFace(f, twoSided: true);
@@ -665,11 +706,11 @@ class GpuScene {
       }
       scene.add(node);
       _previewNode = node;
-      _previewModel = model;
+      _previewModel = key;
     }
     var pos = at;
     var rot = 0.0;
-    if (spec.wall && roomId != null) {
+    if (spec.isWall(how) && roomId != null) {
       final pose = _wallPose(at, roomId);
       if (pose != null) (pos, rot) = pose;
     }
@@ -843,7 +884,8 @@ class GpuScene {
       // Möbel färben mit: Oberseiten mit derselben Fläche wie der Boden,
       // die Seiten in der Farbe an ihrer Mitte.
       for (final o in _objects.values) {
-        if (o.roomId != r.id) continue;
+        // Geräte behalten ihre Farbe.
+        if (o.roomId != r.id || o.object.kind.startsWith('device:')) continue;
         for (final top in o.tops) {
           final n = _heatNode('heat-top:${o.object.id}', h, r.id, [
             for (final p in top) V3(p.x, p.y, p.z + 0.003),
@@ -986,36 +1028,69 @@ class GpuScene {
     })
     occ,
   }) {
+    var pos = _lampWorld[m.id] ?? m.lightPosition;
+    final axis = _lampAxis[m.id] ?? m.lightAxis;
+    var cone = m.cone;
+    var gain = 1.0;
+    if (axis.z > 0.5) {
+      // Nach oben (Uplight): Licht kommt erst von der Decke zurück, weich
+      // und schwächer, als wäre dort eine Lampe ohne Kegel.
+      final room = source.room(source.markerRoom[m.id] ?? '');
+      pos = V3(pos.x, pos.y, (room?.wallHeight ?? kDefaultWallHeight) - 0.05);
+      cone = null;
+      gain = 0.35;
+    }
+    Float32List scaled(Float32List v) {
+      if (gain != 1) {
+        for (var i = 0; i < v.length; i++) {
+          v[i] *= gain;
+        }
+      }
+      return v;
+    }
+
     if (own) {
       final open = Float32List(r.bake.width * r.bake.height);
-      r.lamps[m.id] = bakeLamp(
-        r.bake,
-        _lampWorld[m.id] ?? m.lightPosition,
-        occ.objects,
-        samples: quality.bakeSamples,
-        unshadowed: open,
-        cone: m.cone,
+      r.lamps[m.id] = scaled(
+        bakeLamp(
+          r.bake,
+          pos,
+          occ.objects,
+          samples: quality.bakeSamples,
+          unshadowed: open,
+          cone: cone,
+          axis: axis,
+        ),
       );
-      r.lampsOpen[m.id] = open;
+      r.lampsOpen[m.id] = scaled(open);
       return;
     }
     // Nachbarraum der Zone: erst billig prüfen, ob durch Tür oder offene
     // Wand überhaupt Licht ankommt.
-    final pos = _lampWorld[m.id] ?? m.lightPosition;
-    final through = bakeLamp(r.bake, pos, occ.walls, samples: 1, cone: m.cone);
+    final through = bakeLamp(
+      r.bake,
+      pos,
+      occ.walls,
+      samples: 1,
+      cone: cone,
+      axis: axis,
+    );
     if (!through.any((v) => v > 0)) {
       r.lamps.remove(m.id);
       r.lampsOpen.remove(m.id);
       return;
     }
-    r.lamps[m.id] = bakeLamp(
-      r.bake,
-      pos,
-      occ.lamp,
-      samples: quality.bakeSamples,
-      cone: m.cone,
+    r.lamps[m.id] = scaled(
+      bakeLamp(
+        r.bake,
+        pos,
+        occ.lamp,
+        samples: quality.bakeSamples,
+        cone: cone,
+        axis: axis,
+      ),
     );
-    r.lampsOpen[m.id] = through;
+    r.lampsOpen[m.id] = scaled(through);
   }
 
   void _bakeZone(Map<String, List<_Receiver>> byRoom) {
@@ -1159,13 +1234,29 @@ class GpuScene {
         e.value.scale = vm.Vector3(1, math.max(h, kFlat), 1);
       }
     }
+    // Objekte über mehrere Räume: so hoch wie der höchste ihrer Räume.
+    for (final o in _objects.values) {
+      if (o.rooms.length < 2) continue;
+      var h = 0.0;
+      for (final r in o.rooms) {
+        h = math.max(h, (heights[r] ?? 1).clamp(0.0, 1.0));
+      }
+      if (o.height != h) {
+        o.height = h;
+        o.node.scale = vm.Vector3(1, math.max(h, kFlat), 1);
+      }
+    }
     if (focusRoomId != _focus) {
       _focus = focusRoomId;
       for (final e in _roomNodes.entries) {
         e.value.visible = focusRoomId == null || e.key == focusRoomId;
       }
       for (final o in _objects.values) {
-        if (o.roomId == null) o.node.visible = focusRoomId == null;
+        if (o.roomId == null) {
+          o.node.visible = focusRoomId == null;
+        } else if (o.rooms.length > 1) {
+          o.node.visible = focusRoomId == null || o.rooms.contains(focusRoomId);
+        }
       }
     }
     if (cam.scale != _edgeScale) {
@@ -1235,25 +1326,29 @@ class GpuScene {
       if (near) cut.add(w);
     }
     for (final o in _objects.values) {
+      final inFocus = _focus == null || o.rooms.contains(_focus);
       if (!_onWallThing(o.object)) {
-        if (o.object.wallMounted) {
-          o.node.visible = _focus == null || o.roomId == _focus;
-        }
+        if (o.object.wallMounted) o.node.visible = inFocus;
         continue;
       }
-      final room = o.roomId;
-      var hide = false;
-      for (final w in cut) {
-        if (w.room.id == room && _onWall(o.object, w.face)) hide = true;
-      }
+      // Weg nur, wenn jede stehende Wand, in der es sitzt, ausgeschnitten
+      // ist (zwischen zwei Räumen bleibt es an der hinteren Wand).
+      final on = _wallsOf[o.object.id] ??= [
+        for (final w in _walls)
+          if (o.rooms.contains(w.room.id) && _onWall(o.object, w.face)) w,
+      ];
+      var standing = 0, removed = 0;
       // An einer durchscheinenden Wand (gewählter Raum, vorne): genauso
       // durchscheinend wie die Wand.
       var see = false;
-      for (final w in ghost) {
-        if (w.room.id == room && _onWall(o.object, w.face)) see = true;
+      for (final w in on) {
+        if ((_heights[w.room.id] ?? 1) <= 0.5) continue;
+        standing++;
+        if (cut.contains(w)) removed++;
+        if (ghost.contains(w)) see = true;
       }
       _ghostObject(o, see);
-      o.node.visible = !hide && (_focus == null || room == _focus);
+      o.node.visible = !(standing > 0 && removed == standing) && inFocus;
     }
     // Ausgeblendete Möbel (z. B. gerade gezogen, ein Overlay zeigt sie).
     if (!_setEquals(hiddenObjects, _hiddenObjects)) {
@@ -1272,6 +1367,9 @@ class GpuScene {
   }
 
   Set<String> _hiddenObjects = const {};
+
+  /// Wände, in denen ein Objekt sitzt (je Szene fest).
+  final Map<String, List<_WallNode>> _wallsOf = {};
 
   /// Je Raum: wie weit sein Licht an ist (0 … 1, weich nachgeführt).
   final Map<String, double> _lit = {};
@@ -1315,7 +1413,7 @@ class GpuScene {
   static bool _onWallThing(SceneObject o) {
     if (!o.wallMounted) return false;
     if (o.kind.startsWith('device:')) {
-      return deviceSpec(o.kind.substring(7)).wall;
+      return o.kind.endsWith('@wall') || deviceSpec(o.kind.substring(7)).wall;
     }
     return true;
   }
@@ -1426,6 +1524,12 @@ class _ObjectNode {
   final fs.Node node;
   final fs.Node edges;
   final fs.Node accentEdges;
+
+  /// Alle Räume, die es berührt (siehe `Scene.objectRooms`).
+  Set<String> rooms = const {};
+
+  /// Höhe (0 … 1) bei Objekten über mehrere Räume, sonst `null`.
+  double? height;
 
   /// Körper mit den gemeinsamen Materialien (ohne Heatmap-Tönung).
   fs.Mesh? mesh;

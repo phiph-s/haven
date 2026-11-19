@@ -1,5 +1,6 @@
 import 'dart:ui' show Color, Offset;
 
+import 'devices.dart';
 import 'scene.dart';
 
 /// Beispielwohnung (frei erfunden) für Demo und Tests: sechs Räume, alle
@@ -124,7 +125,8 @@ Scene sampleScene() {
       ),
       SceneMarker(
         id: 'melder_flur',
-        model: 'motion_wall',
+        model: 'motion',
+        mount: DeviceMount.wall,
         at: const Offset(0.2, 4.7),
         kind: MarkerKind.presence,
       ),

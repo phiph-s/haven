@@ -330,6 +330,7 @@ class FloorPlacement {
     this.deviceId,
     this.model,
     this.height,
+    this.mount,
   });
 
   factory FloorPlacement.fromJson(Map<String, dynamic> j) => FloorPlacement(
@@ -342,6 +343,7 @@ class FloorPlacement {
     height: (j['height'] is num && (j['height'] as num).isFinite)
         ? (j['height'] as num).toDouble()
         : null,
+    mount: j['mount'] is String ? j['mount'] as String : null,
   );
 
   final String entityId;
@@ -357,6 +359,9 @@ class FloorPlacement {
   /// Höhe über dem Boden in Metern, `null`: Standard der Bauform.
   final double? height;
 
+  /// Montage (`ceiling`, `wall`, `up`), `null`: Standard der Bauform.
+  final String? mount;
+
   FloorKind get resolvedKind => kind ?? FloorKind.ofEntity(entityId);
   GridPoint get cell => GridPoint(x, y);
 
@@ -371,6 +376,7 @@ class FloorPlacement {
     if (deviceId != null) 'deviceId': deviceId,
     if (model != null) 'model': model,
     if (height != null) 'height': (height! * 100).roundToDouble() / 100,
+    if (mount != null) 'mount': mount,
   };
 
   FloorPlacement copyWith({
@@ -383,6 +389,8 @@ class FloorPlacement {
     bool clearModel = false,
     double? height,
     bool clearHeight = false,
+    String? mount,
+    bool clearMount = false,
   }) => FloorPlacement(
     entityId: entityId ?? this.entityId,
     x: x ?? this.x,
@@ -391,6 +399,7 @@ class FloorPlacement {
     deviceId: deviceId ?? this.deviceId,
     model: clearModel ? null : (model ?? this.model),
     height: clearHeight ? null : (height ?? this.height),
+    mount: clearMount ? null : (mount ?? this.mount),
   );
 
   @override
@@ -402,11 +411,12 @@ class FloorPlacement {
       other.kind == kind &&
       other.deviceId == deviceId &&
       other.model == model &&
-      other.height == height;
+      other.height == height &&
+      other.mount == mount;
 
   @override
   int get hashCode =>
-      Object.hash(entityId, x, y, kind, deviceId, model, height);
+      Object.hash(entityId, x, y, kind, deviceId, model, height, mount);
 
   @override
   String toString() => 'FloorPlacement($entityId @ $x, $y)';

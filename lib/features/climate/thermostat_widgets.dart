@@ -271,6 +271,7 @@ class ThermoModeChip extends StatelessWidget {
 
   static IconData iconOf(ThermoMode m) => switch (m) {
     ThermoMode.manual => Icons.pan_tool_alt_outlined,
+    ThermoMode.open => Icons.local_fire_department_outlined,
     ThermoMode.schedule => Icons.schedule_rounded,
     ThermoMode.comfort => Icons.weekend_outlined,
     ThermoMode.eco => Icons.eco_outlined,

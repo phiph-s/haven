@@ -1019,7 +1019,7 @@ const List<Map<String, dynamic>> kFakeThermostatZigbee = [
 /// Startwerte der Thermostate (Z2M-Zustand) nach Name.
 const Map<String, Map<String, dynamic>> kFakeThermostatStates = {
   'Thermostat Salon': {
-    'preset': 'on',
+    'preset': 'comfort',
     'system_mode': 'heat',
     'current_heating_setpoint': 21.0,
     'local_temperature': 19.6,

@@ -113,7 +113,7 @@ void main() {
       expect(find.byType(ThermostatDial), findsOneWidget);
       expect(find.text('Heizt auf 21 °C'), findsOneWidget);
       expect(find.text('Raum 19,6 °C'), findsOneWidget);
-      for (final m in ['Manuell', 'Zeitplan', 'Komfort', 'Eco', 'Aus']) {
+      for (final m in ['Ventil offen', 'Zeitplan', 'Komfort', 'Eco', 'Aus']) {
         expect(find.text(m), findsOneWidget, reason: m);
       }
       expect(find.text('Frostschutz'), findsOneWidget);
@@ -157,6 +157,9 @@ void main() {
 
     testWidgets('Aus sperrt das Rad und die Knöpfe', (tester) async {
       final (c, spy) = await _pump(tester, '/zigbee/device/$_salon');
+      // „Ventil offen“ ist breit: die Reihe scrollt.
+      await tester.ensureVisible(find.text('Aus').first);
+      await tester.pumpAndSettle();
       await tester.tap(find.text('Aus').first);
       await _settle(tester);
       expect(_state(c)['preset'], 'off');

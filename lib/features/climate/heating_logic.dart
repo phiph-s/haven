@@ -203,6 +203,21 @@ String heatingSourceText(HeatingStatus s, int sensorCount) {
   return 'Noch keine Messung';
 }
 
+/// Ein am Gerät freigegebenes Thermostat, z. B. „Ventil offen bis 00:30“
+/// oder „eigener Wochenplan“. `null`, wenn Haven es regelt.
+String? trvReleasedText(HeatingTrvStatus t) {
+  if (!t.released) return null;
+  final until = t.releaseUntil?.toLocal();
+  String hm(DateTime d) =>
+      '${d.hour.toString().padLeft(2, '0')}:${d.minute.toString().padLeft(2, '0')}';
+  return switch (t.releasedMode) {
+    'on' || 'boost' =>
+      until == null ? 'Ventil offen am Gerät' : 'Ventil offen bis ${hm(until)}',
+    'auto' || 'schedule' || 'program' || 'programming' => 'eigener Wochenplan',
+    _ => 'am Gerät gesteuert',
+  };
+}
+
 /// Was Haven an einem Thermostat ausgleicht, z. B. „gleicht −2,1 °C aus“.
 String? trvCorrectionText(HeatingTrvStatus t, double? target) {
   if (!t.available) return 'nicht erreichbar';

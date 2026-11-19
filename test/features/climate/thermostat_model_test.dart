@@ -18,12 +18,14 @@ ZbDeviceView _view(Map<String, dynamic> values, [List<EntityState>? ents]) =>
 void main() {
   group('ThermoMode', () {
     test('Z2M- und HA-Presets', () {
-      expect(ThermoMode.fromPreset('on'), ThermoMode.manual);
+      // Tuya: „on“ ist Ventil offen, nicht Manuell
+      expect(ThermoMode.fromPreset('on'), ThermoMode.open);
+      expect(ThermoMode.fromPreset('manual'), ThermoMode.manual);
       expect(ThermoMode.fromPreset('auto'), ThermoMode.schedule);
       expect(ThermoMode.fromPreset('antifrost'), ThermoMode.frost);
       expect(ThermoMode.fromPreset('eco'), ThermoMode.eco);
       expect(ThermoMode.fromPreset('none'), isNull);
-      expect(ThermoMode.manual.z2m, 'on');
+      expect(ThermoMode.open.z2m, 'on');
       expect(ThermoMode.frost.z2m, 'antifrost');
     });
   });
@@ -38,7 +40,7 @@ void main() {
       );
       expect(t.current, 19.6);
       expect(t.target, 21.0);
-      expect(t.mode, ThermoMode.manual);
+      expect(t.mode, ThermoMode.comfort);
       expect(t.heating, isTrue);
       expect(t.valve, 42);
       expect(t.windowOpen, isFalse);
@@ -53,7 +55,14 @@ void main() {
       expect(t.canBoost, isTrue);
       expect(t.isZigbee, isTrue);
       // Alle sechs Presets des TRV602Z, in fester Reihenfolge.
-      expect(t.modes, ThermoMode.values);
+      expect(t.modes, [
+        ThermoMode.open,
+        ThermoMode.schedule,
+        ThermoMode.comfort,
+        ThermoMode.eco,
+        ThermoMode.frost,
+        ThermoMode.off,
+      ]);
       expect(t.statusText, 'Heizt auf 21 °C');
       expect(t.shortText, '19,6° → 21°');
     });

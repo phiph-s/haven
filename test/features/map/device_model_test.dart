@@ -33,4 +33,66 @@ void main() {
     final low = pendant.copyWith(height: 2.0);
     expect(markerHeightOf(low), 2.0 + spec.lamp!.lightZ);
   });
+
+  mountTests();
+}
+
+void mountTests() {
+  test('Montage: JSON hin und zurück, Standard ohne Feld', () {
+    const p = FloorPlacement(entityId: 'light.spot', x: 1, y: 1, model: 'spot');
+    expect(p.toJson().containsKey('mount'), isFalse);
+    expect(deviceMountOf(p), h3.DeviceMount.ceiling);
+    final up = p.copyWith(mount: 'up');
+    expect(FloorPlacement.fromJson(up.toJson()), up);
+    expect(deviceMountOf(up), h3.DeviceMount.up);
+    expect(up.copyWith(clearMount: true), p);
+  });
+
+  test('Spot nach oben: Kegel zeigt nach oben, steht auf dem Boden', () {
+    final spot = h3.deviceSpec('spot');
+    expect(spot.lightAxis(h3.DeviceMount.up).z, closeTo(1, 1e-9));
+    expect(spot.heightFor(h3.DeviceMount.up), 0);
+    // Modell liegt über dem Montagepunkt statt darunter.
+    final pts = spot.model(h3.DeviceMount.up).points;
+    expect(pts.every((v) => v.z >= -1e-9), isTrue);
+  });
+
+  test('Deckenleuchte an der Wand: Licht in den Raum (-y)', () {
+    final c = h3.deviceSpec('ceiling');
+    final axis = c.lightAxis(h3.DeviceMount.wall);
+    expect(axis.y, closeTo(-1, 1e-9));
+    expect(axis.z, closeTo(0, 1e-9));
+    expect(c.isWall(h3.DeviceMount.wall), isTrue);
+    expect(c.isWall(h3.DeviceMount.ceiling), isFalse);
+    // Modell ragt in den Raum, nicht in die Wand.
+    final pts = c.model(h3.DeviceMount.wall).points;
+    expect(pts.every((v) => v.y <= 1e-9), isTrue);
+  });
+
+  test('Lightbar: Lampe, steht standardmäßig und strahlt nach oben', () {
+    final bar = h3.deviceSpec('lightbar');
+    expect(bar.id, 'lightbar');
+    expect(bar.isLamp, isTrue);
+    expect(bar.mountOf(null), h3.DeviceMount.up);
+    expect(
+      deviceModelsFor(FloorKind.light).map((d) => d.id),
+      contains('lightbar'),
+    );
+  });
+
+  test('Bewegungsmelder: Decke oder Wand, alte Wand-Bauform wird Montage', () {
+    const legacy = FloorPlacement(
+      entityId: 'binary_sensor.m',
+      x: 1,
+      y: 1,
+      model: 'motion_wall',
+    );
+    expect(deviceModelOf(legacy), 'motion');
+    expect(deviceMountOf(legacy), h3.DeviceMount.wall);
+    expect(
+      deviceModelsFor(FloorKind.presence).map((d) => d.id),
+      isNot(contains('motion_wall')),
+    );
+    expect(h3.deviceSpec('motion').mounts, contains(h3.DeviceMount.wall));
+  });
 }

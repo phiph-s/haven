@@ -10,8 +10,14 @@ import '../zigbee/zigbee_model.dart';
 
 /// Betriebsart. [z2m] ist der Wert von `preset` bei Zigbee2MQTT (TRV602Z:
 /// `off`, `antifrost`, `eco`, `comfort`, `auto`, `on`), [ha] der HA-Preset.
+/// Bei Tuya heißt `on` nicht „Manuell“, sondern „Ventil dauerhaft offen“.
 enum ThermoMode {
-  manual('on', 'Manuell', 'Hält die Temperatur, die du einstellst.'),
+  manual('manual', 'Manuell', 'Hält die Temperatur, die du einstellst.'),
+  open(
+    'on',
+    'Ventil offen',
+    'Ventil ganz auf, heizt ohne Regelung. Eine Haven-Regelung hält dann still.',
+  ),
   schedule('auto', 'Zeitplan', 'Folgt dem Wochenplan des Thermostats.'),
   comfort('comfort', 'Komfort', 'Heizt auf die Komforttemperatur.'),
   eco('eco', 'Eco', 'Heizt sparsam auf die Eco-Temperatur.'),
@@ -25,7 +31,8 @@ enum ThermoMode {
 
   /// Betriebsart zu einem Z2M- oder HA-Preset, sonst `null`.
   static ThermoMode? fromPreset(String? v) => switch (v?.toLowerCase()) {
-    'on' || 'manual' || 'heat' => manual,
+    'manual' || 'heat' => manual,
+    'on' || 'boost' => open,
     'auto' || 'schedule' || 'program' => schedule,
     'comfort' => comfort,
     'eco' => eco,

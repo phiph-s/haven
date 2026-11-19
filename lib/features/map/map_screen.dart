@@ -50,6 +50,7 @@ import 'map_markers.dart';
 import 'map_panels.dart';
 import 'map_readings.dart';
 import 'map_relevance.dart';
+import 'plan_cleanup.dart';
 import 'map_thermostat.dart';
 import 'map_routes.dart';
 
@@ -72,6 +73,7 @@ class MapScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    ref.watch(planCleanupProvider);
     final plan = ref.watch(floorPlanProvider);
     final p = plan.value;
     final has = p != null && !p.isEmpty;
@@ -871,7 +873,6 @@ class _MapBodyState extends ConsumerState<_MapBody> {
                             plan: v.plan,
                             nodes: v.nodes,
                             nodeBuilder: v.nodeBuilder,
-                            subtitle: v.subtitle,
                             heatmap: v.heatmap3d,
                             controller: v.controller,
                             overlayBuilder: v.overlay3d,
@@ -1079,7 +1080,6 @@ class _MapBodyState extends ConsumerState<_MapBody> {
                           plan: v.plan,
                           nodes: v.nodes,
                           nodeBuilder: v.nodeBuilder,
-                          subtitle: v.subtitle,
                           heatmap: v.heatmap3d,
                           controller: v.controller,
                           overlayBuilder: v.overlay3d,

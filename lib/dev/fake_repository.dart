@@ -70,6 +70,10 @@ class FakeRepository extends BaseRepository {
     inventory: inventory,
     simulate: simulate,
   );
+
+  /// Ein Durchlauf der simulierten Heizungsregelung (Tests).
+  void heatingTick([DateTime? now]) => _heat.tick(now ?? DateTime.now());
+
   late final FakeHeating _heat = FakeHeating(
     entities: () => _entities,
     trvState: _zb.stateOf,
@@ -1018,7 +1022,8 @@ class FakeRepository extends BaseRepository {
     String areaId, {
     double? target,
     HeatingMode? mode,
-  }) => _heat.control(areaId, target: target, mode: mode);
+    bool resume = false,
+  }) => _heat.control(areaId, target: target, mode: mode, resume: resume);
   @override
   Stream<HeatingUpdate> get heatingUpdates => _heat.updates;
   @override

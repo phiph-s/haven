@@ -69,6 +69,7 @@ abstract class BaseRepository implements HavenRepository {
     String areaId, {
     double? target,
     HeatingMode? mode,
+    bool resume = false,
   }) => throw HavenException(
     'Die Heizungsregelung gibt es hier nicht',
     code: 'not_supported',

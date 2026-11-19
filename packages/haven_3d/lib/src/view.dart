@@ -9,6 +9,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_scene/scene.dart' as fs;
 
 import 'camera.dart';
+import 'devices.dart';
 import 'gpu_scene.dart';
 import 'heatmap.dart';
 import 'model.dart';
@@ -235,8 +236,9 @@ class SceneController extends ChangeNotifier {
     Offset at = Offset.zero,
     double z = 0,
     String? roomId,
+    DeviceMount? mount,
   }) {
-    _gpu?.setPreview(model, at: at, z: z, roomId: roomId);
+    _gpu?.setPreview(model, at: at, z: z, roomId: roomId, mount: mount);
     _view?._wake();
   }
 

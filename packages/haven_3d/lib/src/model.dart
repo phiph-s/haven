@@ -39,6 +39,12 @@ class V3 {
     return V3(x * c - y * s, x * s + y * c, z);
   }
 
+  /// Gedreht um die x-Achse (y zeigt bei positivem [rad] nach oben).
+  V3 rotateX(double rad) {
+    final c = math.cos(rad), s = math.sin(rad);
+    return V3(x, y * c - z * s, y * s + z * c);
+  }
+
   Offset get xy => Offset(x, y);
 
   static V3 lerp(V3 a, V3 b, double t) => a + (b - a) * t;
@@ -163,6 +169,12 @@ class Model3 {
       yield l.b;
     }
   }
+
+  /// Jeder Punkt (und jede Normale) durch [f] gedreht.
+  Model3 rotated(V3 Function(V3) f) => Model3(
+    [for (final face in faces) face.map(f, f)],
+    [for (final l in lines) l.map(f)],
+  );
 
   /// Gedreht ([rotation] Grad im Uhrzeigersinn auf dem Plan) und verschoben.
   Model3 placed(V3 offset, double rotation) {

@@ -15,11 +15,13 @@ abstract interface class HeatingApi {
   Future<void> deleteHeating(String areaId);
 
   /// `haven/heating/control` (Admin): Ziel und/oder Betriebsart des Raums.
-  /// Ein Ziel ohne Betriebsart schaltet auf Manuell.
+  /// Ein Ziel ohne Betriebsart schaltet auf Manuell. Jede Bedienung (oder
+  /// nur [resume]) übernimmt am Thermostat freigegebene Geräte wieder.
   Future<HeatingStatus> controlHeating(
     String areaId, {
     double? target,
     HeatingMode? mode,
+    bool resume = false,
   });
 
   /// Ereignis `haven_heating_updated` (Status in Echtzeit).

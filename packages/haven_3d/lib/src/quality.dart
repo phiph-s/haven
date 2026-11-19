@@ -21,7 +21,10 @@ enum SceneQuality {
 
   /// Für Editoren: kein Baking (Böden und Oberseiten im Echtzeitlicht der
   /// Sonne), damit ein Neuaufbau nach jeder Änderung schnell geht.
-  draft('Entwurf');
+  draft('Entwurf'),
+
+  /// Wie [draft], aber Lampen leuchten in Echtzeit (Editor mit Licht).
+  draftLit('Entwurf mit Licht');
 
   const SceneQuality(this.label);
   final String label;
@@ -29,7 +32,7 @@ enum SceneQuality {
   /// Größte Pixeldichte des Renderziels (null: wie das Gerät).
   double? get maxPixelRatio => switch (this) {
     low => 1.0,
-    medium || draft => 1.5,
+    medium || draft || draftLit => 1.5,
     high => null,
   };
 
@@ -39,26 +42,26 @@ enum SceneQuality {
   /// Obergrenze der Bildrate (null: Bildschirmrate).
   double? get maxFrameRate => switch (this) {
     low => 30,
-    medium || draft => 60,
+    medium || draft || draftLit => 60,
     high => null,
   };
 
   bool get realtimeLamps => this != low && this != draft;
 
   /// Licht auf Böden und Oberseiten backen (alle Stufen außer [draft]).
-  bool get bakes => this != draft;
+  bool get bakes => this != draft && this != draftLit;
 
   double get bakeTexel => switch (this) {
     low => 0.10,
     medium => 0.07,
     high => 0.05,
-    draft => 0.25,
+    draft || draftLit => 0.25,
   };
 
   int get bakeSamples => switch (this) {
     low => 3,
     medium => 5,
     high => 7,
-    draft => 0,
+    draft || draftLit => 0,
   };
 }

@@ -192,6 +192,7 @@ h3.Scene sceneOfPlan(HavenFloorPlan plan) {
           at: p.center * m,
           kind: markerKindOf(p.resolvedKind),
           model: deviceModelOf(p),
+          mount: deviceMountOf(p),
           height: p.height,
           lamp: p.resolvedKind == FloorKind.light ? h3.LampState.off : null,
         ),
@@ -225,8 +226,22 @@ List<(FloorNode, Offset)> spreadNodes(List<FloorNode> nodes) {
 }
 
 /// Bauform eines Geräts: gewählt oder passend zur Art.
-String deviceModelOf(FloorPlacement p) =>
-    p.model ?? defaultDeviceModel(p.resolvedKind, p.entityId);
+String deviceModelOf(FloorPlacement p) => switch (p.model) {
+  // Früher eigene Bauform, heute Bewegungsmelder mit Montage an der Wand.
+  'motion_wall' => 'motion',
+  final m? => m,
+  null => defaultDeviceModel(p.resolvedKind, p.entityId),
+};
+
+/// Montage eines Geräts (Decke, Wand, nach oben) oder `null` bei fester
+/// Bauform.
+h3.DeviceMount? deviceMountOf(FloorPlacement p) => h3
+    .deviceSpec(deviceModelOf(p))
+    .mountOf(
+      p.model == 'motion_wall' && p.mount == null
+          ? h3.DeviceMount.wall
+          : h3.DeviceMount.byName(p.mount),
+    );
 
 /// Standard-Bauform je Art (Thermostate als Heizkörperthermostat).
 String defaultDeviceModel(FloorKind kind, String entityId) => switch (kind) {
@@ -243,15 +258,16 @@ String defaultDeviceModel(FloorKind kind, String entityId) => switch (kind) {
 /// Bauformen, die für ein Gerät der Art [kind] in Frage kommen.
 List<h3.DeviceSpec> deviceModelsFor(FloorKind kind) => [
   for (final d in h3.kDeviceModels.values)
-    if (kind == FloorKind.light ? d.isLamp : !d.isLamp) d,
+    if (!d.legacy && (kind == FloorKind.light ? d.isLamp : !d.isLamp)) d,
 ];
 
 /// Höhe des Markers über dem Gerät: an der Lichtquelle bzw. knapp über dem
 /// Montagepunkt.
 double markerHeightOf(FloorPlacement p) {
   final spec = h3.deviceSpec(deviceModelOf(p));
-  final mount = p.height ?? spec.height;
-  return mount + (spec.lamp?.lightZ ?? 0.08);
+  final how = deviceMountOf(p);
+  final mount = p.height ?? spec.heightFor(how);
+  return mount + (spec.isLamp ? spec.lightOffset(how).z : 0.08);
 }
 
 /// Höhe und Farbe eines Geräts in 3D nach seiner Art.
@@ -353,7 +369,6 @@ class Map3DView extends ConsumerStatefulWidget {
     required this.plan,
     this.nodes = const [],
     this.nodeBuilder,
-    this.subtitle,
     this.heatmap,
     this.onNodeTap,
     this.onNodeLongPress,
@@ -369,7 +384,6 @@ class Map3DView extends ConsumerStatefulWidget {
     this.foregroundBuilder,
     this.interactive = true,
     this.interactiveMarkers = false,
-    this.showLabels = true,
     this.quality,
     this.followSettings = true,
     this.markerKind,
@@ -378,7 +392,6 @@ class Map3DView extends ConsumerStatefulWidget {
   final HavenFloorPlan plan;
   final List<FloorNode> nodes;
   final FloorNodeBuilder? nodeBuilder;
-  final String? Function(FloorRoom room)? subtitle;
   final h3.SceneHeatmap? heatmap;
   final ValueChanged<FloorNode>? onNodeTap;
   final ValueChanged<FloorNode>? onNodeLongPress;
@@ -415,7 +428,6 @@ class Map3DView extends ConsumerStatefulWidget {
 
   /// Gerät-Widgets bekommen selbst Zeiger-Ereignisse (Ziehen).
   final bool interactiveMarkers;
-  final bool showLabels;
 
   /// Qualität, sonst die aus den Einstellungen.
   final h3.SceneQuality? quality;
@@ -591,71 +603,9 @@ class _Map3DViewState extends ConsumerState<Map3DView> {
               ),
               null => const SizedBox.shrink(),
             },
-      roomLabelBuilder: !widget.showLabels
-          ? null
-          : (context, room, cam) {
-              final r = plan.room(room.id);
-              if (r == null) return const SizedBox.shrink();
-              final b = r.bounds;
-              // Wie in 2D: nur wenn der Raum groß genug auf dem Schirm ist.
-              if (b.width * m * cam.scale < 64 ||
-                  b.height * m * cam.scale < 40) {
-                return const SizedBox.shrink();
-              }
-              return _RoomLabel(
-                name: r.name,
-                subtitle: widget.subtitle?.call(r),
-                maxWidth: math.max(40, b.width * m * cam.scale - 18),
-                selected: r.id == widget.selectedRoomId,
-              );
-            },
       onTap: widget.interactive ? _tap : null,
       onLongPress: widget.interactive ? _hold : null,
       onSecondaryTap: widget.interactive ? _secondary : null,
-    );
-  }
-}
-
-class _RoomLabel extends StatelessWidget {
-  const _RoomLabel({
-    required this.name,
-    required this.subtitle,
-    required this.maxWidth,
-    required this.selected,
-  });
-  final String name;
-  final String? subtitle;
-  final double maxWidth;
-  final bool selected;
-
-  @override
-  Widget build(BuildContext context) {
-    final hv = context.hv;
-    return ConstrainedBox(
-      constraints: BoxConstraints(maxWidth: maxWidth),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(
-            name,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: HavenText.label.copyWith(
-              color: selected ? hv.acc : hv.tx,
-              fontSize: 12.5,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-          if (subtitle != null && subtitle!.isNotEmpty)
-            Text(
-              subtitle!,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: HavenText.caption.copyWith(color: hv.tx2, fontSize: 11.5),
-            ),
-        ],
-      ),
     );
   }
 }

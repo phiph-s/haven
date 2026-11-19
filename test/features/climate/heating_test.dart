@@ -48,9 +48,15 @@ class _Spy extends FakeRepository {
     String areaId, {
     double? target,
     HeatingMode? mode,
+    bool resume = false,
   }) {
     controls.add((areaId, target, mode));
-    return super.controlHeating(areaId, target: target, mode: mode);
+    return super.controlHeating(
+      areaId,
+      target: target,
+      mode: mode,
+      resume: resume,
+    );
   }
 }
 
@@ -380,6 +386,72 @@ void main() {
         expect((await repo.heatingRooms()).rooms, isEmpty);
       },
     );
+  });
+
+  group('Am Thermostat gesteuert', () {
+    test('Ventil offen am Gerät gibt frei, Wieder regeln übernimmt', () async {
+      final repo = FakeRepository(simulate: false);
+      await repo.start();
+      addTearDown(repo.dispose);
+      repo.heatingTick();
+      await repo.zigbeeSet(_salonTrv, {'preset': 'on'});
+      repo.heatingTick();
+      var salon = (await repo.heatingRooms()).byArea('salon')!;
+      expect(salon.status.released, isTrue);
+      final trv = salon.status.trvs.single;
+      expect(trv.releasedMode, 'on');
+      expect(trvReleasedText(trv), startsWith('Ventil offen bis'));
+      // Haven hält still: kein Zurückstellen
+      repo.heatingTick();
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+      expect((await repo.zigbeeStates())[_salonTrv]!['preset'], 'on');
+      final s = await repo.controlHeating('salon', resume: true);
+      expect(s.released, isFalse);
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+      expect((await repo.zigbeeStates())[_salonTrv]!['preset'], 'comfort');
+      salon = (await repo.heatingRooms()).byArea('salon')!;
+      expect(salon.status.trvs.single.released, isFalse);
+    });
+
+    test('Status liest Freigabe aus der Integration', () {
+      final s = HeatingStatus.fromJson({
+        'released': true,
+        'trvs': [
+          {
+            'ieee': 'x',
+            'released': true,
+            'released_mode': 'auto',
+            'release_until': null,
+          },
+        ],
+      });
+      expect(s.released, isTrue);
+      expect(trvReleasedText(s.trvs.single), 'eigener Wochenplan');
+      expect(
+        HeatingConfig.fromJson({
+          'area_id': 'a',
+          'calibrate_released': false,
+        }).calibrateReleased,
+        isFalse,
+      );
+    });
+
+    testWidgets('Karte zeigt den Hinweis, Wieder regeln übernimmt', (
+      tester,
+    ) async {
+      final (c, spy) = await _pump(tester, '/home/room/salon');
+      spy.heatingTick();
+      await tester.runAsync(() => spy.zigbeeSet(_salonTrv, {'preset': 'on'}));
+      spy.heatingTick();
+      await _settle(tester);
+      await _scrollTo(tester, find.byType(RoomHeatingCard));
+      expect(find.byKey(const ValueKey('heating-released')), findsOneWidget);
+      expect(find.textContaining('Ventil offen bis'), findsOneWidget);
+      await tester.tap(find.byKey(const ValueKey('heating-resume')));
+      await _settle(tester);
+      expect(find.byKey(const ValueKey('heating-released')), findsNothing);
+      expect(_trv(c, _salonTrv)['preset'], 'comfort');
+    });
   });
 
   group('Raum', () {

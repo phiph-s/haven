@@ -92,11 +92,13 @@ class HaHeating {
     String areaId, {
     double? target,
     HeatingMode? mode,
+    bool resume = false,
   }) async {
     final r = await _send('haven/heating/control', {
       'area_id': areaId,
       'target': ?target,
       'mode': ?mode?.wire,
+      if (resume) 'resume': true,
     });
     final s = r['status'];
     return s is Map

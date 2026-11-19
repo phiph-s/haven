@@ -36,12 +36,25 @@ import 'map_3d.dart'
         defaultDeviceModel,
         deviceModelOf,
         deviceModelsFor,
+        deviceMountOf,
+        lampStateOf,
         markerHeightOf,
         sceneOfPlan,
         spreadNodes;
+import 'map_data.dart' show MapLights;
 import 'map_markers.dart';
 
 enum _Mode { rooms, devices, furniture }
+
+/// Licht beim Geräte setzen: aus, wie gerade zu Hause, oder alle Lampen an
+/// (warmweiß), um die Wirkung der Platzierung zu sehen.
+enum _EditorLight { off, live, on }
+
+/// Warmweiß (etwa 3000 K) für „alle Lampen an“ im Editor.
+const h3.LampState kEditorWarmWhite = h3.LampState(
+  brightness: 0.85,
+  color: Color(0xFFFFC489),
+);
 
 enum _FurnOpKind { move, resize, rotate }
 
@@ -137,6 +150,9 @@ class _FloorEditorScreenState extends ConsumerState<FloorEditorScreen> {
 
   /// Geräte: gewähltes Gerät (Bauform, Höhe) und 3D-Ansicht.
   String? _dsel;
+
+  /// Licht beim Geräte setzen (aus, live, alle an).
+  _EditorLight _light = _EditorLight.off;
 
   /// Geräte werden nur in 3D gesetzt.
   bool get _view3d => _mode == _Mode.devices;
@@ -576,17 +592,66 @@ class _FloorEditorScreenState extends ConsumerState<FloorEditorScreen> {
   /// Bauform eines (vielleicht noch nicht platzierten) Geräts.
   String _modelOf(String? entityId, FloorKind kind) {
     final old = entityId == null ? null : _plan!.placementOf(entityId);
-    return old?.model ?? defaultDeviceModel(kind, entityId ?? '');
+    return old != null
+        ? deviceModelOf(old)
+        : defaultDeviceModel(kind, entityId ?? '');
+  }
+
+  /// Montage eines Geräts, wenn es in [cell] landet: Was an Decke und Wand
+  /// kann (Deckenleuchte, Spot, Bewegungsmelder), rastet an der Wand ein,
+  /// wenn [cell] an einer geschlossenen Wand liegt, sonst an der Decke.
+  /// Nach oben gestellte Geräte bleiben so.
+  h3.DeviceMount? _mountAt(String? entityId, FloorKind kind, GridPoint cell) {
+    final spec = h3.deviceSpec(_modelOf(entityId, kind));
+    final old = entityId == null ? null : _plan!.placementOf(entityId);
+    final cur = old == null ? spec.mountOf(null) : deviceMountOf(old);
+    final m = spec.mounts;
+    if (cur == h3.DeviceMount.up ||
+        !m.contains(h3.DeviceMount.wall) ||
+        !m.contains(h3.DeviceMount.ceiling)) {
+      return cur;
+    }
+    return _nearWall(cell) ? h3.DeviceMount.wall : h3.DeviceMount.ceiling;
+  }
+
+  /// Liegt die Mitte von [cell] nah an einer geschlossenen Wand ihres Raums?
+  bool _nearWall(GridPoint cell) {
+    final plan = _plan!;
+    final room = plan.room(plan.locationOfCell(cell.x, cell.y));
+    if (room == null) return false;
+    final c = Offset(cell.x + 0.5, cell.y + 0.5);
+    final reach = 0.35 / plan.grid.cellMeters;
+    final pts = room.points;
+    for (var i = 0; i < pts.length; i++) {
+      if (room.isOpen(i)) continue;
+      final a = Offset(pts[i].x.toDouble(), pts[i].y.toDouble());
+      final q = pts[(i + 1) % pts.length];
+      final e = Offset(q.x.toDouble(), q.y.toDouble()) - a;
+      final len2 = e.distanceSquared;
+      if (len2 == 0) continue;
+      final t = (((c - a).dx * e.dx + (c - a).dy * e.dy) / len2).clamp(
+        0.0,
+        1.0,
+      );
+      if ((c - (a + e * t)).distance <= reach) return true;
+    }
+    return false;
   }
 
   /// Höhe, auf der ein Gerät in [cell] landet: Wand- und Deckengeräte auf
-  /// ihrer Höhe (oder der gewählten), Stehlampen auf dem Boden, Tischlampen
-  /// und Ähnliches auf dem Möbelstück darunter, sonst auf dem Boden.
+  /// ihrer Höhe (oder der gewählten, solange die Montage bleibt),
+  /// Stehlampen auf dem Boden, Tischlampen, Lightbars und Ähnliches auf dem
+  /// Möbelstück darunter, sonst auf dem Boden.
   double _placeZ(String? entityId, FloorKind kind, GridPoint cell) {
     final spec = h3.deviceSpec(_modelOf(entityId, kind));
+    final how = _mountAt(entityId, kind, cell);
     final old = entityId == null ? null : _plan!.placementOf(entityId);
-    if (spec.wall || spec.height >= 2.0) return old?.height ?? spec.height;
-    if (spec.height == 0) return 0;
+    final std = spec.heightFor(how);
+    final kept = old != null && deviceMountOf(old) == how ? old.height : null;
+    if (how != h3.DeviceMount.up && (spec.isWall(how) || std >= 2.0)) {
+      return kept ?? std;
+    }
+    if (how != h3.DeviceMount.up && std == 0) return 0;
     final p = Offset(cell.x + 0.5, cell.y + 0.5);
     var top = 0.0;
     for (final f in _plan!.furniture) {
@@ -609,6 +674,7 @@ class _FloorEditorScreenState extends ConsumerState<FloorEditorScreen> {
       at: Offset(cell.x + 0.5, cell.y + 0.5) * m,
       z: _placeZ(entityId, kind, cell),
       roomId: loc == kOutsideId ? null : loc,
+      mount: _mountAt(entityId, kind, cell),
     );
   }
 
@@ -666,22 +732,23 @@ class _FloorEditorScreenState extends ConsumerState<FloorEditorScreen> {
       }
       return;
     }
+    final k = kind ?? old?.resolvedKind ?? FloorKind.ofEntity(entityId);
+    final spec = h3.deviceSpec(_modelOf(entityId, k));
+    final how = _mountAt(entityId, k, cell);
+    final z = _placeZ(entityId, k, cell);
+    final std = spec.heightFor(how);
     final p = FloorPlacement(
       entityId: entityId,
       x: cell.x,
       y: cell.y,
       kind: kind ?? old?.kind,
       deviceId: deviceId ?? old?.deviceId,
-      // Bauform zieht mit um; die Höhe rastet neu ein (Wand, Decke, Boden
-      // oder das Möbelstück darunter) und wird nur gespeichert, wenn sie vom
-      // Standard der Bauform abweicht.
-      model: old?.model,
-      height: () {
-        final k = kind ?? old?.resolvedKind ?? FloorKind.ofEntity(entityId);
-        final z = _placeZ(entityId, k, cell);
-        final std = h3.deviceSpec(_modelOf(entityId, k)).height;
-        return (z - std).abs() < 1e-6 ? null : z;
-      }(),
+      // Bauform zieht mit um; Montage und Höhe rasten neu ein (Wand, Decke,
+      // Boden oder das Möbelstück darunter) und werden nur gespeichert, wenn
+      // sie vom Standard der Bauform abweichen.
+      model: old?.model == null ? null : deviceModelOf(old!),
+      mount: how == spec.mountOf(null) ? null : how?.name,
+      height: (z - std).abs() < 1e-6 ? null : z,
     );
     Haptics.tap();
     _commit(plan, plan.withPlacement(p));
@@ -814,11 +881,13 @@ class _FloorEditorScreenState extends ConsumerState<FloorEditorScreen> {
           _dragHover(d.globalPosition, label(), kind, entityId),
       onDragEnd: end,
       // Antippen wählt das Gerät (Bauform und Höhe im Panel).
+      // Rechtsklick oder langes Drücken bietet das Entfernen an.
       child: GestureDetector(
         onTap: () {
           Haptics.tick();
           setState(() => _dsel = _dsel == entityId ? null : entityId);
         },
+        onSecondaryTapUp: (d) => _deviceMenu(entityId, d.globalPosition),
         child: _dsel == entityId
             ? DecoratedBox(
                 decoration: BoxDecoration(
@@ -834,6 +903,35 @@ class _FloorEditorScreenState extends ConsumerState<FloorEditorScreen> {
 
   // ---- Bauform und Höhe der Geräte -----------------------------------------
 
+  /// Nimmt das Gerät von der Karte; es steht danach wieder in der Liste.
+  void _removeDevice(String entityId) {
+    final plan = _plan!;
+    if (plan.placementOf(entityId) == null) return;
+    Haptics.tap();
+    setState(() {
+      if (_dsel == entityId) _dsel = null;
+    });
+    _commit(plan, plan.withoutPlacement(entityId));
+    _say('Von der Karte genommen');
+  }
+
+  void _deviceMenu(String entityId, Offset at) {
+    showHavenContextMenu(context, at, [
+      HavenMenuItem(
+        label: 'Bauform und Höhe',
+        icon: Icons.tune_rounded,
+        onSelected: () => setState(() => _dsel = entityId),
+      ),
+      HavenMenuItem(
+        label: 'Von der Karte nehmen',
+        icon: Icons.delete_outline_rounded,
+        shortcut: 'Entf',
+        destructive: true,
+        onSelected: () => _removeDevice(entityId),
+      ),
+    ]);
+  }
+
   void _setDevice(FloorPlacement p) {
     final plan = _plan!;
     _commit(plan, plan.withPlacement(p));
@@ -845,9 +943,34 @@ class _FloorEditorScreenState extends ConsumerState<FloorEditorScreen> {
     final kind = p.resolvedKind;
     final model = deviceModelOf(p);
     final spec = h3.deviceSpec(model);
-    final height = p.height ?? spec.height;
+    final how = deviceMountOf(p);
+    final std = spec.heightFor(how);
+    final height = p.height ?? std;
     final name = ref.read(entityProvider(p.entityId))?.name ?? p.entityId;
     String meters(double v) => '${v.toStringAsFixed(2).replaceAll('.', ',')} m';
+    Widget chip(String label, bool on, VoidCallback tap, {Key? key}) =>
+        PressScale(
+          key: key,
+          onTap: () {
+            Haptics.tick();
+            tap();
+          },
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+            decoration: BoxDecoration(
+              color: on ? hv.acc : hv.s1,
+              borderRadius: BorderRadius.circular(HavenRadii.pill),
+              border: Border.all(color: on ? hv.acc : hv.ln2),
+            ),
+            child: Text(
+              label,
+              style: HavenText.caption.copyWith(
+                color: on ? hv.ai : hv.tx,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        );
     return Container(
       key: ValueKey('dsel-${p.entityId}'),
       margin: const EdgeInsets.only(bottom: 10, right: 8),
@@ -880,41 +1003,61 @@ class _FloorEditorScreenState extends ConsumerState<FloorEditorScreen> {
             ],
           ),
           const SizedBox(height: 8),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton.icon(
+              key: const ValueKey('device-remove'),
+              onPressed: () => _removeDevice(p.entityId),
+              icon: const Icon(Icons.delete_outline_rounded, size: 18),
+              label: const Text('Von der Karte nehmen'),
+              style: TextButton.styleFrom(foregroundColor: hv.bad),
+            ),
+          ),
           Wrap(
             spacing: 6,
             runSpacing: 6,
             children: [
               for (final d in deviceModelsFor(kind))
-                PressScale(
-                  onTap: () {
-                    Haptics.tick();
-                    // Neue Bauform: deren Standardhöhe, außer sie wurde
-                    // gerade eigens gesetzt.
-                    _setDevice(p.copyWith(model: d.id, clearHeight: true));
-                  },
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 7,
-                    ),
-                    decoration: BoxDecoration(
-                      color: d.id == model ? hv.acc : hv.s1,
-                      borderRadius: BorderRadius.circular(HavenRadii.pill),
-                      border: Border.all(
-                        color: d.id == model ? hv.acc : hv.ln2,
-                      ),
-                    ),
-                    child: Text(
-                      d.label,
-                      style: HavenText.caption.copyWith(
-                        color: d.id == model ? hv.ai : hv.tx,
-                        fontWeight: FontWeight.w600,
-                      ),
+                // Neue Bauform: deren Standardmontage und -höhe.
+                chip(
+                  d.label,
+                  d.id == model,
+                  () => _setDevice(
+                    p.copyWith(
+                      model: d.id,
+                      clearHeight: true,
+                      clearMount: true,
                     ),
                   ),
                 ),
             ],
           ),
+          if (spec.mounts.length > 1) ...[
+            const SizedBox(height: 10),
+            Text('Montage', style: HavenText.caption.copyWith(color: hv.tx2)),
+            const SizedBox(height: 6),
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: [
+                for (final m in spec.mounts)
+                  chip(
+                    m.label,
+                    m == how,
+                    key: ValueKey('mount-${m.name}'),
+                    () => _setDevice(
+                      p.copyWith(
+                        // Gespeichert wird nur, was vom Standard abweicht.
+                        mount: m.name,
+                        clearMount: m == spec.mountOf(null),
+                        clearHeight: true,
+                        model: model,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ],
           const SizedBox(height: 6),
           Row(
             children: [
@@ -926,7 +1069,7 @@ class _FloorEditorScreenState extends ConsumerState<FloorEditorScreen> {
               if (p.height != null)
                 TextButton(
                   onPressed: () => _setDevice(p.copyWith(clearHeight: true)),
-                  child: Text('Standard (${meters(spec.height)})'),
+                  child: Text('Standard (${meters(std)})'),
                 ),
             ],
           ),
@@ -1408,10 +1551,11 @@ class _FloorEditorScreenState extends ConsumerState<FloorEditorScreen> {
       return KeyEventResult.handled;
     }
     if (k == LogicalKeyboardKey.escape) {
-      if (_fsel != null || _sel != null) {
+      if (_fsel != null || _sel != null || _dsel != null) {
         setState(() {
           _fsel = null;
           _sel = null;
+          _dsel = null;
         });
       } else {
         _close();
@@ -1424,6 +1568,8 @@ class _FloorEditorScreenState extends ConsumerState<FloorEditorScreen> {
         _deleteFurnitureSel();
       } else if (_mode == _Mode.rooms && _sel != null) {
         _deleteSelected();
+      } else if (_mode == _Mode.devices && _dsel != null) {
+        _removeDevice(_dsel!);
       }
       return KeyEventResult.handled;
     }
@@ -1778,6 +1924,8 @@ class _FloorEditorScreenState extends ConsumerState<FloorEditorScreen> {
               children: [
                 Positioned.fill(child: _canvas(context, plan, geo)),
                 if (_previewInfo != null) _previewOverlay(geo, _previewInfo!),
+                if (_mode == _Mode.devices)
+                  Positioned(top: 6, right: 6, child: _lightToggle()),
               ],
             );
           },
@@ -1904,8 +2052,11 @@ class _FloorEditorScreenState extends ConsumerState<FloorEditorScreen> {
     // erst nach dem Loslassen neu auf); das gezogene Möbel zeichnet das
     // Overlay. Möbel erscheinen nur im Modus „Einrichten“.
     final stable = _fop?.base ?? _op?.base ?? plan;
+    final lit = _mode == _Mode.devices && _light != _EditorLight.off;
     final view = _EditorScene(
       plan: stable,
+      lit: lit,
+      lamps: lit ? _lampsFor(stable) : const {},
       geo: geo,
       tilt: _view3d,
       projection: _proj,
@@ -1994,6 +2145,66 @@ class _FloorEditorScreenState extends ConsumerState<FloorEditorScreen> {
           },
           child: child,
         ),
+      ),
+    );
+  }
+
+  // ---- Licht beim Geräte setzen -------------------------------------------
+
+  /// Lampenzustand für die Szene: live wie zu Hause oder alle warmweiß.
+  Map<String, h3.LampState> _lampsFor(HavenFloorPlan plan) {
+    final ids = [
+      for (final p in plan.placements)
+        if (p.resolvedKind == FloorKind.light) p.entityId,
+    ];
+    if (_light == _EditorLight.on) {
+      return {for (final id in ids) id: kEditorWarmWhite};
+    }
+    // Nur die platzierten Lampen beobachten (Wertgleichheit: baut nur neu,
+    // wenn sich eine davon ändert).
+    final live = ref.watch(
+      snapshotProvider.select(
+        (s) => MapLights({for (final id in ids) id: ?s.lamp(id)}, const {}),
+      ),
+    );
+    return {for (final e in live.lamps.entries) e.key: lampStateOf(e.value)};
+  }
+
+  Widget _lightToggle() {
+    final hv = context.hv;
+    return Container(
+      padding: const EdgeInsets.only(left: 10),
+      decoration: BoxDecoration(
+        color: hv.s1.withValues(alpha: 0.92),
+        borderRadius: BorderRadius.circular(HavenRadii.pill),
+        border: Border.all(color: hv.ln),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            _light == _EditorLight.off
+                ? Icons.lightbulb_outline_rounded
+                : Icons.lightbulb_rounded,
+            size: 18,
+            color: _light == _EditorLight.off ? hv.tx2 : hv.acc,
+          ),
+          const SizedBox(width: 4),
+          SizedBox(
+            width: 186,
+            child: HavenSegmented<_EditorLight>(
+              key: const ValueKey('editor-light'),
+              neutral: true,
+              options: const [
+                (_EditorLight.off, 'Aus'),
+                (_EditorLight.live, 'Live'),
+                (_EditorLight.on, 'An'),
+              ],
+              selected: _light,
+              onChanged: (v) => setState(() => _light = v),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -2958,7 +3169,13 @@ class _EditorScene extends StatefulWidget {
     this.hiddenObjects = const {},
     this.tilt = false,
     this.projection,
+    this.lit = false,
+    this.lamps = const {},
   });
+
+  /// Lampen leuchten in Echtzeit (Zustand aus [lamps], fehlende sind aus).
+  final bool lit;
+  final Map<String, h3.LampState> lamps;
 
   final HavenFloorPlan plan;
   final FloorGeometry geo;
@@ -3016,11 +3233,20 @@ class _EditorSceneState extends State<_EditorScene> {
     final byId = {for (final n in w.nodes) n.id: n};
     final style = (hv.isDark ? h3.SceneStyle.dark() : h3.SceneStyle.light())
         .copyWith(accent: hv.acc);
+    final scene = sceneOfPlan(w.plan);
+    // Lampen nach dem Bild setzen (nur geänderte rechnen neu).
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      for (final mk in scene.markers) {
+        if (mk.lamp == null) continue;
+        _c.setLamp(mk.id, widget.lamps[mk.id] ?? h3.LampState.off);
+      }
+    });
     return h3.Scene3DView(
-      scene: sceneOfPlan(w.plan),
+      scene: scene,
       controller: _c,
       style: style,
-      quality: h3.SceneQuality.draft,
+      quality: w.lit ? h3.SceneQuality.draftLit : h3.SceneQuality.draft,
       gestures: w.tilt ? h3.SceneGestures.orbit : h3.SceneGestures.none,
       fitOnStart: false,
       // Schräg stehen die Räume (Wandgeräte sitzen an ihren Wänden).
@@ -3053,25 +3279,6 @@ class _EditorSceneState extends State<_EditorScene> {
               ),
               null => const SizedBox.shrink(),
             },
-      roomLabelBuilder: (context, room, _) {
-        final r = w.plan.room(room.id);
-        if (r == null) return const SizedBox.shrink();
-        final rect = w.geo.roomCellRect(r.id, r.innerRect);
-        if (rect.width < 44 || rect.height < 26) return const SizedBox.shrink();
-        return SizedBox(
-          width: rect.width - 16,
-          child: Text(
-            r.name,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: HavenText.label.copyWith(
-              color: hv.tx,
-              fontSize: 12.5,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-        );
-      },
       overlayBuilder: (context, p) {
         w.projection?.current = p;
         // Schräg passen Raster und Griffe der Draufsicht nicht.

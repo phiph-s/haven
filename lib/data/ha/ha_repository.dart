@@ -951,7 +951,8 @@ class HaRepository extends BaseRepository {
     String areaId, {
     double? target,
     HeatingMode? mode,
-  }) => _heat.control(areaId, target: target, mode: mode);
+    bool resume = false,
+  }) => _heat.control(areaId, target: target, mode: mode, resume: resume);
 
   @override
   Stream<HeatingUpdate> get heatingUpdates => _heat.updates;

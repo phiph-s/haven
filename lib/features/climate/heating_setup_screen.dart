@@ -247,6 +247,19 @@ class _HeatingSetupState extends ConsumerState<HeatingSetupScreen> {
                           value: d.lockManual,
                           onChanged: (v) => _set(d.copyWith(lockManual: v)),
                         ),
+                        if (!d.lockManual &&
+                            d.calibration == HeatingCalibration.offset) ...[
+                          const SizedBox(height: 8),
+                          _ToggleCard(
+                            title: 'Auch bei eigener Steuerung kalibrieren',
+                            subtitle: d.calibrateReleased
+                                ? 'Stellt jemand am Thermostat den Wochenplan oder Ventil offen ein, hält Haven still, gleicht aber weiter mit dem Raumthermometer aus.'
+                                : 'Haven nimmt seine Kalibrierung zurück, solange das Thermostat selbst steuert.',
+                            value: d.calibrateReleased,
+                            onChanged: (v) =>
+                                _set(d.copyWith(calibrateReleased: v)),
+                          ),
+                        ],
                         if (_saved != null) ...[
                           const SizedBox(height: 8),
                           _ToggleCard(

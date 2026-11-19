@@ -75,6 +75,7 @@ class HeatingConfig {
     this.outdoorThreshold = 16,
     this.presets = kDefaultHeatingPresets,
     this.lockManual = false,
+    this.calibrateReleased = true,
   });
 
   factory HeatingConfig.fromJson(Map<String, dynamic> j) {
@@ -98,6 +99,7 @@ class HeatingConfig {
               : kDefaultHeatingPresets[m]!,
       },
       lockManual: j['lock_manual'] == true,
+      calibrateReleased: j['calibrate_released'] != false,
     );
   }
 
@@ -128,6 +130,10 @@ class HeatingConfig {
   /// Änderungen am Thermostat zurücksetzen statt übernehmen.
   final bool lockManual;
 
+  /// Am Thermostat freigegebene Geräte (eigener Wochenplan, Ventil offen)
+  /// weiter auf das Raumthermometer kalibrieren.
+  final bool calibrateReleased;
+
   Map<String, dynamic> toJson() => {
     'area_id': areaId,
     'enabled': enabled,
@@ -142,6 +148,7 @@ class HeatingConfig {
         : {'entity': outdoorEntity, 'threshold': outdoorThreshold},
     'presets': {for (final e in presets.entries) e.key.wire: e.value},
     'lock_manual': lockManual,
+    'calibrate_released': calibrateReleased,
   };
 
   HeatingConfig copyWith({
@@ -157,6 +164,7 @@ class HeatingConfig {
     double? outdoorThreshold,
     Map<HeatingMode, double>? presets,
     bool? lockManual,
+    bool? calibrateReleased,
   }) => HeatingConfig(
     areaId: areaId,
     enabled: enabled ?? this.enabled,
@@ -170,6 +178,7 @@ class HeatingConfig {
     outdoorThreshold: outdoorThreshold ?? this.outdoorThreshold,
     presets: presets ?? this.presets,
     lockManual: lockManual ?? this.lockManual,
+    calibrateReleased: calibrateReleased ?? this.calibrateReleased,
   );
 
   @override
@@ -185,7 +194,8 @@ class HeatingConfig {
       other.windowCloseDelay == windowCloseDelay &&
       other.calibration == calibration &&
       mapEquals(other.presets, presets) &&
-      other.lockManual == lockManual;
+      other.lockManual == lockManual &&
+      other.calibrateReleased == calibrateReleased;
 
   @override
   int get hashCode => Object.hash(areaId, trvs.length, sensors.length);
@@ -208,6 +218,9 @@ class HeatingTrvStatus {
     this.desiredSetpoint,
     this.desiredCalibration,
     this.pending = false,
+    this.released = false,
+    this.releasedMode,
+    this.releaseUntil,
   });
 
   factory HeatingTrvStatus.fromJson(Map<String, dynamic> j) => HeatingTrvStatus(
@@ -224,6 +237,9 @@ class HeatingTrvStatus {
     desiredSetpoint: _d(j['desired_setpoint']),
     desiredCalibration: _d(j['desired_calibration']),
     pending: j['pending'] == true,
+    released: j['released'] == true,
+    releasedMode: j['released_mode'] as String?,
+    releaseUntil: _t(j['release_until']),
   );
 
   final String ieee;
@@ -247,6 +263,15 @@ class HeatingTrvStatus {
 
   /// Ein Befehl ist unterwegs (Gerät hat ihn noch nicht bestätigt).
   final bool pending;
+
+  /// Am Gerät auf eigene Steuerung gestellt: Haven schickt weder Modus noch
+  /// Sollwert ([releasedMode] z. B. `on` = Ventil offen, `auto` =
+  /// Wochenplan des Geräts).
+  final bool released;
+  final String? releasedMode;
+
+  /// Ventil offen: bis dahin, danach übernimmt Haven wieder.
+  final DateTime? releaseUntil;
 }
 
 /// Warum gerade nicht geheizt wird.
@@ -288,6 +313,7 @@ class HeatingStatus {
     this.summer = false,
     this.trvs = const [],
     this.running = true,
+    this.released = false,
   });
 
   factory HeatingStatus.fromJson(Map<String, dynamic> j) {
@@ -325,6 +351,7 @@ class HeatingStatus {
           if (t is Map) HeatingTrvStatus.fromJson(Map<String, dynamic>.from(t)),
       ],
       running: j['running'] != false,
+      released: j['released'] == true,
     );
   }
 
@@ -359,6 +386,9 @@ class HeatingStatus {
   final List<HeatingTrvStatus> trvs;
   final bool running;
 
+  /// Mindestens ein Thermostat steuert gerade selbst (am Gerät gestellt).
+  final bool released;
+
   bool get usesSensors => roomSource == 'sensors';
 
   HeatingStatus copyWith({
@@ -389,6 +419,7 @@ class HeatingStatus {
     summer: summer,
     trvs: trvs,
     running: running,
+    released: released,
   );
 }
 

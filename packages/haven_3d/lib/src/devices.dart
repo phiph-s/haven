@@ -14,6 +14,30 @@ class LampProfile {
   final double range;
 }
 
+/// Wie ein Gerät montiert ist. Bauformen, die nach unten zeigend gebaut
+/// sind (Deckenleuchte, Spot, Bewegungsmelder, Lightbar), lassen sich auch
+/// an die Wand (Vorderseite in den Raum) oder nach oben zeigend aufstellen.
+enum DeviceMount {
+  /// An der Decke oder unter einem Regal, zeigt nach unten.
+  ceiling('Decke'),
+
+  /// An der Wand, zeigt in den Raum.
+  wall('Wand'),
+
+  /// Steht auf Boden oder Möbel und zeigt nach oben (Uplight).
+  up('Nach oben');
+
+  const DeviceMount(this.label);
+  final String label;
+
+  static DeviceMount? byName(String? name) {
+    for (final m in values) {
+      if (m.name == name) return m;
+    }
+    return null;
+  }
+}
+
 /// Ein Gerät in der 3D-Welt: Bauform, Standardhöhe und Modell.
 ///
 /// Lokale Koordinaten: Ursprung ist der Montagepunkt ([height] über dem
@@ -29,6 +53,8 @@ class DeviceSpec {
     this.wall = false,
     this.lamp,
     this.glow,
+    this.mounts = const [],
+    this.legacy = false,
   });
 
   final String id;
@@ -39,21 +65,63 @@ class DeviceSpec {
   final void Function(ModelBuilder b) build;
   final void Function(ModelBuilder b)? glow;
 
+  /// Mögliche Montagen, die erste ist der Standard. Leer: fest (so wie
+  /// gebaut). Nur für nach unten gebaute Bauformen.
+  final List<DeviceMount> mounts;
+
+  /// Alte Bauform: wird noch gezeigt, aber nicht mehr angeboten.
+  final bool legacy;
+
   bool get isLamp => lamp != null;
 
-  Model3 model() {
+  /// Gültige Montage: [m], wenn möglich, sonst der Standard (oder `null`
+  /// bei fester Bauform).
+  DeviceMount? mountOf(DeviceMount? m) =>
+      mounts.isEmpty ? null : (mounts.contains(m) ? m : mounts.first);
+
+  /// Hängt an einer Wand (eingerastet, mit der Wand durchscheinend)?
+  bool isWall(DeviceMount? m) => wall || mountOf(m) == DeviceMount.wall;
+
+  /// Standardhöhe des Montagepunkts für die Montage [m].
+  double heightFor(DeviceMount? m) => switch (mountOf(m)) {
+    DeviceMount.wall => isLamp ? 1.8 : 2.2,
+    DeviceMount.up => 0,
+    _ => height,
+  };
+
+  /// Lokaler Punkt [v] der Bauform in der Montage [m] (die Bauform ist nach
+  /// unten zeigend gebaut): Wand dreht `-z` nach `-y` (in den Raum), nach
+  /// oben stellt sie auf den Kopf.
+  V3 orient(V3 v, DeviceMount? m) => switch (mountOf(m)) {
+    DeviceMount.wall => v.rotateX(-math.pi / 2),
+    DeviceMount.up => v.rotateX(math.pi),
+    _ => v,
+  };
+
+  /// Richtung des Lichts (lokal, vor dem Drehen zur Wand).
+  V3 lightAxis(DeviceMount? m) => orient(const V3(0, 0, -1), m);
+
+  /// Versatz der Lichtquelle zum Montagepunkt (lokal).
+  V3 lightOffset(DeviceMount? m) => orient(V3(0, 0, lamp?.lightZ ?? 0), m);
+
+  Model3 model([DeviceMount? m]) {
     final b = ModelBuilder();
     build(b);
-    return b.build();
+    return _oriented(b.build(), m);
   }
 
-  Model3? glowModel() {
+  Model3? glowModel([DeviceMount? m]) {
     final g = glow;
     if (g == null) return null;
     final b = ModelBuilder();
     g(b);
-    return b.build();
+    return _oriented(b.build(), m);
   }
+
+  Model3 _oriented(Model3 model, DeviceMount? m) =>
+      mountOf(m) == null || mountOf(m) == DeviceMount.ceiling
+      ? model
+      : model.rotated((v) => orient(v, m));
 }
 
 /// Alle Bauformen. Lampen haben einen [LampProfile] (Lichtkegel).
@@ -65,11 +133,13 @@ final Map<String, DeviceSpec> kDeviceModels = {
 DeviceSpec deviceSpec(String? id) =>
     kDeviceModels[id] ?? kDeviceModels['device']!;
 
-/// Bauformen für Lampen bzw. für alles andere (Auswahl im Editor).
+/// Bauformen für Lampen (Auswahl im Editor).
 List<DeviceSpec> get lampModels => [
   for (final d in _devices)
-    if (d.isLamp) d,
+    if (d.isLamp && !d.legacy) d,
 ];
+
+const _turnable = [DeviceMount.ceiling, DeviceMount.wall, DeviceMount.up];
 
 final List<DeviceSpec> _devices = [
   // ---- Lampen ----------------------------------------------------------
@@ -78,6 +148,7 @@ final List<DeviceSpec> _devices = [
     'Deckenleuchte',
     height: 2.5,
     lamp: const LampProfile(cone: 1.25, lightZ: -0.1),
+    mounts: _turnable,
     build: (b) => b.cylinder(0, 0, 0.05, -0.03, 0, segments: 10),
     glow: (b) => b.cylinder(0, 0, 0.2, -0.09, -0.03, segments: 20),
   ),
@@ -98,6 +169,7 @@ final List<DeviceSpec> _devices = [
     'Spot',
     height: 2.5,
     lamp: const LampProfile(cone: 0.42, lightZ: -0.1),
+    mounts: _turnable,
     build: (b) => b.cylinder(0, 0, 0.06, -0.08, 0, segments: 12),
     glow: (b) => b.cylinder(0, 0, 0.045, -0.095, -0.08, segments: 12),
   ),
@@ -141,6 +213,21 @@ final List<DeviceSpec> _devices = [
     glow: (b) => b.cylinder(0, 0, 0.05, -0.14, -0.04, segments: 12),
   ),
 
+  DeviceSpec(
+    'lightbar',
+    'Lightbar',
+    height: 2.5,
+    // Standard: steht auf Boden oder Möbel und strahlt nach oben an die
+    // Wand; unter Regalen oder an der Wand auch nach unten bzw. in den Raum.
+    lamp: const LampProfile(cone: 1.05, lightZ: -0.05, range: 5),
+    mounts: const [DeviceMount.up, DeviceMount.ceiling, DeviceMount.wall],
+    build: (b) {
+      b.box(-0.3, -0.025, -0.035, 0.3, 0.025, 0);
+      b.line(const V3(-0.3, 0, -0.035), const V3(0.3, 0, -0.035));
+    },
+    glow: (b) => b.box(-0.29, -0.018, -0.045, 0.29, 0.018, -0.035),
+  ),
+
   // ---- Klima -----------------------------------------------------------
   DeviceSpec(
     'trv',
@@ -179,8 +266,9 @@ final List<DeviceSpec> _devices = [
   // ---- Sensoren, Schalter, Sonstiges ------------------------------------
   DeviceSpec(
     'motion',
-    'Bewegungsmelder (Decke)',
+    'Bewegungsmelder',
     height: 2.5,
+    mounts: const [DeviceMount.ceiling, DeviceMount.wall],
     build: (b) {
       b.cylinder(0, 0, 0.045, -0.015, 0, segments: 14);
       b.cone(0, 0, 0.035, 0.01, -0.05, -0.015, segments: 14, mat: Mat.soft);
@@ -191,6 +279,7 @@ final List<DeviceSpec> _devices = [
     'Bewegungsmelder (Wand)',
     height: 2.2,
     wall: true,
+    legacy: true,
     build: (b) {
       b.box(-0.03, -0.03, -0.03, 0.03, 0, 0.03);
       b.box(-0.02, -0.045, -0.02, 0.02, -0.03, 0.015, mat: Mat.soft);

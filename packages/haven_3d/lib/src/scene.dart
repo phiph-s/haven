@@ -269,6 +269,25 @@ class SceneObject {
     );
   }
 
+  /// Öffnung in der Wand (Welt) für Türen und Fenster: Anfang und Ende auf
+  /// der Wandlinie, Unter- und Oberkante. Fenster sitzen mittig in der Wand
+  /// (lokal `y = 0`) über die ganze Breite, von der Brüstung bis zum Sturz.
+  /// `null` für alles andere.
+  ({Offset a, Offset b, double z0, double z1})? get wallOpening {
+    if (width <= 0) return null;
+    if (doorOpening case final d?) {
+      return (a: d.a, b: d.b, z0: 0, z1: d.height);
+    }
+    if (kind != 'window') return null;
+    final s = furnitureSpec(kind);
+    return (
+      a: toWorld(Offset(-width / 2, 0)),
+      b: toWorld(Offset(width / 2, 0)),
+      z0: s.elevation,
+      z1: s.elevation + s.height,
+    );
+  }
+
   /// Punkt [local] (lokales System, ohne Höhe) in Weltkoordinaten.
   Offset toWorld(Offset local) {
     final v = V3(local.dx, local.dy, 0).rotateZ(rotation * math.pi / 180);
@@ -345,14 +364,18 @@ class SceneMarker {
     this.roomId,
     this.lamp,
     this.model,
+    this.mount,
   }) : position = V3(
          at.dx,
          at.dy,
          height ??
              (model != null
-                 ? deviceSpec(model).height
+                 ? deviceSpec(model).heightFor(mount)
                  : kDefaultMarkerHeight[kind]!),
        );
+
+  /// Montage der Bauform (Decke, Wand, nach oben), `null`: Standard.
+  final DeviceMount? mount;
 
   /// Bauform in 3D (siehe [kDeviceModels]), `null`: kein Modell, nur der
   /// Punkt (Lampen leuchten trotzdem).
@@ -363,9 +386,13 @@ class SceneMarker {
   V3 get lightPosition {
     final m = model;
     if (m == null) return position;
-    final l = deviceSpec(m).lamp;
-    return l == null ? position : position + V3(0, 0, l.lightZ);
+    final spec = deviceSpec(m);
+    return spec.lamp == null ? position : position + spec.lightOffset(mount);
   }
+
+  /// Richtung des Lichtkegels (ohne Drehung zur Wand), Standard nach unten.
+  V3 get lightAxis =>
+      model == null ? const V3(0, 0, -1) : deviceSpec(model).lightAxis(mount);
 
   /// Lichtkegel (halber Winkel nach unten) oder `null` (rundum).
   double? get cone => model == null ? null : deviceSpec(model).lamp?.cone;
@@ -485,6 +512,32 @@ class Scene {
     final probe = o.depth / 2 + 0.05;
     return _roomAt(o.toWorld(Offset(0, -probe))) ??
         _roomAt(o.toWorld(Offset(0, probe)));
+  }
+
+  /// Alle Räume, die ein Objekt berührt: bei Türen und Fenstern die Räume
+  /// zu beiden Seiten ihrer Wand entlang der ganzen Öffnung (auch über eine
+  /// Raumgrenze hinweg), sonst nur der Raum aus [objectRoom].
+  late final Map<String, Set<String>> objectRooms = {
+    for (final o in objects) o.id: _roomsOf(o),
+  };
+
+  Set<String> _roomsOf(SceneObject o) {
+    final own = objectRoom[o.id];
+    final out = <String>{?own};
+    final w = o.wallOpening;
+    if (w == null) return out;
+    final e = w.b - w.a;
+    final len = e.distance;
+    if (len < 1e-6) return out;
+    final n = Offset(-e.dy, e.dx) / len;
+    for (var i = 0; i <= 4; i++) {
+      final p = Offset.lerp(w.a, w.b, 0.1 + 0.8 * i / 4)!;
+      for (final side in const [-0.2, 0.2]) {
+        final r = _roomAt(p + n * side);
+        if (r != null) out.add(r);
+      }
+    }
+    return out;
   }
 
   /// Raum-ID je Gerät (oder `null` für draußen).

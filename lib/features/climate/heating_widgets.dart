@@ -127,6 +127,20 @@ class RoomHeatingCard extends ConsumerWidget {
                     : Icons.thermostat_rounded,
             },
           ),
+          if (s.released && c.enabled) ...[
+            const SizedBox(height: 8),
+            _ReleasedNote(
+              onResume: () async {
+                Haptics.tap();
+                final err = await ref
+                    .read(heatingProvider.notifier)
+                    .resume(heat.areaId);
+                if (err != null && context.mounted) {
+                  zbToast(context, 'Nicht übernommen. $err', error: true);
+                }
+              },
+            ),
+          ],
           const SizedBox(height: 12),
           _ModeChips(
             mode: s.mode,
@@ -329,6 +343,44 @@ class _ModeChips extends StatelessWidget {
   }
 }
 
+/// Hinweis: ein Thermostat steuert gerade selbst (am Gerät gestellt), mit
+/// „Wieder regeln“.
+class _ReleasedNote extends StatelessWidget {
+  const _ReleasedNote({required this.onResume});
+  final VoidCallback onResume;
+
+  @override
+  Widget build(BuildContext context) {
+    final hv = context.hv;
+    return Container(
+      key: const ValueKey('heating-released'),
+      padding: const EdgeInsets.fromLTRB(12, 6, 4, 6),
+      decoration: BoxDecoration(
+        color: hv.s2,
+        borderRadius: BorderRadius.circular(HavenRadii.m),
+        border: Border.all(color: hv.ln),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.pan_tool_alt_rounded, size: 18, color: hv.tx2),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              'Am Thermostat gesteuert, Haven hält still',
+              style: HavenText.caption.copyWith(color: hv.tx),
+            ),
+          ),
+          TextButton(
+            key: const ValueKey('heating-resume'),
+            onPressed: onResume,
+            child: const Text('Wieder regeln'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _TrvLine extends StatelessWidget {
   const _TrvLine({
     required this.trv,
@@ -344,7 +396,9 @@ class _TrvLine extends StatelessWidget {
     final hv = context.hv;
     final heating = trv.heating == true;
     final fix = trvCorrectionText(trv, target);
+    final released = trvReleasedText(trv);
     final parts = [
+      ?released,
       if (trv.localTemperature != null)
         'misst ${fmtTemp(trv.localTemperature!)}',
       if (trv.valve != null) 'Ventil ${trv.valve} %',

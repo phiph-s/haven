@@ -145,7 +145,6 @@ class _MeshGraphState extends ConsumerState<MeshGraph> {
       onOutsideTap: w.onRoomTap,
       interactive: w.interactive && !w.mini,
       interactiveMarkers: w.coordinatorDrag != null,
-      showLabels: !w.mini,
       // Das Netz braucht kein gebackenes Licht: Entwurf baut in wenigen ms
       // statt Sekunden (der Netzplan ist eine eigene Szene).
       quality: h3.SceneQuality.draft,

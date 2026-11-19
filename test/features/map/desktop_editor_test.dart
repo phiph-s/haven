@@ -213,4 +213,51 @@ void main() {
     expect(lib.grid, isTrue);
     expect(find.byType(LibraryTile, skipOffstage: false), findsWidgets);
   });
+
+  testWidgets('Geräte setzen: Gerät wählen und von der Karte nehmen', (
+    tester,
+  ) async {
+    final repo = _MemoryRepo(kFakeFloorPlan);
+    await _pump(tester, '/map/editor?mode=devices', repo: repo, size: _desk);
+    final before = kFakeFloorPlan.placements.length;
+    final marker = find.byType(MapMarker).first;
+    final id = tester.widget<MapMarker>(marker).entityId;
+    await tester.tap(marker);
+    await tester.pumpAndSettle();
+    expect(find.byKey(ValueKey('dsel-$id')), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('device-remove')));
+    await tester.pumpAndSettle();
+    expect(repo.plan!.placements.length, before - 1);
+    expect(repo.plan!.placementOf(id), isNull);
+    expect(find.byKey(ValueKey('dsel-$id')), findsNothing);
+  });
+
+  testWidgets('Geräte setzen: Entf nimmt das gewählte Gerät von der Karte', (
+    tester,
+  ) async {
+    final repo = _MemoryRepo(kFakeFloorPlan);
+    await _pump(tester, '/map/editor?mode=devices', repo: repo, size: _desk);
+    final marker = find.byType(MapMarker).first;
+    final id = tester.widget<MapMarker>(marker).entityId;
+    await tester.tap(marker);
+    await tester.pumpAndSettle();
+    await tester.sendKeyEvent(LogicalKeyboardKey.delete);
+    await tester.pumpAndSettle();
+    expect(repo.plan!.placementOf(id), isNull);
+  });
+
+  testWidgets('Geräte setzen: Licht aus, live, alle an', (tester) async {
+    await _pump(tester, '/map/editor?mode=devices', size: _desk);
+    expect(find.byKey(const ValueKey('editor-light')), findsOneWidget);
+    for (final t in ['An', 'Live', 'Aus']) {
+      await tester.tap(
+        find.descendant(
+          of: find.byKey(const ValueKey('editor-light')),
+          matching: find.text(t),
+        ),
+      );
+      await tester.pumpAndSettle();
+    }
+    expect(tester.takeException(), isNull);
+  });
 }

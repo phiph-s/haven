@@ -154,6 +154,7 @@ Float32List bakeLamp(
   int samples = 7,
   Float32List? unshadowed,
   double? cone,
+  V3 axis = const V3(0, 0, -1),
 }) {
   final pts = [
     lamp,
@@ -182,8 +183,8 @@ Float32List bakeLamp(
           .pow((1 - math.pow(d / range, 4)).clamp(0.0, 1.0), 2)
           .toDouble();
       var e = cos / d2 * win;
-      // Lichtkegel nach unten (Spot, Pendel): weich zum Rand.
-      if (cone != null) e *= coneFactor(cos, cone);
+      // Lichtkegel entlang [axis] (Spot, Pendel): weich zum Rand.
+      if (cone != null) e *= coneFactor(-l.dot(axis) / d, cone);
       if (e <= 0) continue;
       unshadowed?[iy * r.width + ix] = e;
       if (inside) {

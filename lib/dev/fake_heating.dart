@@ -130,6 +130,7 @@ class FakeHeating {
     String areaId, {
     double? target,
     HeatingMode? mode,
+    bool resume = false,
   }) async {
     final st = _state[areaId];
     if (st == null || !_configs.containsKey(areaId)) {
@@ -137,6 +138,9 @@ class FakeHeating {
         'Für diesen Raum ist keine Heizungsregelung eingerichtet',
         code: 'not_found',
       );
+    }
+    for (final m in st.trvs.values) {
+      m.released = m.releaseUntil = null;
     }
     if (mode != null) st.mode = mode;
     if (target != null) {
@@ -224,6 +228,7 @@ class FakeHeating {
       a.heating != b.heating ||
       a.windowOpen != b.windowOpen ||
       a.outdoorValue != b.outdoorValue ||
+      a.released != b.released ||
       a.trvs.length != b.trvs.length ||
       [
         for (var i = 0; i < a.trvs.length; i++)
@@ -280,12 +285,31 @@ class FakeHeating {
       final memo = st.trvs.putIfAbsent(ieee, _TrvMemo.new);
       final sp = (s['current_heating_setpoint'] as num?)?.toDouble();
       final preset = s['preset'] as String?;
+      // Ventil offen am Gerät: nach 45 min übernimmt Haven wieder.
+      if (memo.releaseUntil case final u? when !now.isBefore(u)) {
+        memo.released = memo.releaseUntil = null;
+      }
       if (!c.lockManual &&
+          memo.seenPreset != null &&
+          preset != memo.seenPreset &&
+          preset != memo.sentPreset) {
+        if (preset == 'on' || preset == 'auto') {
+          memo.released = preset;
+          memo.releaseUntil = preset == 'on'
+              ? now.add(const Duration(minutes: 45))
+              : null;
+        } else {
+          memo.released = memo.releaseUntil = null;
+        }
+      }
+      memo.seenPreset = preset;
+      if (!c.lockManual &&
+          memo.released == null &&
           sp != null &&
           memo.seenSp != null &&
           sp != memo.seenSp &&
           sp != memo.sentSp &&
-          preset == 'on' &&
+          preset == 'comfort' &&
           _pause(st) == null) {
         final shift = c.calibration == HeatingCalibration.target
             ? memo.shift
@@ -307,13 +331,18 @@ class FakeHeating {
       final local = (s['local_temperature'] as num?)?.toDouble();
       final cal = (s['local_temperature_calibration'] as num?)?.toDouble() ?? 0;
       final sp = (s['current_heating_setpoint'] as num?)?.toDouble();
-      final method = source == 'sensors'
+      final released = memo.released != null;
+      final method = source == 'sensors' && !(released && !c.calibrateReleased)
           ? c.calibration
           : HeatingCalibration.none;
-      if (pause != null || target == null) {
-        if (s['preset'] != 'off') values['preset'] = 'off';
+      if (released) {
+        // Gerät steuert selbst: weder Modus noch Sollwert.
+      } else if (pause != null || target == null) {
+        if (s['preset'] != 'off') values['preset'] = memo.sentPreset = 'off';
       } else {
-        if (s['preset'] != 'on') values['preset'] = 'on';
+        if (s['preset'] != 'comfort') {
+          values['preset'] = memo.sentPreset = 'comfort';
+        }
         var want = target;
         if (method == HeatingCalibration.target &&
             room != null &&
@@ -346,7 +375,8 @@ class FakeHeating {
           memo.sentCal = want;
           memo.sentCalAt = now;
         }
-      } else if (c.calibration != HeatingCalibration.offset &&
+      } else if ((c.calibration != HeatingCalibration.offset ||
+              method == HeatingCalibration.none && released) &&
           memo.sentCal != null &&
           memo.sentCal != 0 &&
           cal != 0) {
@@ -390,6 +420,7 @@ class FakeHeating {
           : s['running_state'] == 'heat';
       final sp = (s['current_heating_setpoint'] as num?)?.toDouble();
       final wantOff = pause != null || target == null;
+      final memo = st.trvs[ieee];
       trvs.add(
         HeatingTrvStatus(
           ieee: ieee,
@@ -405,7 +436,12 @@ class FakeHeating {
               method == HeatingCalibration.offset && corr != null
               ? (corr.clamp(-10, 10) * 10).round() / 10
               : null,
-          pending: wantOff ? s['preset'] != 'off' : s['preset'] != 'on',
+          pending:
+              memo?.released == null &&
+              (wantOff ? s['preset'] != 'off' : s['preset'] != 'comfort'),
+          released: memo?.released != null,
+          releasedMode: memo?.released,
+          releaseUntil: memo?.releaseUntil,
         ),
       );
     }
@@ -437,6 +473,7 @@ class FakeHeating {
       outdoorCurrent: outdoor,
       summer: st.summer,
       trvs: trvs,
+      released: trvs.any((t) => t.released),
     );
   }
 
@@ -467,4 +504,10 @@ class _TrvMemo {
   double? sentCal;
   DateTime? sentCalAt;
   double shift = 0;
+  String? seenPreset;
+  String? sentPreset;
+
+  /// Am Gerät auf eigene Steuerung gestellt (`on`, `auto`), sonst `null`.
+  String? released;
+  DateTime? releaseUntil;
 }

@@ -127,6 +127,27 @@ class HeatingNotifier extends AsyncNotifier<HeatingRooms> {
     }
     return completer.future;
   }
+
+  /// Am Thermostat freigegebene Geräte wieder regeln („Wieder regeln“).
+  /// Fehler kommen als Text zurück.
+  Future<String?> resume(String areaId) async {
+    if (_current.byArea(areaId) == null) {
+      return 'Keine Regelung für diesen Raum.';
+    }
+    try {
+      final s = await ref
+          .read(repositoryProvider)
+          .controlHeating(areaId, resume: true);
+      final cur = _current.byArea(areaId);
+      if (ref.mounted && cur != null) {
+        state = AsyncData(_current.replace(cur.withStatus(s)));
+      }
+      return null;
+    } catch (e) {
+      if (ref.mounted) unawaited(reload());
+      return '$e';
+    }
+  }
 }
 
 final heatingProvider = AsyncNotifierProvider<HeatingNotifier, HeatingRooms>(
