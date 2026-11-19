@@ -15,6 +15,8 @@ import 'floor_geometry.dart';
 import 'heatmap.dart';
 import 'map_data.dart';
 import 'map_readings.dart';
+import 'map_sky.dart';
+import 'map_weather.dart';
 
 // ---- Einstellungen und Zustand ---------------------------------------------
 
@@ -407,6 +409,7 @@ class Map3DView extends ConsumerStatefulWidget {
     this.quality,
     this.followSettings = true,
     this.markerKind,
+    this.sky = false,
   });
 
   final HavenFloorPlan plan;
@@ -462,6 +465,11 @@ class Map3DView extends ConsumerStatefulWidget {
 
   /// Art (Höhe) eines Knotens, sonst aus der Platzierung im Plan.
   final h3.MarkerKind Function(FloorNode node)? markerKind;
+
+  /// Himmel mit Tag und Nacht, Wetter und Schnee (live oder eigene Werte,
+  /// siehe [mapWeatherProvider]): Licht und Schatten in Echtzeit, Sonne und
+  /// Mond durch die Fenster, Hintergrund als Himmelsverlauf.
+  final bool sky;
 
   @override
   ConsumerState<Map3DView> createState() => _Map3DViewState();
@@ -593,10 +601,32 @@ class _Map3DViewState extends ConsumerState<Map3DView> {
       });
     }
     final m = plan.grid.cellMeters;
+    // Himmel: Licht und Schnee in die Szene (Änderungen nach dem Bild).
+    final weather = widget.sky
+        ? ref.watch(mapWeatherProvider(plan.north))
+        : null;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      c.setSky(weather?.sky);
+      c.setGround(
+        weather == null
+            ? null
+            : h3.SceneGround(
+                color: const Color(0x00FFFFFF),
+                // Ab etwa 25 cm liegt eine geschlossene Decke.
+                snow: (weather.snowCm / 25).clamp(0.0, 1.0),
+              ),
+      );
+    });
     final byId = {for (final n in widget.nodes) n.id: n};
-    final style = (hv.isDark ? h3.SceneStyle.dark() : h3.SceneStyle.light())
-        .copyWith(accent: hv.acc);
-    return h3.Scene3DView(
+    // Mit Himmel in hell und dunkel dasselbe Licht und dieselben Farben,
+    // nur der Hintergrund unterscheidet sich.
+    final style =
+        (weather != null || !hv.isDark
+                ? h3.SceneStyle.light()
+                : h3.SceneStyle.dark())
+            .copyWith(accent: hv.acc);
+    final view = h3.Scene3DView(
       scene: scene,
       controller: c,
       style: style,
@@ -652,7 +682,47 @@ class _Map3DViewState extends ConsumerState<Map3DView> {
       onLongPress: widget.interactive ? _hold : null,
       onSecondaryTap: widget.interactive ? _secondary : null,
     );
+    if (weather == null) return view;
+    final bounds = planBoundsMeters(plan);
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: mapSkyGradient(weather.sky, dark: hv.isDark),
+        ),
+      ),
+      child: h3.SkyLayers(
+        sky: weather.sky,
+        // „Bewegung reduzieren“ im System: Himmel steht still.
+        animate: mapSkyAnimations && !MediaQuery.disableAnimationsOf(context),
+        controller: c,
+        center: h3.V3(bounds.center.dx, bounds.center.dy, 0),
+        extent: bounds,
+        child: view,
+      ),
+    );
   }
+}
+
+/// Wolken, Regen und Schnee bewegen sich; Tests schalten das ab, damit
+/// `pumpAndSettle` zur Ruhe kommt (siehe `test/flutter_test_config.dart`).
+@visibleForTesting
+bool mapSkyAnimations = true;
+
+/// Grundfläche aller Räume eines Plans in Metern.
+Rect planBoundsMeters(HavenFloorPlan plan) {
+  final m = plan.grid.cellMeters;
+  Rect? r;
+  for (final room in plan.rooms) {
+    for (final p in room.points) {
+      final q = Offset(p.x * m, p.y * m);
+      r = r == null
+          ? Rect.fromPoints(q, q)
+          : r.expandToInclude(Rect.fromPoints(q, q));
+    }
+  }
+  return r ?? Rect.zero;
 }
 
 // ---- Bedienelemente ----------------------------------------------------------
@@ -666,7 +736,11 @@ class Map3DControls extends ConsumerWidget {
     this.onRecenter,
     this.axis = Axis.vertical,
     this.controller,
+    this.weather = false,
   });
+
+  /// Mit Knopf für das Wetter der Karte (Live oder eigene Werte).
+  final bool weather;
 
   /// Kamera, die die Leiste steuert (Funknetz), sonst die Karte der App.
   final h3.SceneController? controller;
@@ -770,6 +844,7 @@ class Map3DControls extends ConsumerWidget {
           ),
         ),
       ),
+      if (weather) const MapWeatherButton(),
     ];
     return DecoratedBox(
       decoration: BoxDecoration(

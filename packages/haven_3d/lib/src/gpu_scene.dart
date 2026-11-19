@@ -80,10 +80,122 @@ class GpuScene {
       }
     }
     _applyLighting();
+    _glowSnow();
   }
 
   SceneSky? _sky;
   SceneSky? get sky => _sky;
+
+  SceneGround? _groundSpec;
+  _Ground? _ground;
+
+  /// Oberseiten der Wände je Raum (Schneehauben) und die Hauben selbst.
+  final List<(fs.Node, List<V3>)> _capPolys = [];
+  final List<(fs.Node, fs.Node)> _snowCaps = [];
+
+  /// Schneehauben [meters] dick auf allen Wandkronen (0: keine).
+  void _setSnowCaps(double meters) {
+    final on = meters >= 0.005;
+    // Einmal gebaut (1 m hoch), danach nur in der Höhe skaliert.
+    if (on && _snowCaps.isEmpty) {
+      final mat = fs.PhysicallyBasedMaterial()
+        ..baseColorFactor = linearColor(const Color(0xFFF5F8FB))
+        ..metallicFactor = 0
+        ..roughnessFactor = 1
+        ..emissiveFactor = vm.Vector4(1, 1, 1, 1)
+        ..emissiveStrength = 0.12;
+      for (final (wall, c) in _capPolys) {
+        final b = ModelBuilder()..prism([for (final p in c) p.xy], 0, 1);
+        final acc = _MeshAcc();
+        for (final f in b.build().faces) {
+          acc.addFace(f, twoSided: true);
+        }
+        if (acc.isEmpty) continue;
+        final node = fs.Node(name: 'snow', mesh: fs.Mesh(acc.geometry(), mat))
+          ..position = toFs(V3(0, 0, c.first.z))
+          ..lightChannelMask = 0xFF
+          ..shadowCastingMode = fs.ShadowCastingMode.off;
+        wall.add(node);
+        _snowCaps.add((wall, node));
+      }
+    }
+    for (final (_, cap) in _snowCaps) {
+      cap.visible = on;
+      if (on) cap.scale = vm.Vector3(1, meters, 1);
+    }
+  }
+
+  /// Boden um die Wohnung (siehe [SceneGround]), `null`: keiner.
+  ///
+  /// Billig bei Änderungen: Rauschmuster und Randverlauf entstehen einmal.
+  /// Wächst der Boden (Dunst), wird er nur skaliert; neue Farbe oder
+  /// Schneehöhe mischen nur die Farben der Textur neu.
+  void setGround(SceneGround? g) {
+    if (g == _groundSpec) return;
+    final old = _groundSpec;
+    _groundSpec = g;
+    if ((old == null) != (g == null)) {
+      for (final r in _receivers) {
+        _paintReceiver(r);
+      }
+    }
+    if (g == null) {
+      final n = _ground?.node;
+      if (n != null) scene.root.remove(n);
+      _ground = null;
+      _setSnowCaps(0);
+      return;
+    }
+    var gr = _ground;
+    if (gr == null) {
+      gr = _ground = _buildGround(g);
+      if (gr == null) return;
+      scene.add(gr.node);
+    }
+    if (old == null || old.color != g.color || old.snow != g.snow) {
+      // Erst im nächsten Bild: ein Regler sendet viele Werte je Bild.
+      _groundPaint = true;
+    }
+    if (old?.snow != g.snow) _setSnowCaps(g.snow * kSnowMaxDepth);
+    gr.resize(g.margin);
+    _glowSnow();
+  }
+
+  /// Schnee leuchtet leicht nach Tageslicht (sonst wirkte er grau).
+  void _glowSnow() {
+    final gr = _ground;
+    if (gr == null) return;
+    final l = _sky?.light;
+    gr.material.emissiveStrength = l == null
+        ? 0.3
+        // Nur nach dem Himmelslicht, nicht nach der Sonne: Schatten auf dem
+        // Schnee bleiben sichtbar.
+        : (0.05 + 0.7 * l.ambient) *
+              (_groundSpec?.snow ?? 0).clamp(0.0, 1.0).sign;
+  }
+
+  _Ground? _buildGround(SceneGround g) {
+    if (source.rooms.isEmpty) return null;
+    var minX = double.infinity, minY = double.infinity;
+    var maxX = -double.infinity, maxY = -double.infinity;
+    for (final r in source.rooms) {
+      for (final p in r.outline) {
+        minX = math.min(minX, p.dx);
+        minY = math.min(minY, p.dy);
+        maxX = math.max(maxX, p.dx);
+        maxY = math.max(maxY, p.dy);
+      }
+    }
+    return _Ground(
+      cx: (minX + maxX) / 2,
+      cy: (minY + maxY) / 2,
+      halfX: (maxX - minX) / 2,
+      halfY: (maxY - minY) / 2,
+      margin: g.margin,
+      fade: g.fade,
+      outlines: [for (final r in source.rooms) r.outline],
+    );
+  }
 
   fs.Node? _roof;
 
@@ -289,6 +401,7 @@ class GpuScene {
       }
       // Abdeckung oben: Innenkante hin, Außenkante zurück.
       final cap = [..._chain(inns, h), ..._chain(outs, h).reversed];
+
       if (cap.length >= 3) {
         acc.addFace(Face3(cap, V3.up), twoSided: true);
       }
@@ -304,6 +417,9 @@ class GpuScene {
         ], lines.wall),
       );
       roomNode.add(node);
+      // Schneehauben hängen an der Wand: weg, wenn die Wand weggeschnitten
+      // ist.
+      if (cap.length >= 3) _capPolys.add((node, cap));
       // Für Wegschneiden und „hängt an der Wand“: die längste Außenfläche.
       final rep = (outs.isEmpty ? inns : outs).reduce(
         (a, b) =>
@@ -1134,7 +1250,9 @@ class GpuScene {
   }
 
   void _paintReceiver(_Receiver r) {
-    final c = r.color(style);
+    var c = r.color(style);
+    // Mit Boden darunter deckend: sonst schienen Wiese und Schnee durch.
+    if (_groundSpec != null) c = c.withValues(alpha: 1);
     r.material.baseColorFactor = linearColor(c, c.a);
     r.material.alphaMode = c.a < 1 ? fs.AlphaMode.blend : fs.AlphaMode.opaque;
   }
@@ -1368,6 +1486,8 @@ class GpuScene {
   }
 
   /// Vor jedem Bild: Sichtbarkeit und Kantenbreite zur Kamera passend.
+  bool _groundPaint = false;
+
   void sync(
     OrbitCamera cam, {
     String? focusRoomId,
@@ -1379,6 +1499,11 @@ class GpuScene {
     Set<String> hiddenObjects = const {},
     bool lightsOn = true,
   }) {
+    if (_groundPaint) {
+      _groundPaint = false;
+      final g = _groundSpec;
+      if (g != null) _ground?.paint(g.color, g.snow);
+    }
     if (selectedRoomId != _selectedRoom) {
       _roomOutlines[_selectedRoom]?.visible = false;
       _selectedRoom = selectedRoomId;
@@ -2164,4 +2289,164 @@ fs.Geometry _receiverGeometry(LightReceiver r) {
     normals: Float32List.fromList(nrm),
     texCoords: Float32List.fromList(uv),
   );
+}
+
+/// Glattes Wertrauschen (0 … 1) für Schnee-Flecken, drei Oktaven, fest
+/// verteilt (gleiche Flecken bei jedem Aufbau).
+double _groundNoise(double x, double y) {
+  double hash(int ix, int iy) {
+    var h = ix * 374761393 + iy * 668265263;
+    h = (h ^ (h >> 13)) * 1274126177;
+    return ((h ^ (h >> 16)) & 0xFFFF) / 0xFFFF;
+  }
+
+  double layer(double x, double y) {
+    final x0 = x.floor(), y0 = y.floor();
+    final fx = x - x0, fy = y - y0;
+    final sx = fx * fx * (3 - 2 * fx), sy = fy * fy * (3 - 2 * fy);
+    final a = hash(x0, y0), b = hash(x0 + 1, y0);
+    final c = hash(x0, y0 + 1), d = hash(x0 + 1, y0 + 1);
+    return (a + (b - a) * sx) + ((c + (d - c) * sx) - (a + (b - a) * sx)) * sy;
+  }
+
+  // Flecken etwa 1,5 m groß, dazu feinere Ränder.
+  return (layer(x / 1.6, y / 1.6) * 0.6 +
+          layer(x / 0.7 + 17, y / 0.7 + 3) * 0.3 +
+          layer(x / 0.3 + 5, y / 0.3 + 11) * 0.1)
+      .clamp(0.0, 1.0);
+}
+
+/// Boden um die Wohnung: Geometrie um den Mittelpunkt (Skalieren statt
+/// Neubau), Rauschmuster und Randverlauf einmal berechnet.
+class _Ground {
+  _Ground({
+    required this.cx,
+    required this.cy,
+    required this.halfX,
+    required this.halfY,
+    required this.margin,
+    required double fade,
+    required List<List<Offset>> outlines,
+  }) {
+    const z = -0.02;
+    final ex = halfX + margin, ey = halfY + margin;
+    rec = LightReceiver(
+      [V3(-ex, -ey, z), V3(ex, -ey, z), V3(ex, ey, z), V3(-ex, ey, z)],
+      texel: 0.12,
+      maxSide: 180,
+    );
+    final n = rec.width * rec.height;
+    noise = Float32List(n);
+    alpha = Float32List(n);
+    dist = Float32List(n);
+    // Rund auslaufen: Superellipse um die Wohnung, weich auf [fade] Meter.
+    final hx = halfX + margin - fade, hy = halfY + margin - fade;
+    for (var iy = 0; iy < rec.height; iy++) {
+      for (var ix = 0; ix < rec.width; ix++) {
+        final p = rec.texelCenter(ix, iy);
+        final u = p.x.abs() / hx, v = p.y.abs() / hy;
+        final r = math.pow(math.pow(u, 2.6) + math.pow(v, 2.6), 1 / 2.6);
+        final d = (r - 1) * math.min(hx, hy);
+        final t = (d / math.max(fade, 1e-3)).clamp(0.0, 1.0);
+        final i = iy * rec.width + ix;
+        alpha[i] = 1 - t * t * (3 - 2 * t);
+        noise[i] = _groundNoise(p.x + cx, p.y + cy);
+        dist[i] = _distOutside(Offset(p.x + cx, p.y + cy), outlines);
+      }
+    }
+    material = fs.PhysicallyBasedMaterial()
+      ..metallicFactor = 0
+      ..roughnessFactor = 1
+      ..baseColorFactor = vm.Vector4(1, 1, 1, 1)
+      ..emissiveFactor = vm.Vector4(1, 1, 1, 1)
+      ..emissiveStrength = 0
+      ..alphaMode = fs.AlphaMode.blend
+      ..depthLayer = -1;
+    node =
+        fs.Node(name: 'ground', mesh: fs.Mesh(_receiverGeometry(rec), material))
+          ..position = toFs(V3(cx, cy, 0))
+          // Sonne, Mond und Lampen draußen, nicht die Lampen der Räume (sie
+          // schienen sonst durch die Wände).
+          ..lightChannelMask = kOutsideChannel | kBakedChannel
+          // Durchscheinend wie die Wände: zuerst zeichnen, sonst malt der
+          // Boden über die halb durchsichtigen Wände dahinter.
+          ..renderOrder = -10
+          ..shadowCastingMode = fs.ShadowCastingMode.off;
+  }
+
+  final double cx, cy, halfX, halfY, margin;
+  late final LightReceiver rec;
+  late final Float32List noise;
+  late final Float32List alpha;
+
+  /// Abstand zur Wohnung (Meter, 0 innen) je Texel: Schneewehen wachsen
+  /// von den Außenwänden nach außen.
+  late final Float32List dist;
+  late final fs.PhysicallyBasedMaterial material;
+  late final fs.Node node;
+
+  /// Farben neu mischen: Boden [color], Schnee-Flecken nach Höhe [snow].
+  void paint(Color color, double snow) {
+    final n = rec.width * rec.height;
+    final base = Uint8List(n * 4);
+    const white = Color(0xFFF7F9FC);
+    // Schneewehen: ein Saum um das Haus, der mit der Höhe nach außen wächst
+    // (welliger Rand aus dem Rauschmuster), bis alles weiß ist.
+    // Höchstens knapp 2 m: die Kante bleibt im Bild.
+    final band = snow <= 0 ? 0.0 : 0.2 + snow * 1.6;
+    for (var i = 0; i < n; i++) {
+      final wobble = (noise[i] - 0.5) * (0.35 + band * 0.4);
+      final k = snow <= 0
+          ? 0.0
+          : ((band + wobble - dist[i]) / 0.3 + 0.5).clamp(0.0, 1.0);
+      final s = k * k * (3 - 2 * k);
+      final o = i * 4;
+      // Durchsichtige Bodenfarbe: nur der Schnee ist zu sehen.
+      final c = color.a <= 0 ? white : color;
+      base[o] = ((c.r + (white.r - c.r) * s) * 255).round();
+      base[o + 1] = ((c.g + (white.g - c.g) * s) * 255).round();
+      base[o + 2] = ((c.b + (white.b - c.b) * s) * 255).round();
+      base[o + 3] = (alpha[i] * (color.a + (1 - color.a) * s) * 255).round();
+    }
+    // Eine Textur für Farbe und Leuchten (der Schnee ist weiß, das Leuchten
+    // folgt der Deckung über den Alphakanal).
+    final tex = fs.Texture2D.fromPixels(base, rec.width, rec.height);
+    material
+      ..baseColorTexture = tex
+      ..emissiveTexture = tex;
+  }
+
+  /// Auf [m] Meter Rand um die Wohnung skalieren (Dunst wächst mit).
+  void resize(double m) {
+    final sx = (halfX + m) / (halfX + margin);
+    final sy = (halfY + m) / (halfY + margin);
+    // Welt (x, y) → flutter_scene (x, -z).
+    node.scale = vm.Vector3(sx, 1, sy);
+  }
+}
+
+/// Wie dick der Schnee höchstens liegt (Meter), bei Schneehöhe 1.
+const double kSnowMaxDepth = 0.25;
+
+/// Abstand von [p] zur Wohnung aus [outlines] (0 innerhalb eines Raums).
+double _distOutside(Offset p, List<List<Offset>> outlines) {
+  var best = double.infinity;
+  for (final o in outlines) {
+    var inside = false;
+    for (var i = 0, j = o.length - 1; i < o.length; j = i++) {
+      final a = o[i], b = o[j];
+      if ((a.dy > p.dy) != (b.dy > p.dy) &&
+          p.dx < (b.dx - a.dx) * (p.dy - a.dy) / (b.dy - a.dy) + a.dx) {
+        inside = !inside;
+      }
+      final ab = b - a;
+      final l2 = ab.distanceSquared;
+      final t = l2 < 1e-12
+          ? 0.0
+          : (((p - a).dx * ab.dx + (p - a).dy * ab.dy) / l2).clamp(0.0, 1.0);
+      best = math.min(best, (p - (a + ab * t)).distance);
+    }
+    if (inside) return 0;
+  }
+  return best;
 }

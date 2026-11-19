@@ -896,6 +896,8 @@ class _MapBodyState extends ConsumerState<_MapBody> {
                             controller: v.controller,
                             overlayBuilder: v.overlay3d,
                             quality: v.quality,
+                            // Himmel nur auf der Wohnungskarte, nicht im Funknetz.
+                            sky: v.controller == null,
                             onNodeTap: v.onNodeTap,
                             onNodeLongPress: _holdNode,
                             onNodeSecondaryTap: _secondaryNode,
@@ -998,6 +1000,7 @@ class _MapBodyState extends ConsumerState<_MapBody> {
                     insets: _mapInsets(),
                     onRecenter: _clearFocus,
                     controller: v.controller,
+                    weather: v.controller == null,
                   ),
                 ),
             ],
@@ -1104,6 +1107,8 @@ class _MapBodyState extends ConsumerState<_MapBody> {
                           controller: v.controller,
                           overlayBuilder: v.overlay3d,
                           quality: v.quality,
+                          // Himmel nur auf der Wohnungskarte, nicht im Funknetz.
+                          sky: v.controller == null,
                           onNodeTap: v.onNodeTap,
                           onNodeLongPress: _holdNode,
                           onNodeSecondaryTap: _secondaryNode,
@@ -1140,6 +1145,7 @@ class _MapBodyState extends ConsumerState<_MapBody> {
                 child: Map3DControls(
                   axis: Axis.horizontal,
                   controller: v.controller,
+                  weather: v.controller == null,
                   insets: _deskInsets,
                   onRecenter: () {
                     _deskFocus = null;
@@ -1780,7 +1786,9 @@ class _NetworkCard extends StatelessWidget {
               ),
               if (legend) ...[
                 const SizedBox(height: 6),
-                Row(
+                // Umbrechen statt überlaufen (große Schrift, schmale Geräte).
+                Wrap(
+                  runSpacing: 4,
                   children: [
                     key(hv.ok, 'stark'),
                     key(hv.warn, 'mittel'),

@@ -26,6 +26,7 @@ import 'ha_automations.dart';
 import 'ha_heating.dart';
 import 'ha_zigbee.dart';
 import 'ha_client.dart';
+import '../models/weather.dart';
 
 /// Echte Verbindung zu Home Assistant. Räume, Szenen und Bedienelemente
 /// kommen aus den `haven/*`-Befehlen der Integration (siehe
@@ -73,6 +74,7 @@ class HaRepository extends BaseRepository {
   List<HavenDevice> _devices = const [];
   Set<String> _excluded = const {};
   Set<String> _locked = const {};
+  WeatherConfig _weather = const WeatherConfig();
   bool _prefsShared = false;
   bool _integrationMissing = false;
   Timer? _roomsDebounce;
@@ -342,6 +344,7 @@ class HaRepository extends BaseRepository {
       _locked = {
         for (final id in (prefs['locked'] as List? ?? const [])) '$id',
       };
+      _weather = WeatherConfig.fromJson(prefs['weather']);
       _prefsShared = true;
     } on HavenException catch (e) {
       // Integration 0.1.0 kennt den Befehl nicht: lokal weiter.
@@ -349,6 +352,7 @@ class HaRepository extends BaseRepository {
       _prefsShared = false;
       _excluded = {..._local.excludedLights};
       _locked = {..._local.lockedIds};
+      _weather = WeatherConfig.fromJson(_local.weatherConfig);
     }
   }
 
@@ -567,6 +571,7 @@ class HaRepository extends BaseRepository {
         activeScenes: Map.unmodifiable(Map.of(_activeScenes)),
         excludedLights: Set.unmodifiable(_excluded),
         locked: Set.unmodifiable(_locked),
+        weather: _weather,
         devices: _devices,
       ),
     );
@@ -856,8 +861,27 @@ class HaRepository extends BaseRepository {
     'prefs': {
       'excluded_lights': _excluded.toList()..sort(),
       'locked': _locked.toList()..sort(),
+      if (!_weather.isEmpty) 'weather': _weather.toJson(),
     },
   });
+
+  @override
+  Future<void> setWeatherConfig(WeatherConfig config) async {
+    final before = _weather;
+    _weather = config;
+    _pushNow();
+    try {
+      if (_prefsShared) {
+        await _sendPrefs();
+      } else {
+        await _local.setWeatherConfig(config.toJson());
+      }
+    } catch (e) {
+      _weather = before;
+      _pushNow();
+      rethrow;
+    }
+  }
 
   @override
   Future<void> setLocked(Iterable<String> ids, bool locked) async {

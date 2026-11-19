@@ -3,6 +3,7 @@ import 'entity_state.dart';
 import 'lamp.dart';
 import 'light_groups.dart';
 import 'room.dart';
+import 'weather.dart';
 
 enum ConnectionStatus {
   /// Erste Verbindung wird aufgebaut.
@@ -29,6 +30,7 @@ class HavenSnapshot {
     this.activeScenes = const {},
     this.excludedLights = const {},
     this.locked = const {},
+    this.weather = const WeatherConfig(),
     this.devices = const [],
     this.revision = 0,
   });
@@ -57,6 +59,9 @@ class HavenSnapshot {
   final Set<String> locked;
 
   bool isLocked(String? id) => id != null && locked.contains(id);
+
+  /// Woher die Karte das Wetter nimmt (für alle Geräte gleich).
+  final WeatherConfig weather;
 
   /// HA-Geräte mit ihren Haupt-Entities (leer bei Integration 0.1.0).
   final List<HavenDevice> devices;
@@ -112,6 +117,7 @@ class HavenSnapshot {
     Map<String, String>? activeScenes,
     Set<String>? excludedLights,
     Set<String>? locked,
+    WeatherConfig? weather,
     List<HavenDevice>? devices,
   }) => HavenSnapshot(
     status: status ?? this.status,
@@ -121,6 +127,7 @@ class HavenSnapshot {
     activeScenes: activeScenes ?? this.activeScenes,
     excludedLights: excludedLights ?? this.excludedLights,
     locked: locked ?? this.locked,
+    weather: weather ?? this.weather,
     devices: devices ?? this.devices,
     revision: revision + 1,
   );

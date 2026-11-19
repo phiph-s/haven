@@ -95,6 +95,38 @@ void main() {
       scrollable: find.byType(Scrollable).first,
     );
     expect(find.text('Perspektive'), findsOneWidget);
+
+    // Wetter: Außenthermometer statt Temperatur vom Wetterdienst.
+    await tester.scrollUntilVisible(
+      find.text('Außentemperatur'),
+      200,
+      scrollable: find.byType(Scrollable).first,
+    );
+    expect(find.text('Wetterdienst'), findsOneWidget);
+    expect(find.textContaining('Automatisch: '), findsOneWidget);
+    expect(find.text('Vom Wetterdienst'), findsOneWidget);
+    final thermo = repo.snapshot
+        .byDomain('sensor')
+        .firstWhere((e) => e.deviceClass == 'temperature');
+    await tester.tap(find.text('Außentemperatur'));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text(thermo.name).last);
+    await tester.tap(find.text(thermo.name).last);
+    await tester.pumpAndSettle();
+    expect(repo.snapshot.weather.temperature, thermo.entityId);
+    expect(find.text(thermo.name), findsWidgets);
+    // Zurück auf den Standard.
+    await tester.tap(find.text('Außentemperatur'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Vom Wetterdienst').last);
+    await tester.pumpAndSettle();
+    expect(repo.snapshot.weather.temperature, isNull);
+
+    await tester.scrollUntilVisible(
+      find.text('Home Assistant öffnen'),
+      -200,
+      scrollable: find.byType(Scrollable).first,
+    );
     await tester.ensureVisible(find.text('Home Assistant öffnen'));
     await tester.tap(find.text('Home Assistant öffnen'));
     await tester.pumpAndSettle();

@@ -123,6 +123,7 @@ class SceneController extends ChangeNotifier {
         _gpu!.setLamp(e.key, e.value);
       }
       if (_sky != null) _gpu!.setSky(_sky);
+      if (_ground != null) _gpu!.setGround(_ground);
       for (final e in _tints.entries) {
         _gpu!.setDeviceTint(e.key, e.value);
       }
@@ -239,6 +240,16 @@ class SceneController extends ChangeNotifier {
   V3? _sun;
   SceneSky? _sky;
   final Map<String, DeviceTint> _tints = {};
+  SceneGround? _ground;
+
+  /// Boden um die Wohnung (siehe [SceneGround]), `null`: keiner. Gilt auch
+  /// für eine später gebaute Szene.
+  void setGround(SceneGround? ground) {
+    if (_ground == ground) return;
+    _ground = ground;
+    _gpu?.setGround(ground);
+    _view?._wake();
+  }
 
   /// Gerät [id] (Marker-ID) einfärben und leuchten lassen, z. B. einen
   /// Heizkörper rot pulsierend, solange er heizt. `null` hebt das auf. Gilt

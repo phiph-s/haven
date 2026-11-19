@@ -1,6 +1,7 @@
 // Rendert Karte, Editor und Netzkarte der App mit echter GPU nach
 // build/gpu/ (Sichtprüfung).
 //   flutter test --enable-flutter-gpu --enable-impeller test_gpu/app_screens_test.dart
+import 'dart:convert';
 import 'dart:io';
 import 'dart:ui' as ui;
 
@@ -113,6 +114,35 @@ void main() {
       'screen_heat',
       '/map',
       prefs: {'map_layer': 'temperature', 'map_3d_tilt': true},
+    );
+    // Himmel der Karte mit eigenen Werten: Wintertag mit Schnee, Abend im
+    // dunklen Design mit Regen.
+    String sky(Map<String, Object> m) =>
+        jsonEncode({'mode': 'manual', 'manual': m});
+    await shot(
+      tester,
+      'screen_sky_snow',
+      '/map',
+      prefs: {
+        'map_3d_tilt': true,
+        'map_sky': sky({
+          'hour': 14.5,
+          'day': 20,
+          'cloud': 0.5,
+          'snowfall': 0.6,
+          'snow_cm': 14,
+        }),
+      },
+    );
+    await shot(
+      tester,
+      'screen_sky_night',
+      '/map',
+      prefs: {
+        'map_3d_tilt': true,
+        'theme_mode': 'dark',
+        'map_sky': sky({'hour': 22, 'day': 200, 'moon': 0.45, 'rain': 0.5}),
+      },
     );
     await shot(
       tester,

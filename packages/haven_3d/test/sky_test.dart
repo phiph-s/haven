@@ -47,4 +47,11 @@ void main() {
     // Licht fällt nach unten.
     expect(noon.direction.z, lessThan(0));
   });
+
+  test('Mondphase aus dem Datum', () {
+    // Vollmond am 15. Nov. 2024, Neumond am 1. Dez. 2024.
+    expect(moonPhaseOn(DateTime.utc(2024, 11, 15, 21)), closeTo(0.5, 0.04));
+    final nm = moonPhaseOn(DateTime.utc(2024, 12, 1, 6));
+    expect(nm < 0.04 || nm > 0.96, isTrue, reason: '$nm');
+  });
 }

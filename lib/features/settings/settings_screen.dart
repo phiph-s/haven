@@ -24,6 +24,7 @@ import '../updates/ha_updates_provider.dart';
 import 'settings_widgets.dart';
 import 'sync_section.dart';
 import '../room/widgets/light_control_list.dart';
+import 'weather_settings.dart';
 
 /// Pfad des Grundriss-Editors. Der Karten-Agent legt die Route `editor` unter
 /// `/map` an. Solange sie fehlt, meldet der Eintrag das, statt ins Leere zu laufen.
@@ -283,6 +284,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             if (ref.watch(map3dSupportedProvider).value ?? false) ...[
               section('Karte'),
               pad(const _Map3DSettings()),
+              // Woher der Live-Himmel der Karte sein Wetter nimmt.
+              section('Wetter'),
+              pad(const WeatherSettingsGroup()),
             ],
             section('Updates'),
             pad(

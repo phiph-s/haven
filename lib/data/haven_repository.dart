@@ -6,6 +6,7 @@ import 'models/snapshot.dart';
 import 'models/state_history.dart';
 import 'sync/app_data.dart';
 import 'zigbee_api.dart';
+import 'models/weather.dart';
 
 /// Einzige Schnittstelle der Oberfläche zu den Daten. Zwei Implementierungen:
 /// `HaRepository` (WebSocket zu Home Assistant mit der Integration `haven`)
@@ -89,6 +90,10 @@ abstract class HavenRepository
   /// schaltet Haven nicht (App, Automationen, Zigbee-Befehle). Wie die
   /// Ausnahmen über `haven/prefs` geteilt.
   Future<void> setLocked(Iterable<String> ids, bool locked);
+
+  /// Woher die Karte das Wetter nimmt (siehe [WeatherConfig]). Wie die
+  /// Ausnahmen über `haven/prefs` für alle Geräte geteilt.
+  Future<void> setWeatherConfig(WeatherConfig config);
 
   /// Lädt Zustände und Räume neu (Ziehen zum Aktualisieren).
   Future<void> refresh();

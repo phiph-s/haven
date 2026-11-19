@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:material_ui/material_ui.dart' show ThemeMode;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -14,6 +16,10 @@ abstract class LocalPrefs {
   /// Gesperrte Geräte (Entity-IDs und IEEE-Adressen).
   Set<String> get lockedIds;
   Future<void> setLockedIds(Set<String> ids);
+
+  /// Wetterquellen der Karte (JSON wie in `haven/prefs`).
+  Map<String, dynamic> get weatherConfig;
+  Future<void> setWeatherConfig(Map<String, dynamic> j);
 }
 
 /// Nur im Speicher (Tests).
@@ -29,6 +35,12 @@ class MemoryPrefs implements LocalPrefs {
   Set<String> get lockedIds => _locked;
   @override
   Future<void> setLockedIds(Set<String> ids) async => _locked = {...ids};
+  Map<String, dynamic> _weather = {};
+  @override
+  Map<String, dynamic> get weatherConfig => _weather;
+  @override
+  Future<void> setWeatherConfig(Map<String, dynamic> j) async =>
+      _weather = {...j};
 }
 
 /// Lokale Einstellungen (SharedPreferences). Der Token liegt nicht hier,
@@ -43,6 +55,8 @@ class SettingsStore implements LocalPrefs {
   static const _kWidgets = 'home_widgets';
   static const _kExcluded = 'excluded_lights';
   static const _kLocked = 'locked_devices';
+  static const _kWeather = 'weather_config';
+  static const _kMapSky = 'map_sky';
   static const _kUpdateChecked = 'update_last_check';
   static const _kUpdateDismissed = 'update_dismissed';
   static const _kUpdateRelease = 'update_latest_release';
@@ -66,6 +80,28 @@ class SettingsStore implements LocalPrefs {
   @override
   Future<void> setLockedIds(Set<String> ids) =>
       _p.setStringList(_kLocked, ids.toList()..sort());
+
+  @override
+  Map<String, dynamic> get weatherConfig => _json(_kWeather);
+  @override
+  Future<void> setWeatherConfig(Map<String, dynamic> j) =>
+      _p.setString(_kWeather, jsonEncode(j));
+
+  /// Himmel der Karte: live oder eigene Werte (JSON, nur dieses Gerät).
+  Map<String, dynamic> get mapSky => _json(_kMapSky);
+  Future<void> setMapSky(Map<String, dynamic> j) =>
+      _p.setString(_kMapSky, jsonEncode(j));
+
+  Map<String, dynamic> _json(String key) {
+    final raw = _p.getString(key);
+    if (raw == null) return {};
+    try {
+      final v = jsonDecode(raw);
+      return v is Map ? Map<String, dynamic>.from(v) : {};
+    } catch (_) {
+      return {};
+    }
+  }
 
   /// Letzte erfolgreiche Prüfung auf eine neue App-Version.
   DateTime? get updateLastCheck {

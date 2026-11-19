@@ -24,6 +24,7 @@ import 'fake_rooms.dart';
 import 'fake_thermostat_sim.dart';
 import 'fake_updates.dart';
 import 'fake_zigbee.dart';
+import '../data/models/weather.dart';
 
 /// Gedächtnis einer Lampe, damit Farbe und Helligkeit beim Aus- und
 /// Einschalten erhalten bleiben (HA macht das über die Lampe selbst).
@@ -84,6 +85,7 @@ class FakeRepository extends BaseRepository {
   final LocalPrefs _local;
   Set<String> _excluded = const {};
   Set<String> _locked = const {};
+  WeatherConfig _weather = const WeatherConfig();
 
   final Map<String, EntityState> _entities = {};
   final Map<String, _Mem> _mem = {};
@@ -125,6 +127,7 @@ class FakeRepository extends BaseRepository {
     _build();
     _excluded = {..._local.excludedLights};
     _locked = {..._local.lockedIds};
+    _weather = WeatherConfig.fromJson(_local.weatherConfig);
     publish(
       HavenSnapshot(
         status: ConnectionStatus.connected,
@@ -132,6 +135,7 @@ class FakeRepository extends BaseRepository {
         rooms: _rooms,
         excludedLights: Set.unmodifiable(_excluded),
         locked: Set.unmodifiable(_locked),
+        weather: _weather,
       ),
     );
     if (simulate) {
@@ -405,6 +409,7 @@ class FakeRepository extends BaseRepository {
         rooms: _rooms,
         excludedLights: Set.unmodifiable(_excluded),
         locked: Set.unmodifiable(_locked),
+        weather: _weather,
       ),
     );
   }
@@ -416,6 +421,13 @@ class FakeRepository extends BaseRepository {
     _locked = next;
     _push();
     await _local.setLockedIds(next);
+  }
+
+  @override
+  Future<void> setWeatherConfig(WeatherConfig config) async {
+    _weather = config;
+    _push();
+    await _local.setWeatherConfig(config.toJson());
   }
 
   /// Lampen der Lichtsteuerung (ohne Ausnahmen).

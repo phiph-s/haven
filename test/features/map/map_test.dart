@@ -13,6 +13,8 @@ import 'package:haven/features/map/floor_geometry.dart';
 import 'package:haven/features/map/map_3d.dart';
 import 'package:haven_3d/haven_3d.dart' show Scene3DView;
 import 'package:haven/features/map/map_markers.dart';
+import 'package:haven/features/map/map_sky.dart';
+import 'package:flutter/widgets.dart' show ValueKey;
 import 'package:shared_preferences/shared_preferences.dart';
 
 class _MemoryRepo implements FloorPlanRepository {
@@ -257,5 +259,26 @@ void main() {
     await tester.tap(find.bySemanticsLabel('Rückgängig'));
     await tester.pumpAndSettle();
     expect(pts(), start.room('a')!.points);
+  });
+
+  testWidgets('Wetterknopf: Live oder eigene Werte, bleibt gespeichert', (
+    tester,
+  ) async {
+    final c = await _pump(tester, '/map', repo: _MemoryRepo());
+    final button = find.byKey(const ValueKey('map-weather'));
+    expect(button, findsOneWidget);
+    expect(c.read(mapSkySettingsProvider).mode, MapSkyMode.live);
+    await tester.tap(button);
+    await tester.pumpAndSettle();
+    expect(find.text('Himmel der Karte'), findsOneWidget);
+    expect(find.text('Wetterquellen einstellen'), findsOneWidget);
+    await tester.tap(find.text('Eigenes'));
+    await tester.pumpAndSettle();
+    expect(c.read(mapSkySettingsProvider).mode, MapSkyMode.manual);
+    expect(find.text('Schneehöhe'), findsOneWidget);
+    expect(find.text('Gewitter'), findsOneWidget);
+    // Eigene Werte landen im Gerät und wirken auf die Karte.
+    expect(c.read(settingsStoreProvider).mapSky['mode'], 'manual');
+    expect(c.read(mapWeatherProvider(0)).live, isFalse);
   });
 }
