@@ -507,7 +507,15 @@ class GpuScene {
   static const double kFlat = 0.02;
 
   late _Materials _mat;
-  String? _focus;
+
+  /// Sichtbare Räume (`null`: alle).
+  Set<String>? _focus;
+
+  bool _shows(String? room) =>
+      _focus == null || (room != null && _focus!.contains(room));
+
+  bool _showsAny(Iterable<String> rooms) =>
+      _focus == null || rooms.any(_focus!.contains);
   Set<String> _selected = const {};
   double _edgeScale = -1;
 
@@ -1604,6 +1612,7 @@ class GpuScene {
   void sync(
     OrbitCamera cam, {
     String? focusRoomId,
+    Set<String>? focusRooms,
     Set<String> selected = const {},
     Map<String, double> heights = const {},
     Size? size,
@@ -1659,16 +1668,21 @@ class GpuScene {
         o.node.scale = vm.Vector3(1, math.max(h, kFlat), 1);
       }
     }
-    if (focusRoomId != _focus) {
-      _focus = focusRoomId;
+    // Nur diese Räume zeigen (einer: Raumansicht; mehrere: etwa die
+    // Nachbarn eines Raums für fertige Bilder).
+    final focus = focusRooms ?? (focusRoomId == null ? null : {focusRoomId});
+    if (!(focus == null
+        ? _focus == null
+        : _focus != null && _setEquals(focus, _focus!))) {
+      _focus = focus == null ? null : {...focus};
       for (final e in _roomNodes.entries) {
-        e.value.visible = focusRoomId == null || e.key == focusRoomId;
+        e.value.visible = _shows(e.key);
       }
       for (final o in _objects.values) {
         if (o.roomId == null) {
-          o.node.visible = focusRoomId == null;
+          o.node.visible = _focus == null;
         } else if (o.rooms.length > 1) {
-          o.node.visible = focusRoomId == null || o.rooms.contains(focusRoomId);
+          o.node.visible = _showsAny(o.rooms);
         }
       }
     }
@@ -1718,7 +1732,7 @@ class GpuScene {
     for (final e in _bulbs.entries) {
       final room = _bulbRoom[e.key];
       final h = room == null ? 1.0 : _heights[room] ?? 1;
-      e.value.visible = h > 0.5 && (_focus == null || room == _focus);
+      e.value.visible = h > 0.5 && _shows(room);
     }
     // Wände zur Kamera hin ausblenden, Türen und Fenster darin mit.
     final cut = <_WallNode>{};
@@ -1740,7 +1754,7 @@ class GpuScene {
       if (near) cut.add(w);
     }
     for (final o in _objects.values) {
-      final inFocus = _focus == null || o.rooms.contains(_focus);
+      final inFocus = _showsAny(o.rooms);
       if (!_onWallThing(o.object)) {
         if (o.object.wallMounted) o.node.visible = inFocus;
         continue;
@@ -1769,9 +1783,7 @@ class GpuScene {
       for (final id in {...hiddenObjects, ..._hiddenObjects}) {
         final o = _objects[id];
         if (o == null || o.object.wallMounted) continue;
-        o.node.visible =
-            !hiddenObjects.contains(id) &&
-            (_focus == null || o.roomId == _focus);
+        o.node.visible = !hiddenObjects.contains(id) && _shows(o.roomId);
       }
       _hiddenObjects = {...hiddenObjects};
     }

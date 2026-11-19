@@ -69,20 +69,9 @@ void main() {
           ..writeAsBytesSync(png!.buffer.asUint8List());
       });
       if (mode == 'dark') {
-        // Übergang in die Raumseite: Bildfolge über die Dauer des Flugs.
+        // Raumseite mit dem Raum im Kopf.
         final ctx = key.currentContext!;
         await tester.tap(find.bySemanticsLabel('Salon öffnen').first);
-        for (final ms in [0, 120, 240, 420]) {
-          await tester.pump(Duration(milliseconds: ms == 0 ? 16 : 120));
-          await tester.runAsync(() async {
-            final b = ctx.findRenderObject() as RenderRepaintBoundary;
-            final img = await b.toImage(pixelRatio: 1);
-            final png = await img.toByteData(format: ui.ImageByteFormat.png);
-            File(
-              'build/gpu/home_flight_$ms.png',
-            ).writeAsBytesSync(png!.buffer.asUint8List());
-          });
-        }
         for (var i = 0; i < 20; i++) {
           await tester.runAsync(
             () => Future<void>.delayed(const Duration(milliseconds: 40)),
@@ -94,7 +83,7 @@ void main() {
           final img = await b.toImage(pixelRatio: 1);
           final png = await img.toByteData(format: ui.ImageByteFormat.png);
           File(
-            'build/gpu/home_flight_end.png',
+            'build/gpu/home_room.png',
           ).writeAsBytesSync(png!.buffer.asUint8List());
         });
       }

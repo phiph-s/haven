@@ -126,7 +126,14 @@ class LayerImages {
     );
   }
 
+  bool _disposed = false;
+
+  /// Freigegeben: nicht mehr zeichnen.
+  bool get disposed => _disposed;
+
   void dispose() {
+    if (_disposed) return;
+    _disposed = true;
     if (!identical(lit, base)) lit.dispose();
     base.dispose();
     for (final l in lamps) {
@@ -138,21 +145,49 @@ class LayerImages {
     final codec = await ui.instantiateImageCodec(png);
     final img = (await codec.getNextFrame()).image;
     codec.dispose();
+    if (!kIsWeb) return img;
+    // Im Browser (CanvasKit) sind dekodierte Bilder „lazy“ GPU-Texturen:
+    // die Quelle wird nach dem ersten Hochladen freigegeben und kann
+    // danach nicht erneut hochgeladen werden (Bild fehlt oder zeigt
+    // Speichermüll). Aus Pixeln gebaute Bilder hält CanvasKit selbst.
+    final px = (await img.toByteData(
+      format: ui.ImageByteFormat.rawRgba,
+    ))!.buffer.asUint8List();
+    final w = img.width, h = img.height;
+    img.dispose();
+    return _fromPixels(px, w, h);
+  }
+
+  /// Bild aus vormultiplizierten RGBA-Pixeln.
+  static Future<ui.Image> _fromPixels(Uint8List px, int w, int h) async {
+    final buf = await ui.ImmutableBuffer.fromUint8List(px);
+    final desc = ui.ImageDescriptor.raw(
+      buf,
+      width: w,
+      height: h,
+      pixelFormat: ui.PixelFormat.rgba8888,
+    );
+    final codec = await desc.instantiateCodec();
+    final img = (await codec.getNextFrame()).image;
+    codec.dispose();
+    desc.dispose();
+    buf.dispose();
     return img;
   }
 
   /// [base] mit dem Raumausschnitt [patch] bei [box], nur wo er sich vom
-  /// Grundbild unterscheidet (wie beim Server).
+  /// Grundbild unterscheidet (wie beim Server). Vormultipliziert gelesen:
+  /// so erwartet `ImageDescriptor.raw` die Pixel.
   static Future<ui.Image> _withPatch(
     ui.Image base,
     ui.Image patch,
     Map<dynamic, dynamic> box,
   ) async {
     final b = (await base.toByteData(
-      format: ui.ImageByteFormat.rawStraightRgba,
+      format: ui.ImageByteFormat.rawRgba,
     ))!.buffer.asUint8List();
     final p = (await patch.toByteData(
-      format: ui.ImageByteFormat.rawStraightRgba,
+      format: ui.ImageByteFormat.rawRgba,
     ))!.buffer.asUint8List();
     patch.dispose();
     final out = Uint8List.fromList(b);
@@ -169,19 +204,7 @@ class LayerImages {
         }
       }
     }
-    final buf = await ui.ImmutableBuffer.fromUint8List(out);
-    final desc = ui.ImageDescriptor.raw(
-      buf,
-      width: base.width,
-      height: base.height,
-      pixelFormat: ui.PixelFormat.rgba8888,
-    );
-    final codec = await desc.instantiateCodec();
-    final img = (await codec.getNextFrame()).image;
-    codec.dispose();
-    desc.dispose();
-    buf.dispose();
-    return img;
+    return _fromPixels(out, base.width, base.height);
   }
 }
 
@@ -205,13 +228,16 @@ class LayerShader {
 
 /// [images] in [dst] zeichnen, Lampen mit [factors] (Lampen-ID → Faktor,
 /// fehlende sind aus). Mehr als [kLayerShaderLamps] Lampen: die hellsten.
+/// Verkleinert wird mit Mipmaps ([filter]), sonst flimmern die Kanten.
 void paintLayers(
   ui.Canvas canvas,
   ui.Rect dst,
   LayerImages images,
   ui.FragmentShader shader,
-  Map<String, LayerFactor> factors,
-) {
+  Map<String, LayerFactor> factors, {
+  ui.FilterQuality filter = ui.FilterQuality.medium,
+}) {
+  if (images.disposed) return;
   double sum(LayerFactor f) => f.r + f.g + f.b;
   final on = [
     for (final l in images.lamps)
@@ -250,12 +276,13 @@ void paintLayers(
     f(l?.$2.b ?? 0);
     f(l != null && lit && l.$1.room == images.viewRoom ? 1 : 0);
   }
-  shader.setImageSampler(0, images.base);
-  shader.setImageSampler(1, images.lit);
+  shader.setImageSampler(0, images.base, filterQuality: filter);
+  shader.setImageSampler(1, images.lit, filterQuality: filter);
   for (var k = 0; k < kLayerShaderLamps; k++) {
     shader.setImageSampler(
       2 + k,
       k < used.length ? used[k].$1.image : images.base,
+      filterQuality: filter,
     );
   }
   canvas.drawRect(dst, ui.Paint()..shader = shader);

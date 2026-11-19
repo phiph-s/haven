@@ -91,62 +91,58 @@ vec3 hdrOf(vec4 c) {
   return untone(toLinear(c.rgb / c.a)) / uExposure;
 }
 
-// Beitrag einer Lampe aus ihrem Pixel [l] im Ausschnitt.
-vec3 lampDelta(vec4 l, vec4 factor, vec2 uv) {
-  vec4 ref = factor.w > 0.5 ? texture(uRoom, uv) : texture(uBase, uv);
-  return (hdrOf(l) - hdrOf(ref)) * factor.rgb;
+// Beitrag einer Lampe aus ihrem Pixel [l] im Ausschnitt [q], Bezug ist
+// das Grundbild [base] oder „Raum an“ [room]; außerhalb und für freie
+// Plätze (n ≥ uCount) null.
+vec3 lampDelta(vec4 l, vec2 q, vec4 factor, float n, vec4 base, vec4 room) {
+  bool on = uCount > n + 0.5 && q.x >= 0.0 && q.y >= 0.0 && q.x <= 1.0 &&
+      q.y <= 1.0;
+  vec4 ref = factor.w > 0.5 ? room : base;
+  return on ? (hdrOf(l) - hdrOf(ref)) * factor.rgb : vec3(0.0);
 }
 
-bool inside(vec2 q) {
-  return q.x >= 0.0 && q.y >= 0.0 && q.x <= 1.0 && q.y <= 1.0;
+vec2 lampUv(vec2 px, vec4 rect) {
+  return (px - rect.xy) / rect.zw;
 }
 
-// Ein Pixel; main() weist nur zu (mehrere return in main() mit Texturen
-// machen auf Windows Probleme, flutter/flutter#190809).
+// Ein Pixel. Alle Texturen werden immer gelesen (außerhalb jeder
+// Verzweigung): verkleinert wird mit Mipmaps, und deren Stufe hängt an
+// den Ableitungen benachbarter Pixel. main() weist nur zu (mehrere return
+// in main() mit Texturen machen auf Windows Probleme, flutter/flutter#190809).
 vec4 shade(vec2 uv) {
-  if (uv.x < 0.0 || uv.y < 0.0 || uv.x > 1.0 || uv.y > 1.0) {
-    return vec4(0.0);
-  }
-  vec4 start = uLit > 0.5 ? texture(uRoom, uv) : texture(uBase, uv);
-  if (start.a <= 0.0) {
-    return vec4(0.0);
-  }
   vec2 px = uv * uImage;
+  vec2 q0 = lampUv(px, uRect0);
+  vec2 q1 = lampUv(px, uRect1);
+  vec2 q2 = lampUv(px, uRect2);
+  vec2 q3 = lampUv(px, uRect3);
+  vec2 q4 = lampUv(px, uRect4);
+  vec2 q5 = lampUv(px, uRect5);
+  vec2 q6 = lampUv(px, uRect6);
+  vec2 q7 = lampUv(px, uRect7);
+  vec4 base = texture(uBase, uv);
+  vec4 room = texture(uRoom, uv);
+  vec4 l0 = texture(uLamp0, q0);
+  vec4 l1 = texture(uLamp1, q1);
+  vec4 l2 = texture(uLamp2, q2);
+  vec4 l3 = texture(uLamp3, q3);
+  vec4 l4 = texture(uLamp4, q4);
+  vec4 l5 = texture(uLamp5, q5);
+  vec4 l6 = texture(uLamp6, q6);
+  vec4 l7 = texture(uLamp7, q7);
+  vec4 start = uLit > 0.5 ? room : base;
   vec3 hdr = hdrOf(start);
-  if (uCount > 0.5) {
-    vec2 q = (px - uRect0.xy) / uRect0.zw;
-    if (inside(q)) hdr += lampDelta(texture(uLamp0, q), uFactor0, uv);
-  }
-  if (uCount > 1.5) {
-    vec2 q = (px - uRect1.xy) / uRect1.zw;
-    if (inside(q)) hdr += lampDelta(texture(uLamp1, q), uFactor1, uv);
-  }
-  if (uCount > 2.5) {
-    vec2 q = (px - uRect2.xy) / uRect2.zw;
-    if (inside(q)) hdr += lampDelta(texture(uLamp2, q), uFactor2, uv);
-  }
-  if (uCount > 3.5) {
-    vec2 q = (px - uRect3.xy) / uRect3.zw;
-    if (inside(q)) hdr += lampDelta(texture(uLamp3, q), uFactor3, uv);
-  }
-  if (uCount > 4.5) {
-    vec2 q = (px - uRect4.xy) / uRect4.zw;
-    if (inside(q)) hdr += lampDelta(texture(uLamp4, q), uFactor4, uv);
-  }
-  if (uCount > 5.5) {
-    vec2 q = (px - uRect5.xy) / uRect5.zw;
-    if (inside(q)) hdr += lampDelta(texture(uLamp5, q), uFactor5, uv);
-  }
-  if (uCount > 6.5) {
-    vec2 q = (px - uRect6.xy) / uRect6.zw;
-    if (inside(q)) hdr += lampDelta(texture(uLamp6, q), uFactor6, uv);
-  }
-  if (uCount > 7.5) {
-    vec2 q = (px - uRect7.xy) / uRect7.zw;
-    if (inside(q)) hdr += lampDelta(texture(uLamp7, q), uFactor7, uv);
-  }
+  hdr += lampDelta(l0, q0, uFactor0, 0.0, base, room);
+  hdr += lampDelta(l1, q1, uFactor1, 1.0, base, room);
+  hdr += lampDelta(l2, q2, uFactor2, 2.0, base, room);
+  hdr += lampDelta(l3, q3, uFactor3, 3.0, base, room);
+  hdr += lampDelta(l4, q4, uFactor4, 4.0, base, room);
+  hdr += lampDelta(l5, q5, uFactor5, 5.0, base, room);
+  hdr += lampDelta(l6, q6, uFactor6, 6.0, base, room);
+  hdr += lampDelta(l7, q7, uFactor7, 7.0, base, room);
   vec3 c = toSrgb(tone(max(hdr, vec3(0.0))));
-  return vec4(c * start.a, start.a);
+  bool visible = start.a > 0.0 && uv.x >= 0.0 && uv.y >= 0.0 &&
+      uv.x <= 1.0 && uv.y <= 1.0;
+  return visible ? vec4(c * start.a, start.a) : vec4(0.0);
 }
 
 void main() {

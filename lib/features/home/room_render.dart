@@ -53,20 +53,48 @@ final roomRendersAvailableProvider = Provider<bool>((ref) {
 
 typedef RoomRenderKey = ({String roomId, bool dark});
 
+/// Woher die Ebenen eines Raums kommen: Plan-Raum, Satz und Stand der
+/// Bilder in HA. Ändert sich nur mit neuen Bildern (Vergleich nach Wert),
+/// nicht mit jedem Zustand aus HA.
+typedef _LayerSource = ({String planRoom, String set, String? key});
+
+final _layerSourceProvider = Provider.family<_LayerSource?, RoomRenderKey>((
+  ref,
+  k,
+) {
+  final status = ref.watch(renderStatusProvider).value;
+  if (status == null || !status.files) return null;
+  final plan = ref.watch(floorPlanProvider).value;
+  if (plan == null) return null;
+  final snap = ref.watch(snapshotProvider);
+  final room = plan.rooms
+      .where((r) => snapshotRoomFor(snap, r)?.id == k.roomId)
+      .firstOrNull;
+  if (room == null) return null;
+  final set = status.setFor(room.id, k.dark ? 'dark' : 'light');
+  if (set == null) return null;
+  return (planRoom: room.id, set: set, key: status.key);
+});
+
+/// Ersetzte Ebenen je Raum: erst freigeben, wenn die neuen da sind (bis
+/// dahin zeigt die Kachel die alten weiter) und sicher gezeichnet wurden.
+final Map<RoomRenderKey, h3.LayerImages> _retired = {};
+
+void _retire(RoomRenderKey k) {
+  final old = _retired.remove(k);
+  if (old != null) Timer(const Duration(seconds: 2), old.dispose);
+}
+
 /// Ebenen des Raums [RoomRenderKey.roomId] im Design, `null`: keine.
 final roomLayersProvider =
     FutureProvider.family<h3.LayerImages?, RoomRenderKey>((ref, k) async {
-      final status = ref.watch(renderStatusProvider).value;
-      if (status == null || !status.files) return null;
-      final plan = ref.watch(floorPlanProvider).value;
-      if (plan == null) return null;
-      final snap = ref.read(snapshotProvider);
-      final room = plan.rooms
-          .where((r) => snapshotRoomFor(snap, r)?.id == k.roomId)
-          .firstOrNull;
-      if (room == null) return null;
-      final set = status.setFor(room.id, k.dark ? 'dark' : 'light');
-      if (set == null) return null;
+      final src = ref.watch(_layerSourceProvider(k));
+      if (src == null) {
+        _retire(k);
+        return null;
+      }
+      final planRoom = src.planRoom;
+      final set = src.set;
       final repo = ref.read(repositoryProvider);
       final meta =
           jsonDecode(utf8.decode(await repo.renderFile(set, 'meta.json')))
@@ -77,8 +105,8 @@ final roomLayersProvider =
         meta: meta,
         base: await repo.renderFile(set, 'base.png'),
         rooms: {
-          if (rooms.containsKey(room.id))
-            room.id: await repo.renderFile(set, 'room_${room.id}.png'),
+          if (rooms.containsKey(planRoom))
+            planRoom: await repo.renderFile(set, 'room_$planRoom.png'),
         },
         lamps: {
           for (final e in lamps.entries)
@@ -86,7 +114,16 @@ final roomLayersProvider =
               '${e.key}': await repo.renderFile(set, 'lamp_${e.key}.png'),
         },
       );
-      ref.onDispose(images.dispose);
+      if (!ref.mounted) {
+        // Inzwischen neu geladen: diese Bilder hat nie jemand gesehen.
+        images.dispose();
+        return null;
+      }
+      _retire(k);
+      ref.onDispose(() {
+        _retired.remove(k)?.dispose();
+        _retired[k] = images;
+      });
       return images;
     });
 
@@ -130,10 +167,25 @@ class _RoomRenderViewState extends ConsumerState<RoomRenderView>
   Map<String, h3.LayerFactor> _to = const {};
   bool _first = true;
 
+  /// Ein Shader je Ansicht: Werte gelten je Zeichnung, alte Bilder behalten
+  /// ihre.
+  ui.FragmentProgram? _program;
+  ui.FragmentShader? _shader;
+
   @override
   void dispose() {
     _t.dispose();
+    _shader?.dispose();
     super.dispose();
+  }
+
+  ui.FragmentShader _shaderOf(ui.FragmentProgram p) {
+    if (!identical(p, _program) || _shader == null) {
+      _shader?.dispose();
+      _program = p;
+      _shader = p.fragmentShader();
+    }
+    return _shader!;
   }
 
   Map<String, h3.LayerFactor> _targets() {
@@ -195,7 +247,7 @@ class _RoomRenderViewState extends ConsumerState<RoomRenderView>
       size: Size.infinite,
       painter: _LayerPainter(
         widget.images,
-        program.fragmentShader(),
+        _shaderOf(program),
         _now,
         widget.alignY,
       ),
@@ -235,6 +287,7 @@ class _LayerPainter extends CustomPainter {
   @override
   bool shouldRepaint(_LayerPainter old) =>
       old.images != images ||
+      old.shader != shader ||
       old.alignY != alignY ||
       !_RoomRenderViewState._sameFactors(old.factors, factors);
 }
@@ -589,117 +642,24 @@ class _ArrowPainter extends CustomPainter {
   bool shouldRepaint(_ArrowPainter old) => old.color != color;
 }
 
-// ---- Übergang Kachel → Raumseite ------------------------------------------
+// ---- Kopf der Raumseite --------------------------------------------------
 
-/// Wo das Raumbild einer Kachel lag, als der Raum geöffnet wurde (für den
-/// Flug in den Kopf der Raumseite). Das Sheet ist keine PageRoute, Flutters
-/// Hero fliegt dort nicht, deshalb dieser eigene Übergang.
-abstract final class RoomRenderFlight {
-  static final Map<String, Rect> _from = {};
-
-  /// Vor dem Öffnen: Lage des Bilds in der Kachel (global).
-  static void launch(String roomId, GlobalKey key) {
-    final box = key.currentContext?.findRenderObject() as RenderBox?;
-    if (box == null || !box.hasSize || !box.attached) return;
-    _from[roomId] = box.localToGlobal(Offset.zero) & box.size;
-  }
-
-  /// Startlage für [roomId], einmal.
-  static Rect? take(String roomId) => _from.remove(roomId);
-}
-
-/// Kopf der Raumseite: der Raum mit seinem Licht. Kam der Raum aus einer
-/// Kachel, fliegt das Bild von dort hierher.
-class RoomRenderHeader extends ConsumerStatefulWidget {
+/// Kopf der Raumseite: der Raum mit seinem Licht.
+class RoomRenderHeader extends ConsumerWidget {
   const RoomRenderHeader({super.key, required this.roomId, this.height = 190});
 
   final String roomId;
   final double height;
 
   @override
-  ConsumerState<RoomRenderHeader> createState() => _RoomRenderHeaderState();
-}
-
-class _RoomRenderHeaderState extends ConsumerState<RoomRenderHeader>
-    with SingleTickerProviderStateMixin {
-  final _box = GlobalKey();
-  late final AnimationController _t = AnimationController(
-    vsync: this,
-    duration: const Duration(milliseconds: 420),
-  );
-  OverlayEntry? _entry;
-  Rect? _from;
-  bool _flying = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _from = RoomRenderFlight.take(widget.roomId);
-  }
-
-  @override
-  void dispose() {
-    _entry?.remove();
-    _t.dispose();
-    super.dispose();
-  }
-
-  Rect? _target() {
-    final box = _box.currentContext?.findRenderObject() as RenderBox?;
-    if (box == null || !box.hasSize || !box.attached) return null;
-    return box.localToGlobal(Offset.zero) & box.size;
-  }
-
-  void _start(h3.LayerImages images) {
-    final from = _from;
-    _from = null;
-    if (from == null || MediaQuery.disableAnimationsOf(context)) return;
-    _flying = true;
-    _entry = OverlayEntry(
-      builder: (context) => AnimatedBuilder(
-        animation: _t,
-        builder: (context, _) {
-          final to = _target() ?? from;
-          final k = Curves.easeOutCubic.transform(_t.value);
-          final r = Rect.lerp(from, to, k)!;
-          return Positioned.fromRect(
-            rect: r,
-            child: IgnorePointer(
-              child: RoomRenderView(images: images, alignY: -0.6 * (1 - k)),
-            ),
-          );
-        },
-      ),
-    );
-    Overlay.of(context, rootOverlay: true).insert(_entry!);
-    // Jedes Bild neu: das Sheet fährt währenddessen selbst noch hoch.
-    _t.addListener(() => _entry?.markNeedsBuild());
-    _t.forward().whenComplete(() {
-      _entry?.remove();
-      _entry = null;
-      if (mounted) setState(() => _flying = false);
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final hv = context.hv;
+  Widget build(BuildContext context, WidgetRef ref) {
     final images = ref
-        .watch(roomLayersProvider((roomId: widget.roomId, dark: hv.isDark)))
+        .watch(roomLayersProvider((roomId: roomId, dark: context.hv.isDark)))
         .value;
     if (images == null) return const SizedBox.shrink();
-    if (_from != null) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) _start(images);
-      });
-    }
     return SizedBox(
-      key: _box,
-      height: widget.height,
-      child: Opacity(
-        opacity: _flying || _from != null ? 0 : 1,
-        child: RoomRenderView(images: images, alignY: 0),
-      ),
+      height: height,
+      child: RoomRenderView(images: images, alignY: 0),
     );
   }
 }

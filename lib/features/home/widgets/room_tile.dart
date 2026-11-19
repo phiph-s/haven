@@ -34,9 +34,6 @@ class RoomTile extends ConsumerStatefulWidget {
 }
 
 class _RoomTileState extends ConsumerState<RoomTile> {
-  /// Das Raumbild (Start des Übergangs in die Raumseite).
-  final _render = GlobalKey();
-
   /// Helligkeit beim Ziehen (Vorschau, Prozent), `null` sonst.
   int? _dim;
   int _dimStart = 100;
@@ -60,7 +57,6 @@ class _RoomTileState extends ConsumerState<RoomTile> {
 
     void open() {
       HapticFeedback.mediumImpact();
-      RoomRenderFlight.launch(roomId, _render);
       context.push(Routes.room(roomId));
     }
 
@@ -157,11 +153,7 @@ class _RoomTileState extends ConsumerState<RoomTile> {
                     right: edge + 4,
                     bottom: 40,
                     child: IgnorePointer(
-                      child: RoomRenderView(
-                        key: _render,
-                        images: images,
-                        dimPercent: dim,
-                      ),
+                      child: RoomRenderView(images: images, dimPercent: dim),
                     ),
                   ),
                 Padding(

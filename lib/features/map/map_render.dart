@@ -62,6 +62,7 @@ List<h3.LayerView> mapLayerViews(HavenFloorPlan plan) => [
 String mapRenderKey(HavenFloorPlan plan, List<h3.LayerView> views) {
   final text = jsonEncode({
     'format': h3.kLayerFormat,
+    'look': h3.kLayerLook,
     'plan': plan.toJson(),
     'views': [for (final v in views) v.toJson()],
   });

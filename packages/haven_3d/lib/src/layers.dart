@@ -25,6 +25,10 @@ import 'style.dart';
 /// Version des Formats (siehe [LayerSet.meta]).
 const int kLayerFormat = 1;
 
+/// Aussehen der Bilder (Nachbarräume, Stil …): eine neue Nummer lässt die
+/// Apps neu rendern, ohne das Format für den Server zu ändern.
+const int kLayerLook = 2;
+
 /// Standard-Helligkeit der Lampen in den Ebenen: bei voller Helligkeit
 /// brennen Lichtflecke aus (Weiß lässt sich nicht zurückrechnen), zu wenig
 /// verliert Genauigkeit (8 Bit, beim Zusammensetzen ×1/gain).
@@ -98,6 +102,8 @@ class LayerTheme {
     this.style, {
     this.exposure = 1,
     this.gain = kLayerGain,
+    this.contextTint = const ui.Color(0xFF000000),
+    this.contextFade = 0.5,
   });
 
   final String id;
@@ -111,11 +117,19 @@ class LayerTheme {
   /// Belichtung höher, damit das Licht genug 8-Bit-Stufen behält.
   final double gain;
 
+  /// Verbundene Räume in Raumbildern: ohne Licht und Schattierung, um
+  /// [contextFade] (0 … 1) zu [contextTint] hin getönt (dunkles Design
+  /// dunkler, helles heller), damit der Raum selbst vorne steht.
+  final ui.Color contextTint;
+  final double contextFade;
+
   static final light = LayerTheme(
     'light',
     opaque(SceneStyle.light()),
     exposure: 0.5,
     gain: 0.5,
+    contextTint: const ui.Color(0xFFFFFFFF),
+    contextFade: 0.45,
   );
   // Dunkel wie die Karte im dunklen Design ohne Himmel.
   static final dark = LayerTheme('dark', opaque(SceneStyle.evening()));
@@ -242,6 +256,18 @@ class LayerRenderer {
     ];
   }
 
+  /// Verbundene Räume einer Raumperspektive (Tür oder offene Wand, wie
+  /// die Lichtzonen); in der Übersicht keine.
+  Set<String> neighboursFor(LayerView v) {
+    final room = v.roomId;
+    final zone = room == null ? null : _fitted.lightZones[room];
+    if (zone == null) return const {};
+    return {
+      for (final r in _fitted.rooms)
+        if (r.id != room && _fitted.lightZones[r.id] == zone) r.id,
+    };
+  }
+
   /// Räume mit Lampen in [v], deren Möbellinien ausblenden können.
   List<String> roomsFor(LayerView v) => {
     for (final id in lampsFor(v))
@@ -255,7 +281,12 @@ class LayerRenderer {
       themes.length *
           views.fold(
             0,
-            (a, v) => a + 1 + roomsFor(v).length + lampsFor(v).length,
+            (a, v) =>
+                a +
+                1 +
+                (neighboursFor(v).isEmpty ? 0 : 1) +
+                roomsFor(v).length +
+                lampsFor(v).length,
           );
 
   Future<List<LayerSet>> render(
@@ -286,14 +317,109 @@ class LayerRenderer {
 
     final out = <LayerSet>[];
     for (final theme in themes) {
-      gpu.restyle(theme.style);
-      gpu.scene.exposure = theme.exposure;
-      for (final v in views) {
-        _check();
-        out.add(await _renderView(gpu, fitted, v, theme, tick));
+      // Erst die Nachbarn aller Raumbilder (ein Stilwechsel je Design).
+      final context = <LayerView, ui.Image>{};
+      try {
+        final withNeighbours = [
+          for (final v in views)
+            if (neighboursFor(v).isNotEmpty) v,
+        ];
+        if (withNeighbours.isNotEmpty) {
+          gpu.restyle(flatStyle(theme.style));
+          gpu.scene.exposure = theme.exposure;
+          for (final v in withNeighbours) {
+            _check();
+            context[v] = await _contextShot(gpu, fitted, v, theme);
+            tick(v.roomId);
+          }
+        }
+        gpu.restyle(theme.style);
+        gpu.scene.exposure = theme.exposure;
+        for (final v in views) {
+          _check();
+          out.add(await _renderView(gpu, fitted, v, theme, tick, context[v]));
+        }
+      } finally {
+        for (final img in context.values) {
+          img.dispose();
+        }
       }
     }
     return out;
+  }
+
+  /// Stil der Nachbarräume: nur das gleichmäßige Grundlicht des Designs
+  /// (so hell wie ein Raum ohne Licht, vor der Tönung), keine Sonne, keine
+  /// Schatten, kein Lampenschein.
+  static SceneStyle flatStyle(SceneStyle s) => s.copyWith(
+    ambient: s.ambient + s.sun * 0.25,
+    sun: 0,
+    shadows: false,
+    lampGlow: 0,
+  );
+
+  OrbitCamera _camera(Scene fitted, LayerView v) =>
+      OrbitCamera(yaw: v.yaw, pitch: v.pitch).fit(
+        fitted.points(roomId: v.roomId),
+        ui.Size(v.width.toDouble(), v.height.toDouble()),
+        padding: v.padding,
+      );
+
+  /// Die verbundenen Räume von [v] allein, flach und getönt (alle Lampen
+  /// aus). Liegt unter jeder Aufnahme des Raums, ist in allen gleich und
+  /// fällt so aus den Ebenen heraus.
+  Future<ui.Image> _contextShot(
+    GpuScene gpu,
+    Scene fitted,
+    LayerView v,
+    LayerTheme theme,
+  ) async {
+    final size = ui.Size(v.width.toDouble(), v.height.toDouble());
+    for (final id in _allLamps) {
+      gpu.setLamp(id, LampState.off);
+    }
+    while (gpu.flushLight(budget: const Duration(milliseconds: 30))) {
+      await Future<void>.delayed(Duration.zero);
+    }
+    final cam = _camera(fitted, v);
+    gpu.sync(
+      cam,
+      focusRooms: neighboursFor(v),
+      heights: {for (final r in fitted.rooms) r.id: v.flat ? 0.0 : 1.0},
+      size: size,
+    );
+    final rec = ui.PictureRecorder();
+    gpu.scene.render(
+      fsCamera(cam, size),
+      ui.Canvas(rec),
+      viewport: ui.Offset.zero & size,
+      pixelRatio: 1,
+    );
+    final pic = rec.endRecording();
+    final raw = await pic.toImage(v.width, v.height);
+    pic.dispose();
+    // Zur Tönung hin mischen (auf nicht vormultiplizierten Farben).
+    final f = theme.contextFade.clamp(0.0, 1.0), k = 1 - f;
+    final t = theme.contextTint;
+    final rec2 = ui.PictureRecorder();
+    ui.Canvas(rec2).drawImage(
+      raw,
+      ui.Offset.zero,
+      ui.Paint()
+        ..filterQuality = ui.FilterQuality.none
+        ..colorFilter = ui.ColorFilter.matrix([
+          k, 0, 0, 0, 255 * t.r * f, //
+          0, k, 0, 0, 255 * t.g * f,
+          0, 0, k, 0, 255 * t.b * f,
+          0, 0, 0, 1, 0,
+        ]),
+    );
+    final pic2 = rec2.endRecording();
+    final img = await pic2.toImage(v.width, v.height);
+    pic2.dispose();
+    raw.dispose();
+    await Future<void>.delayed(Duration.zero);
+    return img;
   }
 
   void _check() {
@@ -305,13 +431,11 @@ class LayerRenderer {
     Scene fitted,
     LayerView v,
     LayerTheme theme,
-    void Function(String?) tick,
-  ) async {
+    void Function(String?) tick, [
+    ui.Image? context,
+  ]) async {
     final size = ui.Size(v.width.toDouble(), v.height.toDouble());
-    final cam = OrbitCamera(
-      yaw: v.yaw,
-      pitch: v.pitch,
-    ).fit(fitted.points(roomId: v.roomId), size, padding: v.padding);
+    final cam = _camera(fitted, v);
     final heights = {for (final r in fitted.rooms) r.id: v.flat ? 0.0 : 1.0};
     final lamps = lampsFor(v);
     final rooms = roomsFor(v);
@@ -326,9 +450,18 @@ class LayerRenderer {
       }
       gpu.sync(cam, focusRoomId: v.roomId, heights: heights, size: size);
       final rec = ui.PictureRecorder();
+      final canvas = ui.Canvas(rec);
+      // Nachbarräume dahinter (der Raum selbst liegt immer davor).
+      if (context != null) {
+        canvas.drawImage(
+          context,
+          ui.Offset.zero,
+          ui.Paint()..filterQuality = ui.FilterQuality.none,
+        );
+      }
       gpu.scene.render(
         fsCamera(cam, size),
-        ui.Canvas(rec),
+        canvas,
         viewport: ui.Offset.zero & size,
         pixelRatio: 1,
       );
