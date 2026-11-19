@@ -2,4 +2,11 @@
 <resources>
     <!-- Hintergrund wie hv.bg (dunkel) -->
     <color name="haven_bg">#FF0D0C12</color>
+    <!-- Raum-Widget -->
+    <color name="room_widget_bg">#FF17191E</color>
+    <color name="room_widget_line">#1FFFFFFF</color>
+    <color name="room_widget_text">#FFECEEF2</color>
+    <color name="room_widget_text2">#FFA0A7B2</color>
+    <color name="room_widget_dot_off">#FF3A3E46</color>
+    <color name="room_widget_open_bg">#FF2A2E35</color>
 </resources>

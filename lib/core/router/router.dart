@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:material_ui/material_ui.dart';
 
+import '../../features/home_widget/room_widget_config_screen.dart';
 import '../../features/automations/automations_routes.dart';
 import '../../features/automations/automations_screen.dart';
 import '../../features/climate/heating_setup_screen.dart';
@@ -206,6 +207,14 @@ GoRouter buildRouter(Ref ref, {String? initialLocation}) {
               ? null
               : state.uri.queryParameters,
         ).toString(),
+      ),
+      // Einrichten eines Raum-Widgets (Android, RoomWidgetConfigActivity).
+      GoRoute(
+        path: '/widget-config/:id',
+        parentNavigatorKey: rootNavigatorKey,
+        builder: (context, state) => RoomWidgetConfigScreen(
+          widgetId: int.tryParse(state.pathParameters['id'] ?? '') ?? -1,
+        ),
       ),
       GoRoute(
         path: '/heating/:area',

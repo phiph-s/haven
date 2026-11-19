@@ -1,0 +1,89 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Raum-Widget: der Raum mit seinem Licht (Bild aus Home Assistant), darunter
+     Name und Status, oben die Temperatur. Tippen schaltet, der Pfeil öffnet. -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/room_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/room_widget_bg"
+    android:clipToOutline="true">
+
+    <ImageView
+        android:id="@+id/room_glow"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:importantForAccessibility="no"
+        android:scaleType="fitXY"
+        android:src="@drawable/room_widget_glow" />
+
+    <ImageView
+        android:id="@+id/room_render"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:layout_marginStart="10dp"
+        android:layout_marginTop="8dp"
+        android:layout_marginEnd="10dp"
+        android:layout_marginBottom="46dp"
+        android:importantForAccessibility="no"
+        android:scaleType="fitCenter" />
+
+    <ImageView
+        android:id="@+id/room_dot"
+        android:layout_width="12dp"
+        android:layout_height="12dp"
+        android:layout_gravity="top|start"
+        android:layout_margin="14dp"
+        android:importantForAccessibility="no"
+        android:src="@drawable/room_widget_dot" />
+
+    <TextView
+        android:id="@+id/room_temp"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|end"
+        android:layout_margin="10dp"
+        android:textColor="@color/room_widget_text2"
+        android:textSize="13sp"
+        android:visibility="gone" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom|start"
+        android:layout_marginStart="14dp"
+        android:layout_marginEnd="50dp"
+        android:layout_marginBottom="10dp"
+        android:orientation="vertical">
+
+        <TextView
+            android:id="@+id/room_name"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:ellipsize="end"
+            android:maxLines="1"
+            android:text="@string/room_widget_label"
+            android:textColor="@color/room_widget_text"
+            android:textSize="16sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/room_status"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:ellipsize="end"
+            android:maxLines="1"
+            android:textColor="@color/room_widget_text2"
+            android:textSize="12.5sp" />
+    </LinearLayout>
+
+    <ImageView
+        android:id="@+id/room_open"
+        android:layout_width="32dp"
+        android:layout_height="32dp"
+        android:layout_gravity="bottom|end"
+        android:layout_margin="9dp"
+        android:background="@drawable/room_widget_open_bg"
+        android:contentDescription="@string/room_widget_open"
+        android:padding="6dp"
+        android:src="@drawable/room_widget_open" />
+</FrameLayout>

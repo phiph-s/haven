@@ -12,6 +12,7 @@ import androidx.core.content.FileProvider
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
+import de.phiph.haven.widget.RoomWidgetChannel
 import java.io.File
 
 /**
@@ -23,6 +24,12 @@ import java.io.File
  * AnnotatedRegion<SystemUiOverlayStyle>.
  */
 class MainActivity : FlutterActivity() {
+    // Aus einem Widget erneut geöffnet: neues Sprungziel übernehmen.
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+    }
+
     /**
      * App-Update: Der Dart-Teil lädt das APK in den Cache, dieser Kanal fragt die
      * Erlaubnis „Unbekannte Apps installieren“ ab und übergibt die Datei dem
@@ -30,6 +37,8 @@ class MainActivity : FlutterActivity() {
      */
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        // Raum-Widgets: Zugangsdaten, Einrichtung, Aktualisieren, Sprungziel.
+        RoomWidgetChannel.attach(flutterEngine, applicationContext, this)
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "de.phiph.haven/installer")
             .setMethodCallHandler { call, result ->
                 when (call.method) {

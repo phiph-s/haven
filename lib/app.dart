@@ -6,6 +6,7 @@ import 'core/router/router.dart';
 import 'core/state/providers.dart';
 import 'core/theme/theme.dart';
 import 'core/widgets/system_bars.dart';
+import 'features/home_widget/room_widget_bridge.dart';
 import 'features/zigbee/widgets/zb_common.dart' show zbToast;
 
 /// Wurzel der App: Theme (Hell, Dunkel, System), Router, Deutsch.
@@ -18,6 +19,8 @@ class HavenApp extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final router = ref.watch(routerProvider(initialLocation));
+    // Raum-Widgets auf dem Startbildschirm aktuell halten (nur Android).
+    ref.watch(roomWidgetSyncProvider);
     final mode = ref.watch(themeModeProvider);
     // Hinweise beim Speichern geteilter Daten (z. B. ohne Admin-Rechte).
     ref.listen(syncNoticeProvider, (_, n) {

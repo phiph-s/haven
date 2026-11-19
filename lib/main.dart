@@ -15,6 +15,7 @@ import 'data/ha/ha_repository.dart';
 import 'data/storage/settings_store.dart';
 import 'debug_launch.dart';
 import 'dev/fake_updates.dart';
+import 'features/home_widget/room_widget_bridge.dart';
 import 'features/updates/app_update_provider.dart';
 
 import 'package:package_info_plus/package_info_plus.dart';
@@ -49,6 +50,13 @@ Future<void> main() async {
       ? panelSession(panel, store)
       : await _bootstrap(store, tokens, launch);
 
+  // Einrichten eines Raum-Widgets: Android startet Haven mit dieser Route.
+  final platformRoute =
+      WidgetsBinding.instance.platformDispatcher.defaultRouteName;
+  final widgetRoute = platformRoute.startsWith('/widget-config/')
+      ? platformRoute
+      : null;
+
   runApp(
     ProviderScope(
       overrides: [
@@ -67,7 +75,9 @@ Future<void> main() async {
             appInstallerProvider.overrideWithValue(FakeAppInstaller()),
         ],
       ],
-      child: HavenApp(initialLocation: launch.location),
+      child: RoomWidgetLaunchHandler(
+        child: HavenApp(initialLocation: widgetRoute ?? launch.location),
+      ),
     ),
   );
 }

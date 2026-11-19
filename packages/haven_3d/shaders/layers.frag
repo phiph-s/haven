@@ -101,16 +101,15 @@ bool inside(vec2 q) {
   return q.x >= 0.0 && q.y >= 0.0 && q.x <= 1.0 && q.y <= 1.0;
 }
 
-void main() {
-  vec2 uv = (FlutterFragCoord().xy - uOrigin) / uSize;
+// Ein Pixel; main() weist nur zu (mehrere return in main() mit Texturen
+// machen auf Windows Probleme, flutter/flutter#190809).
+vec4 shade(vec2 uv) {
   if (uv.x < 0.0 || uv.y < 0.0 || uv.x > 1.0 || uv.y > 1.0) {
-    fragColor = vec4(0.0);
-    return;
+    return vec4(0.0);
   }
   vec4 start = uLit > 0.5 ? texture(uRoom, uv) : texture(uBase, uv);
   if (start.a <= 0.0) {
-    fragColor = vec4(0.0);
-    return;
+    return vec4(0.0);
   }
   vec2 px = uv * uImage;
   vec3 hdr = hdrOf(start);
@@ -147,5 +146,9 @@ void main() {
     if (inside(q)) hdr += lampDelta(texture(uLamp7, q), uFactor7, uv);
   }
   vec3 c = toSrgb(tone(max(hdr, vec3(0.0))));
-  fragColor = vec4(c * start.a, start.a);
+  return vec4(c * start.a, start.a);
+}
+
+void main() {
+  fragColor = shade((FlutterFragCoord().xy - uOrigin) / uSize);
 }

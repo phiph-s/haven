@@ -2,4 +2,11 @@
 <resources>
     <!-- Hintergrund wie hv.bg (hell), damit Start und Übergänge nicht blitzen -->
     <color name="haven_bg">#FFF6F1EA</color>
+    <!-- Raum-Widget -->
+    <color name="room_widget_bg">#FFFFFCF8</color>
+    <color name="room_widget_line">#14000000</color>
+    <color name="room_widget_text">#FF1B1D22</color>
+    <color name="room_widget_text2">#FF5F6570</color>
+    <color name="room_widget_dot_off">#FFDCD8D1</color>
+    <color name="room_widget_open_bg">#FFF0ECE6</color>
 </resources>

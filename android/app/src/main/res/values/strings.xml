@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="room_widget_label">Haven Raum</string>
+    <string name="room_widget_description">Ein Raum mit seinem Licht. Tippen schaltet das Licht, der Pfeil öffnet den Raum.</string>
+    <string name="room_widget_open">Raum öffnen</string>
+</resources>

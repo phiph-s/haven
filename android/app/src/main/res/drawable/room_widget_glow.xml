@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Lichtschein hinter dem Raumbild, eingefärbt in der Mischfarbe der Lampen. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+    <gradient
+        android:type="radial"
+        android:centerX="0.5"
+        android:centerY="0.38"
+        android:gradientRadius="170dp"
+        android:startColor="#B3FFFFFF"
+        android:centerColor="#40FFFFFF"
+        android:endColor="#00FFFFFF" />
+    <corners android:radius="22dp" />
+</shape>
