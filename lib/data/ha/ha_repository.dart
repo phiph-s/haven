@@ -72,6 +72,7 @@ class HaRepository extends BaseRepository {
   List<Room> _rooms = const [];
   List<HavenDevice> _devices = const [];
   Set<String> _excluded = const {};
+  Set<String> _locked = const {};
   bool _prefsShared = false;
   bool _integrationMissing = false;
   Timer? _roomsDebounce;
@@ -338,12 +339,16 @@ class HaRepository extends BaseRepository {
       _excluded = {
         for (final id in (prefs['excluded_lights'] as List? ?? const [])) '$id',
       };
+      _locked = {
+        for (final id in (prefs['locked'] as List? ?? const [])) '$id',
+      };
       _prefsShared = true;
     } on HavenException catch (e) {
       // Integration 0.1.0 kennt den Befehl nicht: lokal weiter.
       debugPrint('haven/prefs/get: $e');
       _prefsShared = false;
       _excluded = {..._local.excludedLights};
+      _locked = {..._local.lockedIds};
     }
   }
 
@@ -561,6 +566,7 @@ class HaRepository extends BaseRepository {
         integrationMissing: _integrationMissing,
         activeScenes: Map.unmodifiable(Map.of(_activeScenes)),
         excludedLights: Set.unmodifiable(_excluded),
+        locked: Set.unmodifiable(_locked),
         devices: _devices,
       ),
     );
@@ -643,6 +649,11 @@ class HaRepository extends BaseRepository {
     Rgb? rgb,
     int? kelvin,
   }) async {
+    // Gesperrte Lampen („immer an“) schaltet Haven nicht.
+    entityIds = [
+      for (final id in entityIds)
+        if (!_locked.contains(id)) id,
+    ];
     if (entityIds.isEmpty) return;
     for (final r in _rooms) {
       if (r.lightIds.any(entityIds.contains)) _activeScenes.remove(r.id);
@@ -660,7 +671,8 @@ class HaRepository extends BaseRepository {
       entityIds,
       _rooms,
       _entities,
-      excluded: _excluded,
+      // Gruppen mit gesperrten Lampen nicht nehmen: einzeln schalten.
+      excluded: {..._excluded, ..._locked},
     );
     final key = '${off ? 'off' : 'on'}:${entityIds.join(',')}';
     _throttled(key, () async {
@@ -827,15 +839,41 @@ class HaRepository extends BaseRepository {
     _pushNow();
     try {
       if (_prefsShared) {
-        await client.send({
-          'type': 'haven/prefs/set',
-          'prefs': {'excluded_lights': next.toList()..sort()},
-        });
+        await _sendPrefs();
       } else {
         await _local.setExcludedLights(next);
       }
     } catch (e) {
       _excluded = before;
+      _pushNow();
+      rethrow;
+    }
+  }
+
+  /// Ausnahmen und Sperren zusammen: `haven/prefs/set` ersetzt das Dokument.
+  Future<void> _sendPrefs() => client.send({
+    'type': 'haven/prefs/set',
+    'prefs': {
+      'excluded_lights': _excluded.toList()..sort(),
+      'locked': _locked.toList()..sort(),
+    },
+  });
+
+  @override
+  Future<void> setLocked(Iterable<String> ids, bool locked) async {
+    final before = _locked;
+    final next = {..._locked};
+    locked ? next.addAll(ids) : next.removeAll(ids);
+    _locked = next;
+    _pushNow();
+    try {
+      if (_prefsShared) {
+        await _sendPrefs();
+      } else {
+        await _local.setLockedIds(next);
+      }
+    } catch (e) {
+      _locked = before;
       _pushNow();
       rethrow;
     }
@@ -854,6 +892,9 @@ class HaRepository extends BaseRepository {
     String? entityId,
     Map<String, dynamic> data = const {},
   }) async {
+    if (const {'turn_off', 'turn_on', 'toggle'}.contains(service)) {
+      checkLocked(entityId);
+    }
     await client.send({
       'type': 'call_service',
       'domain': domain,
@@ -883,8 +924,11 @@ class HaRepository extends BaseRepository {
   @override
   Future<Map<String, Map<String, dynamic>>> zigbeeStates() => _zb.states();
   @override
-  Future<void> zigbeeSet(String ieee, Map<String, dynamic> values) =>
-      _zb.set(ieee, values);
+  Future<void> zigbeeSet(String ieee, Map<String, dynamic> values) async {
+    if (BaseRepository.controlsDevice(values)) checkLocked(ieee);
+    await _zb.set(ieee, values);
+  }
+
   @override
   Future<void> zigbeeRename(
     String ieee,

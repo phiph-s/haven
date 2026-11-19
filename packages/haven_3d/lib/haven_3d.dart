@@ -8,6 +8,7 @@ library;
 export 'src/camera.dart';
 export 'src/devices.dart';
 export 'src/edges.dart' show Edge3, featureEdges;
+export 'src/gpu_scene.dart' show kSunDirection, sunDirectionOf;
 export 'src/heatmap.dart';
 export 'src/furniture/catalog.dart'
     show

@@ -38,6 +38,7 @@ import 'map_3d.dart'
         deviceModelsFor,
         deviceMountOf,
         lampStateOf,
+        mapSunOf,
         markerHeightOf,
         sceneOfPlan,
         spreadNodes;
@@ -697,7 +698,7 @@ class _FloorEditorScreenState extends ConsumerState<FloorEditorScreen> {
       name: name,
       kind: kind,
       target: loc == null ? null : _roomName(loc),
-      remove: cell == null,
+      remove: cell == null && _overPool(global),
     );
     if (cell != _dragCell || loc != _hover) {
       if (loc != _hover && loc != null) Haptics.tick();
@@ -723,12 +724,14 @@ class _FloorEditorScreenState extends ConsumerState<FloorEditorScreen> {
       _dragCell = null;
     });
     if (cell == null) {
-      // Außerhalb des Grundrisses: die Platzierung fällt weg, das Gerät
-      // kehrt in den Pool zurück.
-      if (old != null) {
+      // Auf die Geräteliste gezogen: die Platzierung fällt weg. Daneben
+      // (z. B. knapp über den Rand) passiert nichts, das Gerät bleibt.
+      if (old != null && _overPool(global)) {
         Haptics.tap();
         _commit(plan, plan.withoutPlacement(entityId));
         _say('Wieder in der Liste');
+      } else if (old != null) {
+        _say('Bleibt an seinem Platz');
       }
       return;
     }
@@ -1407,7 +1410,11 @@ class _FloorEditorScreenState extends ConsumerState<FloorEditorScreen> {
                 }.contains(e.deviceClass)))
           e,
     ]..sort((a, b) => a.name.compareTo(b.name));
-    final what = f.kind == 'door' ? 'die Tür' : 'das Fenster';
+    final what = switch (f.kind) {
+      'door' => 'die Tür',
+      'fridge' => 'den Kühlschrank',
+      _ => 'das Fenster',
+    };
     final picked = await showZbSheet<String>(
       context,
       builder: (ctx) {
@@ -1926,6 +1933,8 @@ class _FloorEditorScreenState extends ConsumerState<FloorEditorScreen> {
                 if (_previewInfo != null) _previewOverlay(geo, _previewInfo!),
                 if (_mode == _Mode.devices)
                   Positioned(top: 6, right: 6, child: _lightToggle()),
+                if (_mode == _Mode.rooms)
+                  Positioned(top: 6, right: 6, child: _northControl(plan)),
               ],
             );
           },
@@ -2057,6 +2066,7 @@ class _FloorEditorScreenState extends ConsumerState<FloorEditorScreen> {
       plan: stable,
       lit: lit,
       lamps: lit ? _lampsFor(stable) : const {},
+      sun: mapSunOf(ref, stable.north),
       geo: geo,
       tilt: _view3d,
       projection: _proj,
@@ -2145,6 +2155,69 @@ class _FloorEditorScreenState extends ConsumerState<FloorEditorScreen> {
           },
           child: child,
         ),
+      ),
+    );
+  }
+
+  // ---- Nordrichtung --------------------------------------------------------
+
+  /// Norden drehen (15°-Schritte): danach stellt die 3D-Karte die Sonne.
+  void _turnNorth(HavenFloorPlan plan, double by) {
+    Haptics.tick();
+    final n = ((plan.north + by) % 360 + 360) % 360;
+    _commit(plan, plan.copyWith(north: n));
+  }
+
+  Widget _northControl(HavenFloorPlan plan) {
+    final hv = context.hv;
+    return Container(
+      key: const ValueKey('editor-north'),
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+      decoration: BoxDecoration(
+        color: hv.s1.withValues(alpha: 0.92),
+        borderRadius: BorderRadius.circular(HavenRadii.pill),
+        border: Border.all(color: hv.ln),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          IconButton(
+            tooltip: 'Norden nach links drehen',
+            icon: const Icon(Icons.rotate_left_rounded, size: 20),
+            onPressed: () => _turnNorth(plan, -15),
+          ),
+          Semantics(
+            label: 'Norden ${plan.north.round()} Grad',
+            child: SizedBox(
+              width: 44,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Transform.rotate(
+                    angle: plan.north * math.pi / 180,
+                    child: Icon(
+                      Icons.navigation_rounded,
+                      size: 20,
+                      color: hv.acc,
+                    ),
+                  ),
+                  Text(
+                    'N ${plan.north.round()}°',
+                    style: HavenText.caption.copyWith(
+                      color: hv.tx2,
+                      fontSize: 11,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          IconButton(
+            tooltip: 'Norden nach rechts drehen',
+            icon: const Icon(Icons.rotate_right_rounded, size: 20),
+            onPressed: () => _turnNorth(plan, 15),
+          ),
+        ],
       ),
     );
   }
@@ -2291,7 +2364,19 @@ class _FloorEditorScreenState extends ConsumerState<FloorEditorScreen> {
     );
   }
 
-  Widget _pool(HavenFloorPlan plan) {
+  /// Geräteliste (Ablegen dort nimmt ein Gerät von der Karte).
+  final _poolKey = GlobalKey();
+
+  bool _overPool(Offset global) {
+    final box = _poolKey.currentContext?.findRenderObject() as RenderBox?;
+    if (box == null || !box.hasSize) return false;
+    return (box.localToGlobal(Offset.zero) & box.size).contains(global);
+  }
+
+  Widget _pool(HavenFloorPlan plan) =>
+      KeyedSubtree(key: _poolKey, child: _poolCard(plan));
+
+  Widget _poolCard(HavenFloorPlan plan) {
     final hv = context.hv;
     // Der Pool hängt an den vorhandenen Entities und Geräten, nicht an Werten.
     ref.watch(
@@ -2304,13 +2389,26 @@ class _FloorEditorScreenState extends ConsumerState<FloorEditorScreen> {
     _migrate(pool);
     final open = pool.open;
     final dsel = _dsel == null ? null : plan.placementOf(_dsel!);
+    // Am Handy ist das Panel niedrig: das gewählte Gerät bekommt es ganz
+    // (scrollbar), die Liste kommt nach dem Abwählen zurück.
+    if (dsel != null && !context.isDesktopLayout) {
+      return HavenCard(
+        padding: const EdgeInsets.fromLTRB(16, 12, 8, 6),
+        radius: HavenRadii.m,
+        child: SingleChildScrollView(child: _deviceDetails(plan, dsel)),
+      );
+    }
     return HavenCard(
       padding: const EdgeInsets.fromLTRB(16, 12, 8, 6),
       radius: HavenRadii.m,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          if (dsel != null) _deviceDetails(plan, dsel),
+          if (dsel != null)
+            Flexible(
+              flex: 3,
+              child: SingleChildScrollView(child: _deviceDetails(plan, dsel)),
+            ),
           Row(
             children: [
               Expanded(
@@ -2784,10 +2882,13 @@ class DragLabel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final hv = context.hv;
-    final remove = info.remove || info.target == null;
-    final target = remove ? 'Zurück in die Liste' : info.target!;
+    final remove = info.remove;
+    final stays = !remove && info.target == null;
+    final target = remove
+        ? 'Zurück in die Liste'
+        : (stays ? 'Bleibt an seinem Platz' : info.target!);
     final outside = info.target == kOutsideName;
-    final accent = remove ? hv.tx3 : (outside ? hv.ok : hv.acc);
+    final accent = remove || stays ? hv.tx3 : (outside ? hv.ok : hv.acc);
     return Container(
       constraints: const BoxConstraints(maxWidth: 236),
       padding: const EdgeInsets.fromLTRB(6, 6, 12, 6),
@@ -3171,7 +3272,11 @@ class _EditorScene extends StatefulWidget {
     this.projection,
     this.lit = false,
     this.lamps = const {},
+    this.sun,
   });
+
+  /// Sonnenrichtung (siehe `mapSunOf`), `null`: Standard.
+  final h3.V3? sun;
 
   /// Lampen leuchten in Echtzeit (Zustand aus [lamps], fehlende sind aus).
   final bool lit;
@@ -3241,6 +3346,7 @@ class _EditorSceneState extends State<_EditorScene> {
         if (mk.lamp == null) continue;
         _c.setLamp(mk.id, widget.lamps[mk.id] ?? h3.LampState.off);
       }
+      if (widget.sun case final s?) _c.setSun(s);
     });
     return h3.Scene3DView(
       scene: scene,

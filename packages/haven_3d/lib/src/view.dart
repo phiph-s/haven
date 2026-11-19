@@ -115,6 +115,7 @@ class SceneController extends ChangeNotifier {
         style,
         quality: quality,
         open: _open,
+        sun: _sun,
       );
       // Zustände aus [setLamp] gelten auch nach einem Neuaufbau.
       for (final e in _lamps.entries) {
@@ -227,6 +228,18 @@ class SceneController extends ChangeNotifier {
     if (_lamps[id] == state) return;
     _lamps[id] = state;
     _gpu?.setLamp(id, state);
+    _view?._wake();
+  }
+
+  V3? _sun;
+
+  /// Richtung des Sonnenlichts (von der Sonne zum Boden, Weltkoordinaten),
+  /// z. B. nach Tageszeit und Lage der Wohnung. Gilt auch für eine später
+  /// gebaute Szene. Siehe `sunDirectionOf` für Azimut und Höhe.
+  void setSun(V3 direction) {
+    if (_sun == direction) return;
+    _sun = direction;
+    _gpu?.setSunDirection(direction);
     _view?._wake();
   }
 

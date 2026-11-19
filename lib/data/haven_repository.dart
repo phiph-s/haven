@@ -84,6 +84,12 @@ abstract class HavenRepository
   /// `true`, wenn die Ausnahmen in HA liegen und für alle Geräte gelten.
   bool get prefsShared;
 
+  /// Sperrt Geräte („immer an“) oder gibt sie frei: [ids] sind die IEEE-
+  /// Adresse und die schaltbaren Entities eines Geräts. Gesperrte Geräte
+  /// schaltet Haven nicht (App, Automationen, Zigbee-Befehle). Wie die
+  /// Ausnahmen über `haven/prefs` geteilt.
+  Future<void> setLocked(Iterable<String> ids, bool locked);
+
   /// Lädt Zustände und Räume neu (Ziehen zum Aktualisieren).
   Future<void> refresh();
 

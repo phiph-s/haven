@@ -49,6 +49,9 @@ import 'map_light_controls.dart';
 import 'map_markers.dart';
 import 'map_panels.dart';
 import 'map_readings.dart';
+import '../climate/heating_providers.dart' show heatingProvider;
+import 'climate_link_overlay.dart';
+import 'climate_links.dart';
 import 'map_relevance.dart';
 import 'plan_cleanup.dart';
 import 'map_thermostat.dart';
@@ -499,9 +502,19 @@ class _MapBodyState extends ConsumerState<_MapBody> {
     final name = e?.name ?? n.id;
     switch (mapTapAction(layer, target)) {
       case MapTapAction.toggleLamp:
+        if (ref.read(snapshotProvider).isLocked(n.id)) {
+          Haptics.tick();
+          _say('$name ist gesperrt und bleibt an');
+          return;
+        }
         Haptics.tap();
         unawaited(repo.setLights([n.id], on: !(e?.isOn ?? false)));
       case MapTapAction.togglePlug:
+        if (ref.read(snapshotProvider).isLocked(n.id)) {
+          Haptics.tick();
+          _say('$name ist gesperrt und bleibt an');
+          return;
+        }
         Haptics.tap();
         final was = e?.isOn ?? false;
         final w = plugPowerOf(ref, n.id);
@@ -1262,6 +1275,14 @@ class _MapBodyState extends ConsumerState<_MapBody> {
       if (v != null) values[r.entityId] = v;
     }
     String text(double v) => '${heatValue(v, kind)}${kind.unit}';
+    final links = kind == HeatKind.temperature
+        ? climateLinks(
+            plan: plan,
+            heating: ref.watch(heatingProvider).value?.rooms ?? const [],
+            snapshot: ref.read(snapshotProvider),
+            zigbee: ref.watch(zigbeeProvider.select((z) => z.devices)),
+          )
+        : const <ClimateLink>[];
     return _LayerView(
       plan: plan,
       nodes: [
@@ -1289,6 +1310,15 @@ class _MapBodyState extends ConsumerState<_MapBody> {
         );
       },
       heatmap3d: heatmapOf(data, plan.grid.cellMeters),
+      // Klima: Leitungen im Boden von Thermometern und Fenstern zu den
+      // Thermostaten ihrer Heizungsregelung.
+      overlay3d: links.isEmpty
+          ? null
+          : (context, p) => ClimateLinkOverlay(
+              links: links,
+              projection: p,
+              cellMeters: plan.grid.cellMeters,
+            ),
       subtitle: (r) {
         final range = data.roomRange(r.id);
         if (range == null) return null;

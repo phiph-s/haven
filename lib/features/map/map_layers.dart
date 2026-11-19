@@ -13,7 +13,7 @@ import '../../core/widgets/haptics.dart';
 enum MapLayer {
   combo('Kombi', Icons.layers_rounded, 'combo'),
   light('Licht', Icons.lightbulb_rounded, 'lamps'),
-  temperature('Temperatur', Icons.thermostat_rounded, 'temperature'),
+  temperature('Klima', Icons.thermostat_rounded, 'temperature'),
   humidity('Luftfeuchte', Icons.water_drop_rounded, 'humidity'),
   presence('Bewegung', Icons.directions_walk_rounded, 'presence'),
   network('Funknetz', Icons.hub_rounded, 'network'),

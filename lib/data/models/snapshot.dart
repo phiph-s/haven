@@ -28,6 +28,7 @@ class HavenSnapshot {
     this.integrationMissing = false,
     this.activeScenes = const {},
     this.excludedLights = const {},
+    this.locked = const {},
     this.devices = const [],
     this.revision = 0,
   });
@@ -49,6 +50,13 @@ class HavenSnapshot {
   /// Sie fehlen in Lampenlisten, Zählern, Raum an/aus, „Alles aus“ und
   /// Szenen. Über die Geräteansicht bleiben sie erreichbar.
   final Set<String> excludedLights;
+
+  /// Gesperrte Geräte („immer an“, z. B. die Steckdose von HA selbst oder der
+  /// Kühlschrank): Entity-IDs und IEEE-Adressen. Haven schaltet sie nicht,
+  /// weder aus der App noch per Automation.
+  final Set<String> locked;
+
+  bool isLocked(String? id) => id != null && locked.contains(id);
 
   /// HA-Geräte mit ihren Haupt-Entities (leer bei Integration 0.1.0).
   final List<HavenDevice> devices;
@@ -103,6 +111,7 @@ class HavenSnapshot {
     bool? integrationMissing,
     Map<String, String>? activeScenes,
     Set<String>? excludedLights,
+    Set<String>? locked,
     List<HavenDevice>? devices,
   }) => HavenSnapshot(
     status: status ?? this.status,
@@ -111,6 +120,7 @@ class HavenSnapshot {
     integrationMissing: integrationMissing ?? this.integrationMissing,
     activeScenes: activeScenes ?? this.activeScenes,
     excludedLights: excludedLights ?? this.excludedLights,
+    locked: locked ?? this.locked,
     devices: devices ?? this.devices,
     revision: revision + 1,
   );

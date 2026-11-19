@@ -9,6 +9,7 @@ import 'package:haven/data/models/floor_plan.dart';
 import 'package:haven/data/storage/settings_store.dart';
 import 'package:haven/dev/fake_floor_plan.dart';
 import 'package:haven/dev/fake_repository.dart';
+import 'package:haven/features/map/climate_link_overlay.dart';
 import 'package:haven/features/climate/thermostat_dial.dart';
 import 'package:haven/features/climate/thermostat_settings.dart';
 import 'package:haven/features/climate/thermostat_widgets.dart';
@@ -298,6 +299,14 @@ void main() {
       );
       expect(marker, findsOneWidget);
       expect(find.text('→ 21°'), findsWidgets);
+      // Klima: Leitungen von den Thermometern zum Thermostat im Boden.
+      expect(find.byType(ClimateLinkOverlay), findsOneWidget);
+      expect(
+        tester
+            .widget<ClimateLinkOverlay>(find.byType(ClimateLinkOverlay))
+            .links,
+        isNotEmpty,
+      );
       await tester.tap(marker);
       await _settle(tester);
       expect(find.byType(ThermostatPanel), findsOneWidget);

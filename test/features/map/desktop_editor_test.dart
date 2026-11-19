@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:haven/app.dart';
 import 'package:haven/core/adaptive/desktop_sidebar.dart';
 import 'package:haven/core/router/router.dart';
+import 'package:haven_3d/haven_3d.dart' as h3;
 import 'package:haven/core/state/providers.dart';
 import 'package:haven/data/models/floor_plan.dart';
 import 'package:haven/data/storage/settings_store.dart';
@@ -260,4 +261,88 @@ void main() {
     }
     expect(tester.takeException(), isNull);
   });
+
+  for (final size in [_desk, _phone]) {
+    testWidgets('Geräte setzen: Gerät ziehen verschiebt es (${size.width})', (
+      tester,
+    ) async {
+      final repo = _MemoryRepo(kFakeFloorPlan);
+      await _pump(tester, '/map/editor?mode=devices', repo: repo, size: size);
+      final marker = find.byType(MapMarker).first;
+      final id = tester.widget<MapMarker>(marker).entityId;
+      final before = repo.plan!.placementOf(id)!;
+      final start = tester.getCenter(marker);
+      // Langsam zur Mitte der Fläche ziehen wie mit Maus bzw. Finger.
+      final mid = tester.getCenter(find.byType(h3.Scene3DView));
+      final step = (mid - start) / 24;
+      final g = await tester.startGesture(start);
+      for (var i = 1; i <= 12; i++) {
+        await g.moveTo(start + step * i.toDouble());
+        await tester.pump(const Duration(milliseconds: 16));
+      }
+      await g.up();
+      await tester.pumpAndSettle();
+      final after = repo.plan!.placementOf(id);
+      expect(after, isNotNull, reason: 'nicht von der Karte gefallen');
+      expect(after!.cell, isNot(before.cell), reason: 'verschoben');
+    });
+
+    testWidgets(
+      'Geräte setzen: Antippen wählt, noch mal abwählt (${size.width})',
+      (tester) async {
+        await _pump(
+          tester,
+          '/map/editor?mode=devices',
+          repo: _MemoryRepo(kFakeFloorPlan),
+          size: size,
+        );
+        final marker = find.byType(MapMarker).first;
+        final id = tester.widget<MapMarker>(marker).entityId;
+        for (var i = 0; i < 3; i++) {
+          await tester.tap(marker);
+          await tester.pumpAndSettle();
+          expect(
+            find.byKey(ValueKey('dsel-$id')),
+            findsOneWidget,
+            reason: 'Runde $i',
+          );
+          await tester.tap(marker);
+          await tester.pumpAndSettle();
+          expect(
+            find.byKey(ValueKey('dsel-$id')),
+            findsNothing,
+            reason: 'Runde $i',
+          );
+        }
+      },
+    );
+  }
+
+  testWidgets(
+    'Geräte setzen: neben dem Raster bleibt es, auf der Liste geht es',
+    (tester) async {
+      final repo = _MemoryRepo(kFakeFloorPlan);
+      await _pump(tester, '/map/editor?mode=devices', repo: repo, size: _phone);
+      final marker = find.byType(MapMarker).first;
+      final id = tester.widget<MapMarker>(marker).entityId;
+      final before = repo.plan!.placementOf(id)!;
+      Future<void> dragTo(Offset to) async {
+        final start = tester.getCenter(find.byType(MapMarker).first);
+        final g = await tester.startGesture(start);
+        for (var i = 1; i <= 10; i++) {
+          await g.moveTo(Offset.lerp(start, to, i / 10)!);
+          await tester.pump(const Duration(milliseconds: 16));
+        }
+        await g.up();
+        await tester.pumpAndSettle();
+      }
+
+      // Ganz oben links aus dem Bild: bleibt, wo es war.
+      await dragTo(const Offset(2, 2));
+      expect(repo.plan!.placementOf(id), before);
+      // Auf die Geräteliste: von der Karte genommen.
+      await dragTo(tester.getCenter(find.text('Geräte platzieren')));
+      expect(repo.plan!.placementOf(id), isNull);
+    },
+  );
 }

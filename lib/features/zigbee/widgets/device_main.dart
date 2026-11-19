@@ -18,6 +18,7 @@ import '../../room/widgets/light_control_list.dart';
 import '../zigbee_model.dart';
 import '../zigbee_providers.dart';
 import 'device_icon.dart';
+import 'device_lock.dart';
 import 'zb_common.dart';
 
 /// Hauptfunktion eines Geräts, groß und je `device_type`. [compact] lässt
@@ -35,12 +36,22 @@ class ZbMainFunction extends ConsumerWidget {
         if (e != null) {
           return _LightMain(view: view, entityId: e.entityId, compact: compact);
         }
-        return _SwitchMain(view: view, title: 'Licht', zigbeeOnly: true);
+        return _SwitchMain(
+          view: view,
+          title: 'Licht',
+          zigbeeOnly: true,
+          compact: compact,
+        );
       case ZbType.plug:
-        return _SwitchMain(view: view, title: 'Steckdose', metrics: !compact);
+        return _SwitchMain(
+          view: view,
+          title: 'Steckdose',
+          metrics: !compact,
+          compact: compact,
+        );
       case ZbType.relay:
       case ZbType.switch_:
-        return _SwitchMain(view: view, title: 'Schalter');
+        return _SwitchMain(view: view, title: 'Schalter', compact: compact);
       case ZbType.climate:
         return _ClimateMain(view: view);
       case ZbType.thermostat:
@@ -305,6 +316,15 @@ class _LightMainState extends ConsumerState<_LightMain> {
                   ],
                   const SizedBox(height: 16),
                   ExcludeLightRow(entityId: widget.entityId),
+                  const SizedBox(height: 8),
+                  DeviceLockRow(
+                    view: widget.view,
+                    isOn: ref.watch(
+                      snapshotProvider.select(
+                        (s) => s.entity(widget.entityId)?.isOn,
+                      ),
+                    ),
+                  ),
                 ],
               ],
             ),
@@ -323,11 +343,15 @@ class _SwitchMain extends ConsumerWidget {
     required this.title,
     this.metrics = false,
     this.zigbeeOnly = false,
+    this.compact = false,
   });
   final ZbDeviceView view;
   final String title;
   final bool metrics;
   final bool zigbeeOnly;
+
+  /// Kurzfassung (Kartenpanel): ohne Sperre-Einstellung.
+  final bool compact;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -362,6 +386,9 @@ class _SwitchMain extends ConsumerWidget {
     }
 
     final power = view.number('power');
+    final locked = ref.watch(
+      snapshotProvider.select((s) => isDeviceLocked(s, view)),
+    );
     return _MainCard(
       glow: on == true ? hv.acc : null,
       child: Column(
@@ -390,10 +417,18 @@ class _SwitchMain extends ConsumerWidget {
                   ],
                 ),
               ),
+              if (locked)
+                Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: Tooltip(
+                    message: 'Gesperrt: immer an',
+                    child: Icon(Icons.lock_rounded, size: 20, color: hv.tx2),
+                  ),
+                ),
               HavenSwitch(
                 value: on == true,
                 semanticLabel: title,
-                onChanged: on == null && e == null && !zigbeeOnly
+                onChanged: locked || (on == null && e == null && !zigbeeOnly)
                     ? null
                     : toggle,
               ),
@@ -444,6 +479,10 @@ class _SwitchMain extends ConsumerWidget {
                 ],
               ),
             ],
+          ],
+          if (!compact) ...[
+            const SizedBox(height: 16),
+            DeviceLockRow(view: view, isOn: on),
           ],
         ],
       ),

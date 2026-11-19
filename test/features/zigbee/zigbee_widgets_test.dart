@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:haven/app.dart';
 import 'package:haven/core/state/providers.dart';
+import 'package:haven/core/widgets/haven_switch.dart';
+import 'package:haven/data/haven_repository.dart';
 import 'package:haven/dev/fake_data.dart';
 import 'package:haven/dev/fake_repository.dart';
 import 'package:haven/data/storage/settings_store.dart';
@@ -152,6 +154,42 @@ void main() {
       await _close(tester);
     });
   }
+
+  testWidgets('Immer an: sperrt die Steckdose gegen Ausschalten', (
+    tester,
+  ) async {
+    final repo = FakeRepository(simulate: false);
+    final ieee = _ieeeOf('HT-SP-ZB-01');
+    await _open(tester, '/zigbee/device/$ieee', spy: repo);
+    final row = find.byKey(const ValueKey('device-lock'));
+    await tester.scrollUntilVisible(
+      row,
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.tap(
+      find.descendant(of: row, matching: find.byType(HavenSwitch)),
+    );
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(repo.snapshot.isLocked(ieee), isTrue);
+    expect(find.byIcon(Icons.lock_rounded), findsWidgets);
+    // Ausschalten geht nicht mehr, Einstellungen schon.
+    final plug = repo.snapshot.locked.firstWhere(
+      (id) => id.startsWith('switch.'),
+    );
+    await tester.runAsync(() async {
+      await expectLater(
+        repo.callService('switch', 'turn_off', entityId: plug),
+        throwsA(isA<HavenException>()),
+      );
+      await expectLater(
+        repo.zigbeeSet(ieee, {'state': 'OFF'}),
+        throwsA(isA<HavenException>()),
+      );
+      await repo.zigbeeSet(ieee, {'child_lock': 'LOCK'});
+    });
+    await _close(tester);
+  });
 
   testWidgets('Einstellung: optimistisch gesetzt, bei Fehler zurück', (
     tester,

@@ -256,7 +256,13 @@ class _ToggleCard extends ConsumerWidget {
             child: HavenSwitch(
               value: on,
               semanticLabel: label,
-              onChanged: e == null || !e.isAvailable
+              // Gesperrte Geräte („immer an“) nicht schalten.
+              onChanged:
+                  e == null ||
+                      !e.isAvailable ||
+                      ref.watch(
+                        snapshotProvider.select((s) => s.isLocked(e.entityId)),
+                      )
                   ? null
                   : (v) => ref
                         .read(repositoryProvider)

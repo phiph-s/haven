@@ -15,8 +15,10 @@ import 'package:haven/dev/fake_repository.dart';
 import 'package:haven/features/map/floor_plan_store.dart';
 import 'package:haven/features/map/heatmap.dart';
 import 'package:haven/features/map/map_layer_widgets.dart';
+import 'package:haven/features/map/map_3d.dart';
 import 'package:haven/features/map/map_layers.dart';
 import 'package:haven/features/map/map_readings.dart';
+import 'package:material_ui/material_ui.dart' show Semantics;
 import 'package:shared_preferences/shared_preferences.dart';
 
 class _Repo implements FloorPlanRepository {
@@ -366,8 +368,11 @@ void main() {
       for (final l in MapLayer.values) {
         expect(find.bySemanticsLabel('Kartenart ${l.label}'), findsOneWidget);
       }
-      await tester.tap(find.bySemanticsLabel('Kartenart Temperatur'));
-      await tester.pumpAndSettle();
+      await tester.tap(find.bySemanticsLabel('Kartenart Klima'));
+      // Die Leitungen pulsieren endlos: feste Schritte statt pumpAndSettle.
+      for (var i = 0; i < 10; i++) {
+        await tester.pump(const Duration(milliseconds: 100));
+      }
       expect(c.read(mapLayerProvider), MapLayer.temperature);
       expect(store.mapLayer, 'temperature');
       // Legende mit Skala und dem Wert draußen.
@@ -446,5 +451,37 @@ void main() {
       expect(find.byType(BatteryMarker), findsWidgets);
       expect(find.textContaining('Sensor Terrasse 18 %'), findsOneWidget);
     });
+  });
+
+  testWidgets('2D/3D-Schalter folgt der Kamera (Raum angetippt kippt)', (
+    tester,
+  ) async {
+    final (c, _) = await _pump(tester);
+    bool selected(String label) => tester
+        .widget<Semantics>(
+          find.byWidgetPredicate(
+            (w) => w is Semantics && w.properties.label == label,
+          ),
+        )
+        .properties
+        .selected!;
+    expect(selected('Draufsicht'), isTrue);
+    // Fokus auf einen Raum: die Kamera kippt, die Einstellung bleibt 2D.
+    final cam = c.read(map3dControllerProvider);
+    cam.camera = cam.camera.copyWith(pitch: kMapFocusPitch);
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(c.read(map3dSettingsProvider).tilt, isFalse);
+    expect(selected('Schrägansicht'), isTrue);
+    expect(selected('Draufsicht'), isFalse);
+    // 2D tippen bringt die Draufsicht zurück.
+    await tester.tap(
+      find.byWidgetPredicate(
+        (w) => w is Semantics && w.properties.label == 'Draufsicht',
+      ),
+    );
+    for (var i = 0; i < 20; i++) {
+      await tester.pump(const Duration(milliseconds: 50));
+    }
+    expect(selected('Draufsicht'), isTrue);
   });
 }

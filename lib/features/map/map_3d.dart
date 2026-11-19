@@ -127,6 +127,9 @@ bool? watchMap3d(WidgetRef ref) {
 
 /// Schrägansicht der Übersicht (leicht von links unten).
 const double kMapTiltPitch = 0.92;
+
+/// Zeigt die Kamera schräg (3D) statt von oben? Ab etwa 9° Neigung.
+bool isTiltedCamera(h3.OrbitCamera c) => c.pitch > 0.15;
 const double kMapTiltYaw = -0.42;
 
 /// Blick beim Fokus auf einen Raum oder ein Gerät aus der Draufsicht.
@@ -280,6 +283,22 @@ h3.MarkerKind markerKindOf(FloorKind k) => switch (k) {
   FloorKind.media => h3.MarkerKind.media,
   FloorKind.switchKind || FloorKind.device => h3.MarkerKind.device,
 };
+
+/// Sonnenrichtung für die 3D-Karte aus `sun.sun` (Azimut, Höhe; gerundet
+/// auf 5° bzw. 3°, damit die Schatten nicht ständig neu entstehen) und der
+/// Nordrichtung [north] des Plans. `null` ohne `sun.sun`.
+h3.V3? mapSunOf(WidgetRef ref, double north) {
+  final pos = ref.watch(
+    snapshotProvider.select((s) {
+      final a = s.entity('sun.sun')?.attributes;
+      final az = a?['azimuth'], el = a?['elevation'];
+      if (az is! num || el is! num) return null;
+      return ((az / 5).round() * 5.0, (el / 3).round() * 3.0);
+    }),
+  );
+  if (pos == null) return null;
+  return h3.sunDirectionOf(pos.$1, pos.$2, north: north);
+}
 
 /// Lichtzustand einer Lampe für die Szene.
 h3.LampState lampStateOf(Lamp l) {
@@ -444,6 +463,8 @@ class Map3DView extends ConsumerStatefulWidget {
 }
 
 class _Map3DViewState extends ConsumerState<Map3DView> {
+  h3.V3? _sun;
+
   HavenFloorPlan? _synced;
 
   @override
@@ -540,6 +561,14 @@ class _Map3DViewState extends ConsumerState<Map3DView> {
     // schon mit dem richtigen Stand), danach bei jeder Änderung.
     ref.listen(snapshotProvider, (_, s) => syncMapOpenings(c, scene, s));
     syncMapOpenings(c, scene, ref.read(snapshotProvider));
+    // Sonne wie draußen: Stand aus `sun.sun`, gedreht nach Norden des Plans.
+    final sun = mapSunOf(ref, plan.north);
+    if (sun != null && sun != _sun) {
+      _sun = sun;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) c.setSun(sun);
+      });
+    }
     if (!identical(_synced, plan)) {
       _synced = plan;
       final l = ref.read(mapLightsProvider(plan));
@@ -635,12 +664,28 @@ class Map3DControls extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final hv = context.hv;
     final s = ref.watch(map3dSettingsProvider);
     final h3.SceneController c =
         controller ?? ref.watch(map3dControllerProvider);
+    // Der Schalter zeigt, was die Kamera gerade tut: Ein angetippter Raum
+    // kippt die Ansicht, auch wenn die Einstellung Draufsicht ist.
+    return ListenableBuilder(
+      listenable: c,
+      builder: (context, _) =>
+          _build(context, ref, s, c, tilted: isTiltedCamera(c.camera)),
+    );
+  }
+
+  Widget _build(
+    BuildContext context,
+    WidgetRef ref,
+    Map3DSettings s,
+    h3.SceneController c, {
+    required bool tilted,
+  }) {
+    final hv = context.hv;
     void setTilt(bool tilt) {
-      if (tilt == s.tilt) return;
+      if (tilt == tilted && tilt == s.tilt) return;
       Haptics.tick();
       ref.read(map3dSettingsProvider.notifier).setTilt(tilt);
       onRecenter?.call();
@@ -678,8 +723,8 @@ class Map3DControls extends ConsumerWidget {
         );
 
     final children = [
-      seg('2D', !s.tilt, () => setTilt(false), 'Draufsicht'),
-      seg('3D', s.tilt, () => setTilt(true), 'Schrägansicht'),
+      seg('2D', !tilted, () => setTilt(false), 'Draufsicht'),
+      seg('3D', tilted, () => setTilt(true), 'Schrägansicht'),
       SizedBox(
         width: axis == Axis.vertical ? 24 : 1,
         height: axis == Axis.vertical ? 1 : 24,

@@ -22,6 +22,30 @@ abstract class BaseRepository implements HavenRepository {
 
   bool get disposed => _disposed;
 
+  // ---- Gesperrte Geräte („immer an“) -----------------------------------
+
+  /// Wirft, wenn [id] (Entity oder IEEE) gesperrt ist.
+  void checkLocked(String? id) {
+    if (id != null && _snapshot.locked.contains(id)) {
+      throw HavenException(
+        'Das Gerät ist gesperrt und bleibt an.',
+        code: 'locked',
+      );
+    }
+  }
+
+  /// Zigbee-Werte, die ein Gerät schalten (Zustand, Helligkeit, Farbe).
+  /// Einstellungen wie das Verhalten nach Stromausfall bleiben erlaubt.
+  static bool controlsDevice(Map<String, dynamic> values) => values.keys.any(
+    (k) => const [
+      'state',
+      'brightness',
+      'color',
+      'color_temp',
+      'effect',
+    ].any((c) => k == c || k.startsWith('${c}_')),
+  );
+
   // ---- Szenen: ohne Unterstützung (Unterklassen überschreiben) ----------
 
   @override

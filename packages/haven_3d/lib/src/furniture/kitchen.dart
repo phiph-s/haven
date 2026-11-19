@@ -137,11 +137,38 @@ final Map<String, FurnitureSpec> kitchenModels = {
     },
   ),
   // 2D: Rahmen, Gefrierfach-Linie nahe der Front (+y), zwei Griffe.
+  // Mit Türkontakt offen (`b.open`): Tür an der Angel links 90° aufgeklappt,
+  // innen ein helles Fach.
   'fridge': FurnitureSpec(
     height: 1.8,
     build: (b, w, d, h) {
-      b.box(-w / 2, -d / 2, 0, w / 2, d / 2, h);
       final f = d / 2;
+      if (b.open == true) {
+        const wall = 0.04;
+        // Korpus ohne Front: Rückwand, Seiten, Boden, Decke.
+        b.box(-w / 2, -f, 0, w / 2, -f + wall, h);
+        b.box(-w / 2, -f, 0, -w / 2 + wall, f, h);
+        b.box(w / 2 - wall, -f, 0, w / 2, f, h);
+        b.box(-w / 2, -f, 0, w / 2, f, wall);
+        b.box(-w / 2, -f, h - wall, w / 2, f, h);
+        // Innen hell, mit zwei Böden.
+        b.box(
+          -w / 2 + wall,
+          -f + wall,
+          wall,
+          w / 2 - wall,
+          f - 0.01,
+          h - wall,
+          mat: Mat.soft,
+        );
+        for (final z in [h * 0.45, h * 0.7]) {
+          b.line(V3(-w / 2 + wall, f - 0.01, z), V3(w / 2 - wall, f - 0.01, z));
+        }
+        // Tür nach vorn aufgeklappt.
+        b.box(-w / 2, f, 0.01, -w / 2 + 0.05, f + w - 0.02, h - 0.01);
+        return;
+      }
+      b.box(-w / 2, -d / 2, 0, w / 2, d / 2, h);
       // Fuge zwischen Gefrier- (unten) und Kühlteil, senkrechte Griffe.
       final split = h * 0.32;
       b.line(V3(-w / 2, f, split), V3(w / 2, f, split));

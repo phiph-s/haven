@@ -517,4 +517,23 @@ void main() {
       expect((a - b).distance, greaterThan(40));
     });
   });
+
+  test(
+    'Nordrichtung: JSON hin und zurück, 0 ohne Feld, bleibt beim Löschen',
+    () {
+      final plan = HavenFloorPlan(
+        rooms: [FloorRoom.rect(id: 'a', name: 'A', x: 0, y: 0, w: 4, h: 4)],
+      );
+      expect(plan.toJson().containsKey('north'), isFalse);
+      final turned = plan.copyWith(north: 135);
+      final back = HavenFloorPlan.fromJson(turned.toJson());
+      expect(back.north, 135);
+      expect(back, turned);
+      expect(turned.withoutRoom('a').north, 135);
+      expect(
+        HavenFloorPlan.fromJson({...turned.toJson(), 'north': 400}).north,
+        40,
+      );
+    },
+  );
 }

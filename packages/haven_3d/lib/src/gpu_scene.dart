@@ -39,9 +39,49 @@ class GpuScene {
     this.style, {
     this.quality = SceneQuality.high,
     Map<String, bool?> open = const {},
-  }) {
+    V3? sun,
+  }) : _sunDir = sun ?? kSunDirection {
     _openState.addAll(open);
     _build();
+  }
+
+  /// Richtung des Sonnenlichts (von der Sonne zum Boden), siehe
+  /// [setSunDirection].
+  V3 _sunDir;
+  V3 get sunDirection => _sunDir;
+
+  /// Sonne aus einer anderen Richtung (Tageszeit, Lage der Wohnung):
+  /// Echtzeitsonne sofort, die gebakenen Schatten in Scheiben (siehe
+  /// [flushLight]). Kleine Änderungen unter etwa 2° zählen nicht.
+  void setSunDirection(V3 dir) {
+    final a = dir.normalized, b = _sunDir.normalized;
+    if (a.dot(b) > math.cos(2 * math.pi / 180)) return;
+    _sunDir = dir;
+    _applyLighting();
+    if (!quality.bakes) return;
+    final zones = <String, Set<String>>{};
+    for (final id in _roomReceivers.keys) {
+      (zones[source.lightZones[id] ?? id] ??= {}).add(id);
+    }
+    for (final z in zones.values) {
+      final occ = _zoneOccluders(z);
+      for (final id in z) {
+        for (final i in _roomReceivers[id]!) {
+          final r = _receivers[i];
+          _jobs.add(() {
+            _bakeSunInto(r, occ.objects);
+            _dirty.add(r);
+          });
+        }
+      }
+    }
+  }
+
+  void _bakeSunInto(_Receiver r, LightOccluders occ) {
+    r.sun = bakeSun(r.bake, -_sunDir, occ, samples: quality.bakeSamples);
+    final cos = math.max(0.0, (-_sunDir).normalized.z);
+    r.sunOpen = Float32List(r.bake.width * r.bake.height)
+      ..fillRange(0, r.bake.width * r.bake.height, cos);
   }
 
   /// Qualitätsstufe; ändert sich nur mit einem neuen [GpuScene] (Baking).
@@ -291,7 +331,7 @@ class GpuScene {
     for (final o in source.objects) {
       // Türen und Fenster gleich im bekannten Zustand (Sensor).
       _addObject(
-        o.wallMounted && _openState.containsKey(o.id)
+        (o.wallMounted || o.sensor != null) && _openState.containsKey(o.id)
             ? o.withOpen(_openState[o.id])
             : o,
       );
@@ -481,9 +521,11 @@ class GpuScene {
     for (final f in o.world.faces) {
       // Waagerechte Oberseiten bekommen gebakenes Lampenlicht (eigene
       // Fläche), der Rest Echtzeitlicht.
-      // Türen und Fenster nicht: sie wechseln mit dem Sensor das Modell.
+      // Türen, Fenster und Möbel mit Sensor nicht: sie wechseln mit dem
+      // Sensor das Modell.
       if (roomId != null &&
           !o.wallMounted &&
+          o.sensor == null &&
           !f.twoSided &&
           f.mat != Mat.glass &&
           f.normal.z > 0.95) {
@@ -558,7 +600,9 @@ class GpuScene {
   /// Scheiben neu gebacken (eine geschlossene Tür hält es auf).
   void setObjectOpen(String id, bool? open) {
     final cur = _objects[id];
-    if (cur == null || !cur.object.wallMounted) return;
+    if (cur == null || (!cur.object.wallMounted && cur.object.sensor == null)) {
+      return;
+    }
     if (_openState.containsKey(id) && _openState[id] == open) return;
     _openState[id] = open;
     cur.node.parent?.remove(cur.node);
@@ -571,7 +615,10 @@ class GpuScene {
     _selected = const {'\u0000'};
     _hiddenObjects = const {'\u0000'};
     if (_heat != null) _setHeatmap(_heat);
-    if (quality.bakes && cur.roomId != null) _rebakeZoneOf(cur.roomId!);
+    // Türen halten Licht auf (ein Kühlschrank nicht).
+    if (quality.bakes && cur.roomId != null && cur.object.wallMounted) {
+      _rebakeZoneOf(cur.roomId!);
+    }
   }
 
   /// Gebakenes Lampenlicht der Zone von [roomId] neu, als Aufträge für
@@ -1097,15 +1144,7 @@ class GpuScene {
     final receivers = [for (final l in byRoom.values) ...l];
     final occ = _zoneOccluders(byRoom.keys.toSet());
     for (final r in receivers) {
-      r.sun = bakeSun(
-        r.bake,
-        -kSunDirection,
-        occ.objects,
-        samples: quality.bakeSamples,
-      );
-      final cos = (-kSunDirection).normalized.z;
-      r.sunOpen = Float32List(r.bake.width * r.bake.height)
-        ..fillRange(0, r.bake.width * r.bake.height, cos);
+      _bakeSunInto(r, occ.objects);
     }
     for (final m in source.markers) {
       if (m.kind != MarkerKind.light || m.lamp == null) continue;
@@ -1134,7 +1173,7 @@ class GpuScene {
         : fs.DirectionalLight(
             // Von oben links hinten, etwas schräg: Schatten fallen nach
             // rechts unten wie bei den Karten-Schatten der App.
-            direction: toFs(kSunDirection).normalized(),
+            direction: toFs(_sunDir).normalized(),
             intensity: kSunIntensity * style.sun,
             // Böden und Oberseiten bekommen die Sonne gebaken (mit weichen
             // Schatten), die Echtzeit-Sonne nur Wände und Möbelseiten.
@@ -1782,6 +1821,31 @@ class _LineSet {
 /// Richtung des Sonnenlichts (Haven-Koordinaten): von oben links hinten,
 /// Schatten fallen nach rechts unten wie bei den Karten-Schatten der App.
 const V3 kSunDirection = V3(0.35, 0.45, -1);
+
+/// Richtung des Sonnenlichts (von der Sonne zum Boden) aus [azimuth] (Grad,
+/// von Norden im Uhrzeigersinn, wie `sun.sun` in Home Assistant) und
+/// [elevation] (Grad über dem Horizont). [north]: wohin Norden auf dem Plan
+/// zeigt, in Grad im Uhrzeigersinn von oben (0: oben ist Norden).
+///
+/// Für die Schattierung bleibt die Sonne zwischen [minElevation] und 70°:
+/// nachts und tief am Horizont fiele sonst kein sinnvolles Licht.
+V3 sunDirectionOf(
+  double azimuth,
+  double elevation, {
+  double north = 0,
+  double minElevation = 18,
+}) {
+  final n = north * math.pi / 180;
+  final a = azimuth * math.pi / 180;
+  final e = elevation.clamp(minElevation, 70.0) * math.pi / 180;
+  // Norden und Osten auf dem Plan (y zeigt nach unten).
+  final nx = math.sin(n), ny = -math.cos(n);
+  final ex = math.cos(n), ey = math.sin(n);
+  final hx = math.sin(a) * ex + math.cos(a) * nx;
+  final hy = math.sin(a) * ey + math.cos(a) * ny;
+  final toSun = V3(hx * math.cos(e), hy * math.cos(e), math.sin(e));
+  return V3(-toSun.x, -toSun.y, -toSun.z);
+}
 
 /// Stärke der Sonne (mal `SceneStyle.sun`).
 const double kSunIntensity = 2.4;

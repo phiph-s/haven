@@ -83,6 +83,7 @@ class FakeRepository extends BaseRepository {
   );
   final LocalPrefs _local;
   Set<String> _excluded = const {};
+  Set<String> _locked = const {};
 
   final Map<String, EntityState> _entities = {};
   final Map<String, _Mem> _mem = {};
@@ -123,12 +124,14 @@ class FakeRepository extends BaseRepository {
     _started = true;
     _build();
     _excluded = {..._local.excludedLights};
+    _locked = {..._local.lockedIds};
     publish(
       HavenSnapshot(
         status: ConnectionStatus.connected,
         entities: Map.unmodifiable(_entities),
         rooms: _rooms,
         excludedLights: Set.unmodifiable(_excluded),
+        locked: Set.unmodifiable(_locked),
       ),
     );
     if (simulate) {
@@ -178,6 +181,12 @@ class FakeRepository extends BaseRepository {
         }
       });
     }
+    // Sonnenstand (für die Sonne der 3D-Karte): früher Nachmittag im Süden.
+    _entities['sun.sun'] = const EntityState('sun.sun', 'above_horizon', {
+      'friendly_name': 'Sonne',
+      'azimuth': 205.0,
+      'elevation': 26.0,
+    });
     // Wetter, Automationen und Szenen aus dem restlichen Bestand.
     for (final e in (inventory['ha_other'] as List)) {
       final id = e['entity_id'] as String;
@@ -395,8 +404,18 @@ class FakeRepository extends BaseRepository {
         activeScenes: Map.unmodifiable(Map.of(_activeScenes)),
         rooms: _rooms,
         excludedLights: Set.unmodifiable(_excluded),
+        locked: Set.unmodifiable(_locked),
       ),
     );
+  }
+
+  @override
+  Future<void> setLocked(Iterable<String> ids, bool locked) async {
+    final next = {..._locked};
+    locked ? next.addAll(ids) : next.removeAll(ids);
+    _locked = next;
+    _push();
+    await _local.setLockedIds(next);
   }
 
   /// Lampen der Lichtsteuerung (ohne Ausnahmen).
@@ -437,7 +456,8 @@ class FakeRepository extends BaseRepository {
     final changed = <String>[];
     for (final id in entityIds) {
       final m = _mem[id];
-      if (m == null) continue;
+      // Gesperrte Lampen („immer an“) schaltet Haven nicht.
+      if (m == null || _locked.contains(id)) continue;
       final modes = (_lampStatic[id]!['supported_color_modes'] as List)
           .cast<String>();
       var turnOn = on == true;
@@ -708,6 +728,9 @@ class FakeRepository extends BaseRepository {
   }) async {
     final id = entityId ?? data['entity_id'] as String?;
     if (id == null) return;
+    if (const {'turn_off', 'turn_on', 'toggle'}.contains(service)) {
+      checkLocked(id);
+    }
     if (domain == 'update') return _updateService(service, id);
     if (domain == 'light') {
       if (service == 'turn_off') return setLights([id], on: false);
@@ -961,6 +984,7 @@ class FakeRepository extends BaseRepository {
   Future<Map<String, Map<String, dynamic>>> zigbeeStates() => _zb.states();
   @override
   Future<void> zigbeeSet(String ieee, Map<String, dynamic> values) async {
+    if (BaseRepository.controlsDevice(values)) checkLocked(ieee);
     if (!_thermostats.containsKey(ieee)) return _zb.set(ieee, values);
     final derived = thermostatDerived(
       _zb.stateOf(ieee),

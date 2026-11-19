@@ -196,7 +196,10 @@ class FloorFurniture {
   final String? sensor;
 
   /// Lässt sich mit einem Sensor verknüpfen (Tür, Fenster).
-  bool get canHaveSensor => kind == 'door' || kind == 'window';
+  /// Tür, Fenster und Kühlschrank lassen sich mit einem Kontakt verknüpfen
+  /// (die 3D-Karte zeigt sie dann offen oder zu).
+  bool get canHaveSensor =>
+      kind == 'door' || kind == 'window' || kind == 'fridge';
 
   FurnitureType? get type => furnitureType(kind);
 

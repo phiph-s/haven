@@ -10,16 +10,25 @@ import '../models/widget_config.dart';
 abstract class LocalPrefs {
   Set<String> get excludedLights;
   Future<void> setExcludedLights(Set<String> ids);
+
+  /// Gesperrte Geräte (Entity-IDs und IEEE-Adressen).
+  Set<String> get lockedIds;
+  Future<void> setLockedIds(Set<String> ids);
 }
 
 /// Nur im Speicher (Tests).
 class MemoryPrefs implements LocalPrefs {
   MemoryPrefs([Set<String>? initial]) : _ids = {...?initial};
   Set<String> _ids;
+  Set<String> _locked = {};
   @override
   Set<String> get excludedLights => _ids;
   @override
   Future<void> setExcludedLights(Set<String> ids) async => _ids = {...ids};
+  @override
+  Set<String> get lockedIds => _locked;
+  @override
+  Future<void> setLockedIds(Set<String> ids) async => _locked = {...ids};
 }
 
 /// Lokale Einstellungen (SharedPreferences). Der Token liegt nicht hier,
@@ -33,6 +42,7 @@ class SettingsStore implements LocalPrefs {
   static const _kUrl = 'ha_url';
   static const _kWidgets = 'home_widgets';
   static const _kExcluded = 'excluded_lights';
+  static const _kLocked = 'locked_devices';
   static const _kUpdateChecked = 'update_last_check';
   static const _kUpdateDismissed = 'update_dismissed';
   static const _kUpdateRelease = 'update_latest_release';
@@ -50,6 +60,12 @@ class SettingsStore implements LocalPrefs {
   @override
   Future<void> setExcludedLights(Set<String> ids) =>
       _p.setStringList(_kExcluded, ids.toList()..sort());
+
+  @override
+  Set<String> get lockedIds => (_p.getStringList(_kLocked) ?? const []).toSet();
+  @override
+  Future<void> setLockedIds(Set<String> ids) =>
+      _p.setStringList(_kLocked, ids.toList()..sort());
 
   /// Letzte erfolgreiche Prüfung auf eine neue App-Version.
   DateTime? get updateLastCheck {

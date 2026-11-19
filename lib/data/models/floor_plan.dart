@@ -452,6 +452,7 @@ class HavenFloorPlan {
     this.updatedAt,
     this.migratedFrom,
     this.furniture = const [],
+    this.north = 0,
   });
 
   factory HavenFloorPlan.fromJson(Map<String, dynamic> j) {
@@ -475,6 +476,10 @@ class HavenFloorPlan {
       outside: FloorOutside.fromJson(j['outside']),
       updatedAt: (j['updatedAt'] as num?)?.toInt(),
       furniture: _furnitureFromJson(j['furniture']),
+      north: switch (j['north']) {
+        final num n when n.isFinite => n.toDouble() % 360,
+        _ => 0,
+      },
     );
   }
 
@@ -578,6 +583,10 @@ class HavenFloorPlan {
   /// vorhandenen Möbel (siehe `ARCHITECTURE.md`, „Möbel“).
   final List<FloorFurniture> furniture;
 
+  /// Wohin Norden auf dem Plan zeigt, Grad im Uhrzeigersinn von oben (0:
+  /// oben ist Norden). Die 3D-Karte stellt danach die Sonne.
+  final double north;
+
   Map<String, dynamic> toJson() => {
     'version': kFloorPlanVersion,
     'grid': grid.toJson(),
@@ -590,6 +599,7 @@ class HavenFloorPlan {
     'outside': outside.toJson(),
     if (updatedAt != null) 'updatedAt': updatedAt,
     'furniture': [for (final f in furniture) f.toJson()],
+    if (north != 0) 'north': north,
   };
 
   String encode() => jsonEncode(toJson());
@@ -721,6 +731,7 @@ class HavenFloorPlan {
     bool clearCoordinator = false,
     FloorOutside? outside,
     List<FloorFurniture>? furniture,
+    double? north,
   }) => HavenFloorPlan(
     grid: grid ?? this.grid,
     rooms: rooms ?? this.rooms,
@@ -730,6 +741,7 @@ class HavenFloorPlan {
     updatedAt: updatedAt,
     migratedFrom: migratedFrom,
     furniture: furniture ?? this.furniture,
+    north: north ?? this.north,
   );
 
   // ---- Möbel ------------------------------------------------------------
@@ -788,6 +800,7 @@ class HavenFloorPlan {
       outside: outside,
       updatedAt: updatedAt,
       migratedFrom: migratedFrom,
+      north: north,
       rooms: [
         for (final x in rooms)
           if (x.id != id) x,
@@ -1166,6 +1179,7 @@ class HavenFloorPlan {
       listEquals(other.rooms, rooms) &&
       listEquals(other.placements, placements) &&
       listEquals(other.furniture, furniture) &&
+      other.north == north &&
       other.coordinator == coordinator;
 
   @override

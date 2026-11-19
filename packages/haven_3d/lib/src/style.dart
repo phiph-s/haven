@@ -65,19 +65,21 @@ class SceneStyle {
     // der Farbe. So hellen Lampen die Möbel sichtbar warm auf.
     surface: Color(0xFFB4B8BF),
     soft: Color(0xFFADB1B9),
-    floor: Color(0xFF8D9098),
-    wall: Color(0xFF9EA2AA),
+    // Boden und Wände hell (fast weißes Grau), damit die Wohnung auch ohne
+    // Licht klar vor dem dunklen Hintergrund steht.
+    floor: Color(0xFFB3B6BD),
+    wall: Color(0xFFE2E4E8),
     accent: Color(0xFF5B9BFF),
     dark: Color(0xFF6E727A),
     green: Color(0xFF6E9E70),
-    // Leere, unbeleuchtete Räume fast schwarz wie die alte Karte bei Nacht.
-    ambient: 0.1,
-    sun: 0.03,
+    // Etwas Grundlicht: unbeleuchtete Räume bleiben dunkel, aber lesbar.
+    ambient: 0.27,
+    sun: 0.1,
     roomEdgeOpacity: 0.6,
     // Abends streut das Lampenlicht stärker in die Schatten.
     shadowFill: 0.5,
-    wallOpacity: 0.3,
-    floorOpacity: 0.85,
+    wallOpacity: 0.62,
+    floorOpacity: 0.92,
   );
 
   /// Kanten (nur echte Knicke und Ränder).
