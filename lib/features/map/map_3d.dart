@@ -700,6 +700,9 @@ class _Map3DViewState extends ConsumerState<Map3DView> {
       controller: c,
       center: h3.V3(bounds.center.dx, bounds.center.dy, 0),
       extent: bounds,
+      // Sonne und Mond nicht unter Kopf, Leisten, Inspektor oder der
+      // Kartenleiste am rechten Rand.
+      insets: widget.insets + const EdgeInsets.only(right: 56),
       child: view,
     );
     // Wolken und Regen nicht über den Rand hinaus (sonst z. B. in der

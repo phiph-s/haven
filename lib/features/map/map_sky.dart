@@ -456,5 +456,11 @@ List<Color> mapSkyGradient(h3.SceneSky sky, {required bool dark}) {
     Color.lerp(const Color(0xFF8DB7E8), const Color(0xFFB7C0CA), sky.cover)!,
     dayT,
   )!;
-  return [top, dark ? const Color(0xFF07080B) : const Color(0xFFF4F3F0)];
+  const lightBottom = Color(0xFFF4F3F0);
+  if (!dark) return [top, lightBottom];
+  // Dunkel: tagsüber nur etwas dunkler als hell, nachts bis fast schwarz.
+  return [
+    Color.lerp(top, const Color(0xFF0B1020), 0.18)!,
+    Color.lerp(const Color(0xFF07080B), const Color(0xFFC3C7CD), dayT)!,
+  ];
 }

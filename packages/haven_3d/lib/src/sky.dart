@@ -189,11 +189,12 @@ class SkyLight {
         : const Color(0xFFAFC4FF);
     // Himmel: tagsüber hell (bei Wolken etwas weniger, aber weicher), nachts
     // ein Rest vom Mond und vom Himmel.
-    // Innen ist es abseits der Fenster deutlich dunkler als draußen.
+    // Innen ist es abseits der Fenster dunkler als draußen, bei Sonne aber
+    // auch in Räumen ohne Lampe hell (Tageslicht durch alle Fenster).
     final ambient =
         0.06 +
         0.06 * moonUp * s.moonIllumination +
-        day * (0.34 - 0.06 * c) * wet;
+        day * (0.6 - 0.14 * c) * wet;
     return SkyLight(
       direction: _direction(az, el, s.north),
       color: color,

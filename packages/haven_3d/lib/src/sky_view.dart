@@ -32,9 +32,14 @@ class SkyLayers extends StatefulWidget {
     this.extent,
     this.height = 2.5,
     this.animate = true,
+    this.insets = EdgeInsets.zero,
   });
 
   final SceneSky sky;
+
+  /// Verdeckte Ränder (Kopf, Leisten, Seitenspalte): Sonne und Mond stehen
+  /// nur in der freien Fläche.
+  final EdgeInsets insets;
 
   /// Kamera der 3D-Ansicht (für die Lage von Sonne und Mond).
   final SceneController controller;
@@ -113,6 +118,7 @@ class _SkyLayersState extends State<SkyLayers>
       center: widget.center,
       extent: widget.extent,
       height: widget.height,
+      insets: widget.insets,
       time: _time.value,
       clouds: _clouds!,
     );
@@ -154,9 +160,11 @@ class _SkyFrame {
     required this.center,
     required this.extent,
     required this.height,
+    required this.insets,
     required this.time,
     required this.clouds,
   });
+  final EdgeInsets insets;
   final SceneSky sky;
   final OrbitCamera camera;
   final V3 center;
@@ -184,10 +192,19 @@ class _SkyPainter extends CustomPainter {
     var v = p1 - p0;
     if (v.distance < 1e-3) v = const Offset(0, -1);
     v = v / v.distance;
-    final mid = size.center(Offset.zero);
-    // Nah am Rand (elliptisch, breite Ansichten nutzen den Platz): dort
-    // liegt meist Himmel, nicht die Wohnung.
-    return mid + Offset(v.dx * size.width * 0.44, v.dy * size.height * 0.44);
+    final area = _free(f, size);
+    // Nah am Rand der freien Fläche (elliptisch, breite Ansichten nutzen den
+    // Platz): dort liegt meist Himmel, nicht die Wohnung; nie unter Kopf,
+    // Leisten oder Seitenspalte.
+    return area.center +
+        Offset(v.dx * area.width * 0.42, v.dy * area.height * 0.42);
+  }
+
+  /// Sichtbare Fläche ohne die verdeckten Ränder (zu klein: alles).
+  static Rect _free(_SkyFrame f, Size size) {
+    final all = Offset.zero & size;
+    final area = f.insets.deflateRect(all);
+    return area.width < 120 || area.height < 120 ? all : area;
   }
 
   /// Die Wohnung auf dem Bildschirm (Umriss aus Boden und Wandhöhe, mit
@@ -619,8 +636,9 @@ class _SkyPainter extends CustomPainter {
           c.withValues(alpha: 0),
         ]),
     );
-    // Ein paar Linsenreflexe auf der Linie durch die Bildmitte.
-    final mid = size.center(Offset.zero);
+    // Ein paar Linsenreflexe auf der Linie durch die Mitte der freien
+    // Fläche.
+    final mid = _free(frame(), size).center;
     for (final (k, r, al) in const [
       (0.35, 0.03, 0.10),
       (0.7, 0.05, 0.07),

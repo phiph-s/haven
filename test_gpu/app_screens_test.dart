@@ -121,6 +121,61 @@ void main() {
     // dunklen Design mit Regen.
     String sky(Map<String, Object> m) =>
         jsonEncode({'mode': 'manual', 'manual': m});
+    // Desktop mit Inspektor rechts: Sonne in der freien Fläche.
+    for (final h in [10, 16]) {
+      await shot(
+        tester,
+        'screen_sky_desktop_$h',
+        '/map',
+        size: const Size(1400, 860),
+        prefs: {
+          'map_3d_tilt': true,
+          'map_sky': sky({'hour': h, 'day': 170, 'cloud': 0}),
+        },
+      );
+    }
+    // Handy: Sonne nie unter Titel und Untertitel.
+    for (final h in [7, 12, 19]) {
+      await shot(
+        tester,
+        'screen_sky_phone_$h',
+        '/map',
+        statusBar: 48,
+        prefs: {
+          'map_3d_tilt': true,
+          'map_sky': sky({'hour': h, 'day': 170, 'cloud': 0}),
+        },
+      );
+    }
+    // Dunkles Design am Tag: Verlauf nur etwas dunkler als hell.
+    await shot(
+      tester,
+      'screen_sky_phone_dark_12',
+      '/map',
+      statusBar: 48,
+      prefs: {
+        'map_3d_tilt': true,
+        'theme_mode': 'dark',
+        'map_sky': sky({'hour': 12, 'day': 170, 'cloud': 0}),
+      },
+    );
+    // Helles Design am Abend bei Schnee: Kopf hell auf dunklem Himmel.
+    await shot(
+      tester,
+      'screen_sky_phone_evening',
+      '/map',
+      statusBar: 48,
+      prefs: {
+        'map_3d_tilt': true,
+        'map_sky': sky({
+          'hour': 20.5,
+          'day': 330,
+          'cloud': 0.7,
+          'snowfall': 0.5,
+          'snow_cm': 8,
+        }),
+      },
+    );
     // Flach von oben bei klarer Sonne: keine Schattenflecken.
     await shot(
       tester,

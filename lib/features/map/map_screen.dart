@@ -60,6 +60,9 @@ import 'map_relevance.dart';
 import 'plan_cleanup.dart';
 import 'map_thermostat.dart';
 import 'map_routes.dart';
+import 'map_sky.dart';
+import '../../core/widgets/system_bars.dart';
+import '../../core/theme/theme.dart';
 
 /// Karte: Grundriss mit Kartenarten (Licht, Temperatur, Luftfeuchte,
 /// Bewegung, Funknetz, Batterie). Die Lichtfarbe der Wohnung färbt Akzent
@@ -880,7 +883,11 @@ class _MapBodyState extends ConsumerState<_MapBody> {
                   right: 0,
                   bottom: 0,
                   child: IgnorePointer(
-                    child: MapSkyBackdrop(north: v.plan.north),
+                    // Statusleiste in der Farbe, die auf dem Himmel lesbar ist.
+                    child: SystemBars(
+                      dark: _skyDark(v, supported) ?? context.hv.isDark,
+                      child: MapSkyBackdrop(north: v.plan.north),
+                    ),
                   ),
                 ),
               Positioned.fill(
@@ -938,7 +945,7 @@ class _MapBodyState extends ConsumerState<_MapBody> {
                   if (widget.header != null)
                     _SizeReport(
                       onSize: (s) => _setInsets(top: s.height),
-                      child: widget.header!,
+                      child: _onSky(v, supported, widget.header!),
                     ),
                   const Spacer(),
                   _SizeReport(
@@ -1026,6 +1033,27 @@ class _MapBodyState extends ConsumerState<_MapBody> {
         },
       ),
     );
+  }
+
+  /// Ist der Himmel hinter dem Kopf zu dunkel (hell) für das Design?
+  /// `true`: Kopf und Statusleiste hell auf dunklem Himmel, `false`: dunkel
+  /// auf hellem, `null`: kein Himmel oder das Design passt.
+  bool? _skyDark(_LayerView v, bool? supported) {
+    if (v.controller != null || supported == false) return null;
+    final hv = context.hv;
+    final w = ref.watch(mapWeatherProvider(v.plan.north));
+    final top = mapSkyGradient(w.sky, dark: hv.isDark).first;
+    final l = top.computeLuminance();
+    if (!hv.isDark && l < 0.25) return true;
+    if (hv.isDark && l > 0.5) return false;
+    return null;
+  }
+
+  /// Kopf der Seite im Design, das auf dem Himmel lesbar ist.
+  Widget _onSky(_LayerView v, bool? supported, Widget header) {
+    final dark = _skyDark(v, supported);
+    if (dark == null) return header;
+    return Theme(data: dark ? havenDarkTheme : havenLightTheme, child: header);
   }
 
   void _setInsets({double? top, double? bottom}) {
@@ -1154,7 +1182,7 @@ class _MapBodyState extends ConsumerState<_MapBody> {
                 right: 0,
                 child: _SizeReport(
                   onSize: (s) => _setInsets(top: s.height),
-                  child: widget.header!,
+                  child: _onSky(v, supported, widget.header!),
                 ),
               ),
             Positioned(
