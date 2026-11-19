@@ -698,6 +698,7 @@ class GpuScene {
       scene.add(node);
     }
 
+    _buildRoomLights();
     if (quality.bakes) {
       if (deferBake) {
         // Erst die Geometrie zeigen, Licht folgt aus dem Hintergrund.
@@ -960,7 +961,93 @@ class GpuScene {
     for (final r in _receivers) {
       if (r.lamps.containsKey(id)) _dirty.add(r);
     }
+    // Raumlicht: der ganze Raum der Lampe.
+    final room = _bulbRoom[id];
+    if (room != null) {
+      _applyRoomLight(room);
+      for (final i in _roomReceivers[room] ?? const <int>[]) {
+        _dirty.add(_receivers[i]);
+      }
+    }
   }
+
+  // --- Raumlicht -----------------------------------------------------------
+
+  /// Füll-Licht je Raum mit Lampen (Echtzeit, im Lichtkanal des Raums).
+  final Map<String, fs.PointLightComponent> _roomLights = {};
+
+  /// Summe der Lampen eines Raums: Helligkeit · Farbe (linear). Linear in
+  /// jeder Lampe, damit die Lichtebenen (eine Lampe je Bild) exakt bleiben.
+  vm.Vector3 _roomLightOf(String room) {
+    final sum = vm.Vector3.zero();
+    if (!_lightsOn) return sum;
+    for (final e in _lampState.entries) {
+      final s = e.value;
+      if (!s.on || s.brightness <= 0 || _bulbRoom[e.key] != room) continue;
+      sum.add(linearColor(s.color).xyz * s.brightness);
+    }
+    return sum;
+  }
+
+  void _buildRoomLights() {
+    final rooms = {for (final r in _bulbRoom.values) ?r};
+    for (final id in rooms) {
+      final room = source.room(id);
+      if (room == null || room.outline.isEmpty) continue;
+      var cx = 0.0, cy = 0.0;
+      var x0 = double.infinity, y0 = double.infinity;
+      var x1 = -double.infinity, y1 = -double.infinity;
+      for (final p in room.outline) {
+        cx += p.dx;
+        cy += p.dy;
+        x0 = math.min(x0, p.dx);
+        y0 = math.min(y0, p.dy);
+        x1 = math.max(x1, p.dx);
+        y1 = math.max(y1, p.dy);
+      }
+      final n = room.outline.length;
+      final range = math.max(
+        3.0,
+        1.1 * math.sqrt(math.pow(x1 - x0, 2) + math.pow(y1 - y0, 2)),
+      );
+      final light = fs.PointLightComponent(_roomPointLight(id, range));
+      final node = fs.Node(name: 'roomlight:$id')
+        ..position = toFs(V3(cx / n, cy / n, room.wallHeight * 0.85));
+      node.addComponent(light);
+      scene.add(node);
+      _roomLights[id] = light;
+      _roomLightRange[id] = range;
+    }
+  }
+
+  final Map<String, double> _roomLightRange = {};
+
+  fs.PointLight _roomPointLight(String room, double range) {
+    final f = _roomLightOf(room);
+    final peak = math.max(f.x, math.max(f.y, f.z));
+    return fs.PointLight(
+      color: peak > 0 ? f / peak : vm.Vector3(1, 1, 1),
+      intensity: peak > 0 && quality.realtimeLamps
+          ? kRoomLightLive * peak * style.lampGlow
+          : 0,
+      range: range,
+      channelMask: _maskOf(room),
+    );
+  }
+
+  void _applyRoomLight(String room) {
+    final c = _roomLights[room];
+    if (c == null) return;
+    c.light = _roomPointLight(room, _roomLightRange[room] ?? 5);
+  }
+
+  /// Raum jeder Fläche (für das gebakene Raumlicht).
+  late final Map<_Receiver, String> _receiverRoom = {
+    for (final e in _roomReceivers.entries)
+      for (final i in e.value) _receivers[i]: e.key,
+  };
+
+  final Map<int, Float32List> _ones = {};
 
   /// Echtzeitlicht und Glühbirne einer Lampe (ohne Baking).
   void _applyLamp(String id, LampState s) {
@@ -1112,6 +1199,9 @@ class GpuScene {
     for (final e in _lampState.entries) {
       _applyLamp(e.key, e.value);
     }
+    for (final room in _roomLights.keys) {
+      _applyRoomLight(room);
+    }
     // Nur neu mischen (in Scheiben), gebacken ist schon alles.
     _dirty.addAll(_receivers);
   }
@@ -1183,6 +1273,25 @@ class GpuScene {
         c.y * f * albedo.y,
         c.z * f * albedo.z,
       );
+    }
+    // Raumlicht: gleichmäßig über die ganze Fläche, in der Lampenfarbe.
+    final room = _receiverRoom[r];
+    if (room != null) {
+      final f = _roomLightOf(room);
+      if (f.x > 0 || f.y > 0 || f.z > 0) {
+        final n = r.bake.width * r.bake.height;
+        final ones = _ones.putIfAbsent(
+          n,
+          () => Float32List(n)..fillRange(0, n, 1),
+        );
+        final kr = k * kRoomLightBaked;
+        parts.add((
+          ones,
+          kr * f.x * albedo.x,
+          kr * f.y * albedo.y,
+          kr * f.z * albedo.z,
+        ));
+      }
     }
     final (px, max) = combineLamps(r.bake.width * r.bake.height, parts);
     if (max <= 0) {
@@ -1591,6 +1700,9 @@ class GpuScene {
     // ginge eine ausgeschaltete Lampe bei jeder Stiländerung wieder an).
     for (final e in _lampState.entries) {
       _applyLamp(e.key, e.value);
+    }
+    for (final room in _roomLights.keys) {
+      _applyRoomLight(room);
     }
     // Getönte Möbel hängen am Stil.
     if (_heat != null) _setHeatmap(_heat);
@@ -2350,6 +2462,16 @@ V3 sunDirectionOf(
 /// Stärke der Sonne (mal `SceneStyle.sun`).
 const double kSunIntensity = 2.4;
 
+/// Raumlicht (Echtzeit): Stärke des Füll-Lichts je Raum im Verhältnis zu
+/// einer Lampe. Wände und Möbel eines beleuchteten Raums hellen sich
+/// gleichmäßig in der Lampenfarbe auf, nicht nur dort, wo der Kegel trifft:
+/// so erkennt man auf einen Blick, welcher Raum an ist.
+const double kRoomLightLive = 14;
+
+/// Raumlicht auf Böden und Oberseiten (gebaken): gleichmäßige Bestrahlung
+/// je Helligkeit, wie ein Lampenanteil.
+const double kRoomLightBaked = 0.05;
+
 /// Sonne unter einem Himmel (`setSky`) am klaren Mittag, relativ zu
 /// [kSunIntensity]: draußen ist es heller als im Kartenlicht.
 const double kSkySunScale = 1.8;
@@ -2366,7 +2488,7 @@ const double kDeviceShade = 0.15;
 
 /// Mindestens so viel Grundlicht unter dem Himmel (nachts sonst fast
 /// schwarze Möbel): so ruhig wie ohne Himmel (`SceneStyle.evening`).
-const double kSkyMinAmbient = 0.3;
+const double kSkyMinAmbient = 0.42;
 
 /// Reichweite des Echtzeitlichts einer Lampe in Metern.
 const double kLampRange = 7;

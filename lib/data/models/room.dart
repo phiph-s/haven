@@ -17,6 +17,8 @@ class RoomScene {
     this.groupId,
     this.number,
     this.stored = false,
+    this.sync = SceneSync.unknown,
+    this.checkedAt,
   });
 
   final String id;
@@ -44,7 +46,40 @@ class RoomScene {
   /// aus `scene_styles.dart` (erfunden).
   final bool stored;
 
+  /// Stand des Szenen-Abgleichs (Feature `scene_sync` der Integration):
+  /// stimmen die Lampen der Gruppe mit dem gespeicherten Soll überein?
+  final SceneSync sync;
+
+  /// Letzte Messung der Szene, `null` = nie gemessen.
+  final DateTime? checkedAt;
+
   bool get editable => groupId != null && number != null;
+
+  /// Die Karte zeigt einen Hinweispunkt: neu prüfen bzw. abgleichen.
+  bool get needsSync => sync == SceneSync.stale || sync == SceneSync.differs;
+}
+
+/// Stand des Abgleichs einer Szene (`sync` in `haven/zigbee/groups`).
+enum SceneSync {
+  /// Soll vorhanden, letzte Messung passte (oder noch keine).
+  ok,
+
+  /// Soll vorhanden, aber Lampen kamen seit dem Soll in die Gruppe oder
+  /// gingen: neu abgleichen.
+  stale,
+
+  /// Die letzte Messung wich vom Soll ab.
+  differs,
+
+  /// Kein Soll (Szene außerhalb von Haven gespeichert).
+  unknown;
+
+  static SceneSync parse(Object? v) => switch (v) {
+    'ok' => ok,
+    'stale' => stale,
+    'differs' => differs,
+    _ => unknown,
+  };
 }
 
 /// Bedienelement im Raum: Drehregler (Knob), Taster, Fernbedienung.

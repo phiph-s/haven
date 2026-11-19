@@ -5,6 +5,7 @@ import 'dart:typed_data';
 import 'haven_repository.dart';
 import 'render_api.dart';
 import 'models/room_heating.dart';
+import 'models/scene_check.dart';
 import 'models/snapshot.dart';
 import 'models/state_history.dart';
 import 'sync/app_data.dart';
@@ -75,6 +76,29 @@ abstract class BaseRepository implements HavenRepository {
     'Szenen lassen sich hier nicht löschen',
     code: 'not_supported',
   );
+
+  @override
+  bool get canSyncScenes => false;
+
+  @override
+  Future<SceneCheck> checkScene(String roomId, int number) =>
+      throw HavenException(
+        'Szenen lassen sich hier nicht prüfen',
+        code: 'not_supported',
+      );
+
+  @override
+  Future<void> adoptScene(String roomId, int number) => throw HavenException(
+    'Szenen lassen sich hier nicht abgleichen',
+    code: 'not_supported',
+  );
+
+  @override
+  Future<SceneCheck> repairScene(String roomId, int number) =>
+      throw HavenException(
+        'Szenen lassen sich hier nicht abgleichen',
+        code: 'not_supported',
+      );
 
   // ---- Bilder der Wohnung: ohne Unterstützung -----------------------------
 

@@ -6,6 +6,7 @@ import 'package:haven/app.dart';
 import 'package:haven/core/state/providers.dart';
 import 'package:haven/core/widgets/haven_sheet.dart';
 import 'package:haven/dev/fake_repository.dart';
+import 'package:haven/features/room/widgets/scene_card.dart';
 import 'package:haven/data/storage/settings_store.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -187,6 +188,52 @@ void main() {
       sem.dispose();
     },
   );
+
+  testWidgets('Szenen prüfen: fehlende Lampe finden und abgleichen', (
+    tester,
+  ) async {
+    _phone(tester);
+    final sem = tester.ensureSemantics();
+    await tester.runAsync(() async => tester.pumpWidget(await _app()));
+    await tester.pumpAndSettle();
+    await tester.tap(find.bySemanticsLabel('Salon öffnen'));
+    await tester.pumpAndSettle();
+    // Eine Szene ist neu abzugleichen: Punkt an Karte und Knopf.
+    expect(find.byType(SceneSyncDot), findsWidgets);
+
+    await tester.tap(find.bySemanticsLabel('Szenen prüfen'));
+    await tester.pumpAndSettle();
+    expect(find.text('Die Lampen schalten dabei kurz um.'), findsOneWidget);
+    expect(find.text('Lampe fehlt'), findsNothing);
+
+    await tester.tap(find.text('Alle prüfen'));
+    await tester.pumpAndSettle();
+    expect(find.text('Lampe fehlt'), findsOneWidget);
+    expect(find.text('Farbe weicht ab'), findsOneWidget);
+    expect(find.text('In Ordnung'), findsNWidgets(3));
+    // Abweichende Szenen klappen auf: Lampenzeilen mit Soll und Messung.
+    expect(find.text('reagiert nicht'), findsOneWidget);
+    expect(find.text('kein Soll'), findsOneWidget);
+
+    final row = find.ancestor(
+      of: find.text('Lampe fehlt'),
+      matching: find.byWidgetPredicate(
+        (w) =>
+            w.key is ValueKey<String> &&
+            (w.key! as ValueKey<String>).value.startsWith('scene-check-'),
+      ),
+    );
+    final repair = find.descendant(of: row, matching: find.text('Abgleichen'));
+    await tester.ensureVisible(repair);
+    await tester.pumpAndSettle();
+    await tester.tap(repair);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Lampe fehlt'), findsNothing);
+    expect(find.text('In Ordnung'), findsNWidgets(4));
+    expect(find.text('reagiert nicht'), findsNothing);
+    sem.dispose();
+  });
 
   testWidgets('Raum-Sheet: kurz ziehen federt zurück, weit ziehen schließt', (
     tester,

@@ -453,18 +453,26 @@ final mapWeatherProvider = Provider.family<MapWeather, double>((ref, north) {
 double mapSkyDaylight(h3.SceneSky sky) =>
     ((sky.sunElevation + 8) / 20).clamp(0.0, 1.0);
 
+/// Boden unter dem Himmel: dunkel ein tiefes Blauschwarz, hell ein warmes
+/// Off-White. Auch die Fläche der Karte ohne Umgebung.
+const kMapGroundDark = Color(0xFF12111B);
+const kMapGroundLight = Color(0xFFF4EFE8);
+
+/// Nachthimmel oben im Verlauf.
+const kMapNightSky = Color(0xFF0A0E1E);
+
+Color mapGround({required bool dark}) =>
+    dark ? kMapGroundDark : kMapGroundLight;
+
+/// Verlauf hinter der Karte (oben nach unten): hell vom Himmel der Tageszeit
+/// in den hellen Boden, dunkel immer vom Nachthimmel in den dunklen Boden.
 List<Color> mapSkyGradient(h3.SceneSky sky, {required bool dark}) {
+  if (dark) return const [kMapNightSky, kMapGroundDark];
   final dayT = mapSkyDaylight(sky);
   final top = Color.lerp(
-    const Color(0xFF0B1020),
+    kMapNightSky,
     Color.lerp(const Color(0xFF8DB7E8), const Color(0xFFB7C0CA), sky.cover)!,
     dayT,
   )!;
-  const lightBottom = Color(0xFFF4F3F0);
-  if (!dark) return [top, lightBottom];
-  // Dunkel: tagsüber nur etwas dunkler als hell, nachts bis fast schwarz.
-  return [
-    Color.lerp(top, const Color(0xFF0B1020), 0.18)!,
-    Color.lerp(const Color(0xFF07080B), const Color(0xFFC3C7CD), dayT)!,
-  ];
+  return [top, kMapGroundLight];
 }

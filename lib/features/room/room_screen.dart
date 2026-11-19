@@ -22,6 +22,7 @@ import 'widgets/lamp_sheet.dart';
 import 'widgets/light_control_list.dart';
 import 'widgets/scene_card.dart';
 import 'widgets/scene_editor.dart';
+import 'widgets/scene_sync_sheet.dart';
 import '../../core/widgets/horizontal_scroller.dart';
 
 /// Raum als Sheet von unten (Route in `router.dart`, `HavenSheetPage`):
@@ -160,6 +161,7 @@ class _RoomBody extends ConsumerWidget {
     // Liest den Snapshot mit, damit die Karte nach dem Verbinden erscheint.
     ref.watch(snapshotProvider.select((s) => s.rooms));
     final canEditScenes = repo.canEditScenes(room.id);
+    final canCheck = canCheckScenes(repo, room);
     final excludedCount = ref.watch(
       snapshotProvider.select((s) => s.excludedLampsOf(room).length),
     );
@@ -290,8 +292,22 @@ class _RoomBody extends ConsumerWidget {
           SectionHeader(
             'Szenen',
             padding: const EdgeInsets.symmetric(horizontal: 20),
-            trailing: canEditScenes
-                ? SceneSaveChip(onTap: () => saveSceneFlow(context, ref, room))
+            trailing: canEditScenes || canCheck
+                ? Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (canCheck)
+                        SceneCheckChip(
+                          attention: room.scenes.any((s) => s.needsSync),
+                          onTap: () => showSceneSyncSheet(context, room.id),
+                        ),
+                      if (canCheck && canEditScenes) const SizedBox(width: 8),
+                      if (canEditScenes)
+                        SceneSaveChip(
+                          onTap: () => saveSceneFlow(context, ref, room),
+                        ),
+                    ],
+                  )
                 : null,
           ),
           const SizedBox(height: 10),

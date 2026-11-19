@@ -843,6 +843,8 @@ class _Map3DViewState extends ConsumerState<Map3DView> {
     final bounds = planBoundsMeters(plan);
     final layers = h3.SkyLayers(
       sky: weather.sky,
+      // Dunkles Design: immer Nachthimmel mit Sternen.
+      dark: context.hv.isDark,
       // „Bewegung reduzieren“ im System: Himmel steht still.
       animate: mapSkyAnimations && !MediaQuery.disableAnimationsOf(context),
       controller: c,

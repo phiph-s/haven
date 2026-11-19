@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:ui' as ui;
 
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -36,6 +37,15 @@ class HomeScreen extends ConsumerStatefulWidget {
 
 class _HomeScreenState extends ConsumerState<HomeScreen> {
   bool _editing = false;
+
+  /// Die Raumliste: der Farbverlauf oben scrollt mit ihr.
+  final _scroll = ScrollController();
+
+  @override
+  void dispose() {
+    _scroll.dispose();
+    super.dispose();
+  }
 
   @override
   void initState() {
@@ -252,6 +262,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               children: [
                 Expanded(
                   child: ListView(
+                    controller: _scroll,
                     padding: EdgeInsets.only(bottom: context.navClearance),
                     children: [
                       header,
@@ -284,9 +295,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               color: hv.acc,
               backgroundColor: hv.s1,
               onRefresh: refresh,
+              edgeOffset: top,
               child: ListView(
+                controller: _scroll,
                 physics: const AlwaysScrollableScrollPhysics(),
-                padding: const EdgeInsets.only(bottom: HavenSpace.navClearance),
+                // Unter der Statusleiste beginnen, beim Scrollen dahinter
+                // durch (dort verschwommen).
+                padding: EdgeInsets.only(
+                  top: top,
+                  bottom: HavenSpace.navClearance,
+                ),
                 children: [
                   header,
                   _Notices(snap: snap, fake: repo.isFake),
@@ -307,17 +325,56 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           return Stack(
             children: [
               // Der Glow beginnt am oberen Bildschirmrand, hinter der
-              // durchsichtigen Statusleiste (edge-to-edge).
-              Positioned(
-                left: 0,
-                right: 0,
-                top: 0,
-                height: 440 + top,
+              // durchsichtigen Statusleiste (edge-to-edge), und scrollt mit
+              // dem Inhalt.
+              AnimatedBuilder(
+                animation: _scroll,
+                builder: (context, child) => Positioned(
+                  left: 0,
+                  right: 0,
+                  top: _scroll.hasClients ? -_scroll.offset : 0,
+                  height: 440 + top,
+                  child: child!,
+                ),
                 child: IgnorePointer(
-                  child: MeshGlow(palette: palette, style: MeshStyle.ambient),
+                  child: RepaintBoundary(
+                    child: MeshGlow(palette: palette, style: MeshStyle.ambient),
+                  ),
                 ),
               ),
-              SafeArea(bottom: false, child: content),
+              if (desktop)
+                SafeArea(bottom: false, child: content)
+              else
+                SafeArea(top: false, bottom: false, child: content),
+              // Was hinter die Statusleiste scrollt, verschwimmt stark.
+              if (!desktop && top > 0)
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  top: 0,
+                  height: top,
+                  child: IgnorePointer(
+                    child: ClipRect(
+                      child: BackdropFilter(
+                        filter: ui.ImageFilter.blur(sigmaX: 22, sigmaY: 22),
+                        // Leichte Tönung erst, wenn Inhalt darunter liegt:
+                        // ganz oben bleibt die Leiste unsichtbar.
+                        child: AnimatedBuilder(
+                          animation: _scroll,
+                          builder: (context, _) {
+                            final off = _scroll.hasClients
+                                ? _scroll.offset
+                                : 0.0;
+                            final k = (off / 40).clamp(0.0, 1.0);
+                            return ColoredBox(
+                              color: hv.bg.withValues(alpha: 0.3 * k),
+                            );
+                          },
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
             ],
           );
         },

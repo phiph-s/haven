@@ -233,7 +233,7 @@ class _RoomRowState extends ConsumerState<RoomRow> {
                   dimPercent: dim,
                   preview: preview == null ? null : scenePreview(view, preview),
                   alignY: 0,
-                  glow: hv.isDark ? 1 : 0.75,
+                  // Kein Lichtschein hinter dem Bild (vorerst aus).
                 )
               : _NoPicture(palette: palette),
         ),

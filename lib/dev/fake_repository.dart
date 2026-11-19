@@ -9,6 +9,7 @@ import '../data/haven_repository.dart';
 import '../data/models/entity_state.dart';
 import '../data/models/floor_plan.dart';
 import '../data/models/haven_automation.dart';
+import '../data/models/lamp.dart';
 import '../data/models/room_heating.dart';
 import '../data/models/room.dart';
 import '../data/models/snapshot.dart';
@@ -16,6 +17,7 @@ import '../data/models/state_history.dart';
 import '../data/models/zigbee.dart';
 import '../data/models/zigbee_network.dart';
 import '../data/storage/settings_store.dart';
+import '../data/models/scene_check.dart';
 import '../data/scene_look.dart';
 import '../data/scene_styles.dart';
 import 'fake_automations.dart';
@@ -317,6 +319,7 @@ class FakeRepository extends BaseRepository {
       ];
     }
     _rooms = FakeRooms(inventory).derive(scenes: _sceneDefs);
+    _initSceneSync();
     for (final t in _thermostats.entries) {
       _entities.addAll(
         thermostatEntities(t.value, _zb.stateOf(t.key), _entities),
@@ -616,46 +619,57 @@ class FakeRepository extends BaseRepository {
     if (saved != null) {
       saved.forEach((id, m) {
         final cur = _mem[id];
-        if (cur == null) return;
-        cur
-          ..on = m.on
-          ..brightness = m.brightness
-          ..rgb = m.rgb
-          ..kelvin = m.kelvin;
+        if (cur != null) _assign(cur, m);
       });
       _activeScenes[roomId] = sceneId;
       _commit(saved.keys.where(_mem.containsKey));
       return;
     }
-    final changed = <String>[];
+    final style = _styleMems(scene, _controlled(r));
+    style.forEach((id, m) => _assign(_mem[id]!, m));
+    _activeScenes[roomId] = sceneId;
+    _commit(style.keys);
+  }
+
+  /// Was die [lamps] bei einer Szene ohne gespeicherten Zustand tun: Farben
+  /// und Helligkeit der Karte, Lampe i bekommt `colors[i mod 3]`.
+  Map<String, _Mem> _styleMems(RoomScene scene, List<String> lamps) {
+    final out = <String, _Mem>{};
     var i = 0;
-    for (final id in _controlled(r)) {
-      final m = _mem[id]!;
+    for (final id in lamps) {
+      final cur = _mem[id]!;
       final only = scene.onlyLightIds;
       if (only != null && !only.contains(id)) {
-        m.on = false;
-        changed.add(id);
+        out[id] = _Mem(false, cur.brightness, cur.rgb, cur.kelvin);
         continue;
       }
-      final modes = (_lampStatic[id]!['supported_color_modes'] as List)
-          .cast<String>();
-      m.on = true;
-      m.brightness = scene.brightness.clamp(1, 100);
-      if (!modes.contains('brightness')) {
+      var rgb = cur.rgb;
+      var kelvin = cur.kelvin;
+      if (!_modes(id).contains('brightness')) {
         if (scene.kelvin != null) {
-          m.kelvin = scene.kelvin;
-          m.rgb = kelvinToRgb(scene.kelvin!);
+          kelvin = scene.kelvin;
+          rgb = kelvinToRgb(scene.kelvin!);
         } else {
-          m.kelvin = null;
-          m.rgb = scene.colors[i % 3];
+          kelvin = null;
+          rgb = scene.colors[i % 3];
         }
       }
+      out[id] = _Mem(true, scene.brightness.clamp(1, 100), rgb, kelvin);
       i++;
-      changed.add(id);
     }
-    _activeScenes[roomId] = sceneId;
-    _commit(changed);
+    return out;
   }
+
+  List<String> _modes(String id) =>
+      (_lampStatic[id]!['supported_color_modes'] as List).cast<String>();
+
+  static void _assign(_Mem to, _Mem from) => to
+    ..on = from.on
+    ..brightness = from.brightness
+    ..rgb = from.rgb
+    ..kelvin = from.kelvin;
+
+  static _Mem _copy(_Mem m) => _Mem(m.on, m.brightness, m.rgb, m.kelvin);
 
   // ---- Szenen anlegen und ändern ------------------------------------------
 
@@ -704,6 +718,7 @@ class FakeRepository extends BaseRepository {
   }
 
   void _rebuildRooms() {
+    _refreshSync();
     _rooms = FakeRooms(inventory).derive(scenes: _sceneDefs);
     _push();
   }
@@ -736,7 +751,11 @@ class FakeRepository extends BaseRepository {
     final look = sceneLookOf(
       [for (final l in lamps) snapshot.lamp(l)].nonNulls.toList(),
     );
-    final def = {'id': id, 'name': clean, 'look': look.toJson()};
+    final def = <String, dynamic>{
+      'id': id,
+      'name': clean,
+      'look': look.toJson(),
+    };
     if (existing != null) {
       list[list.indexOf(existing)] = def;
     } else {
@@ -751,6 +770,11 @@ class FakeRepository extends BaseRepository {
           _mem[l]!.kelvin,
         ),
     };
+    // Wie die Integration: das Speichern merkt sich auch das Soll.
+    _sceneTargets['$gid:$id'] = {
+      for (final l in lamps) l: _stateOf(l, _mem[l]!),
+    };
+    _sceneChecks.remove('$gid:$id');
     _activeScenes[roomId] = slugify(clean);
     _rebuildRooms();
     return id;
@@ -784,7 +808,275 @@ class FakeRepository extends BaseRepository {
     }
     list.removeAt(i);
     _sceneLamps.remove('$gid:$number');
+    _sceneTargets.remove('$gid:$number');
+    _sceneChecks.remove('$gid:$number');
     _rebuildRooms();
+  }
+
+  // ---- Szenen-Abgleich ------------------------------------------------------
+  //
+  // Wie die Integration (Feature `scene_sync`): je Szene ein Soll je Lampe,
+  // Messen ruft die Szene auf und liest die Lampen. Was eine Lampe beim
+  // Aufruf tut, steht in `_sceneLamps` (wie auf dem Gerät), sonst folgt sie
+  // den Farben der Karte. Beim Start kennt in der ersten Gruppe eine Lampe
+  // eine Szene nicht (kam später dazu) und eine andere leuchtet in einer
+  // Szene in falscher Farbe.
+
+  /// Soll je Szene (`"gruppe:szene"`) und Lampe.
+  final Map<String, Map<String, LampState>> _sceneTargets = {};
+
+  /// Letzte Messung je Szene.
+  final Map<String, SceneCheck> _sceneChecks = {};
+
+  @override
+  bool get canSyncScenes => true;
+
+  List<String> _groupLamps(Room r) => [
+    for (final l in r.lightIds)
+      if (_mem.containsKey(l)) l,
+  ];
+
+  LampState _stateOf(String id, _Mem m) {
+    if (!m.on) return LampState.off;
+    if (_modes(id).contains('brightness')) {
+      return LampState(on: true, brightness: m.brightness);
+    }
+    return m.kelvin != null
+        ? LampState(on: true, brightness: m.brightness, kelvin: m.kelvin)
+        : LampState(on: true, brightness: m.brightness, rgb: m.rgb);
+  }
+
+  _Mem _memOf(String id, LampState s) {
+    final cur = _mem[id]!;
+    return _Mem(
+      s.on,
+      s.brightness ?? cur.brightness,
+      s.rgb ?? (s.kelvin != null ? kelvinToRgb(s.kelvin!) : cur.rgb),
+      s.rgb != null ? null : s.kelvin ?? cur.kelvin,
+    );
+  }
+
+  /// Soll für alle Szenen, dazu die beiden Fehler in der ersten Gruppe.
+  void _initSceneSync() {
+    var faulted = false;
+    for (final r in _rooms) {
+      final gid = r.zigbeeGroupId;
+      if (gid == null) continue;
+      final lamps = _groupLamps(r);
+      if (lamps.isEmpty) continue;
+      for (final (n, scene) in r.scenes.indexed) {
+        final key = '$gid:${scene.number}';
+        final style = _styleMems(scene, lamps);
+        _sceneTargets[key] = {
+          for (final e in style.entries) e.key: _stateOf(e.key, e.value),
+        };
+        if (faulted || lamps.length < 2 || r.scenes.length < 4) continue;
+        if (n == 2) {
+          // Kam nach dem Speichern in die Gruppe: kennt die Szene nicht und
+          // hat kein Soll (die Szene ist „neu abzugleichen“).
+          final late = lamps.last;
+          _sceneTargets[key]!.remove(late);
+          _sceneLamps[key] = style..remove(late);
+        } else if (n == 3) {
+          // Neu gekoppelt: die Szene auf der Lampe hat eine andere Farbe.
+          final odd = lamps.firstWhere(
+            (id) => _modes(id).contains('xy'),
+            orElse: () => lamps.first,
+          );
+          final m = style[odd]!;
+          if (_modes(odd).contains('xy')) {
+            const a = (40, 200, 255), b = (255, 64, 160);
+            final close =
+                (m.rgb.$1 - a.$1).abs() < 80 && (m.rgb.$3 - a.$3).abs() < 80;
+            m
+              ..on = true
+              ..rgb = close ? b : a
+              ..kelvin = null;
+          } else {
+            m
+              ..on = true
+              ..brightness = m.brightness > 50 ? 15 : 90;
+          }
+          _sceneLamps[key] = style;
+          faulted = true;
+        }
+      }
+    }
+    _refreshSync();
+    _rooms = FakeRooms(inventory).derive(scenes: _sceneDefs);
+  }
+
+  /// Schreibt `sync` und `checked_at` in die Szenen der Gruppen.
+  void _refreshSync() {
+    for (final r in _rooms) {
+      final gid = r.zigbeeGroupId;
+      if (gid == null) continue;
+      final lamps = _groupLamps(r);
+      for (final def in _sceneDefs[gid] ?? const <Map<String, dynamic>>[]) {
+        final key = '$gid:${def['id']}';
+        final target = _sceneTargets[key];
+        final check = _sceneChecks[key];
+        def['sync'] = target == null
+            ? 'unknown'
+            : target.length != lamps.length || !lamps.every(target.containsKey)
+            ? 'stale'
+            : check != null && check.outcome != SceneCheckOutcome.ok
+            ? 'differs'
+            : 'ok';
+        def['checked_at'] = check?.checkedAt?.toUtc().toIso8601String();
+      }
+    }
+  }
+
+  (Room, RoomScene) _syncScene(String roomId, int number) {
+    final r = _room(roomId);
+    if (r?.zigbeeGroupId == null) {
+      throw HavenException(
+        'Dieser Raum hat keine Zigbee-Gruppe',
+        code: 'not_found',
+      );
+    }
+    final scene = r!.scenes.where((s) => s.number == number).firstOrNull;
+    if (scene == null) {
+      throw HavenException('Die Szene gibt es nicht mehr', code: 'not_found');
+    }
+    return (r, scene);
+  }
+
+  /// Ruft die Szene auf, liest jede Lampe und stellt das Licht davor wieder
+  /// her. Mit Simulation leuchten die Lampen dabei rund eine Sekunde.
+  Future<SceneCheck> _measure(Room r, RoomScene scene) async {
+    final gid = r.zigbeeGroupId!;
+    final key = '$gid:${scene.number}';
+    final lamps = _groupLamps(r);
+    final saved = _sceneLamps[key];
+    final style = saved == null ? _styleMems(scene, lamps) : null;
+    final recalled = <String, _Mem?>{
+      for (final id in lamps) id: saved != null ? saved[id] : style![id],
+    };
+    final before = {for (final id in lamps) id: _copy(_mem[id]!)};
+    if (simulate) {
+      recalled.forEach((id, m) {
+        if (m != null) _assign(_mem[id]!, m);
+      });
+      _commit(lamps);
+      await Future<void>.delayed(const Duration(milliseconds: 1000));
+      before.forEach((id, m) => _assign(_mem[id]!, m));
+      _commit(lamps);
+    }
+    final target = _sceneTargets[key];
+    final reacted = recalled.values.any((m) => m != null);
+    final members = <SceneLampCheck>[];
+    for (final id in lamps) {
+      final rec = recalled[id];
+      final measured = _stateOf(id, rec ?? before[id]!);
+      final expected = target?[id];
+      final SceneLampStatus status;
+      if (rec == null) {
+        status = expected != null && expected.matches(measured)
+            ? SceneLampStatus.ok
+            : expected == null && !reacted
+            ? SceneLampStatus.ok
+            : SceneLampStatus.missing;
+      } else if (expected != null && !expected.matches(measured)) {
+        status = SceneLampStatus.differs;
+      } else {
+        status = SceneLampStatus.ok;
+      }
+      members.add(
+        SceneLampCheck(
+          entityId: id,
+          name: '${_lampStatic[id]?['friendly_name'] ?? id}',
+          expected: expected,
+          measured: measured,
+          status: status,
+        ),
+      );
+    }
+    final look = sceneLookOf([
+      for (final m in members)
+        Lamp(
+          entityId: m.entityId,
+          name: m.name,
+          on: m.measured!.on,
+          brightness: m.measured!.on ? m.measured!.brightness ?? 100 : 0,
+          color: m.measured!.color ?? sceneOffColor,
+          kelvin: m.measured!.kelvin,
+        ),
+    ]);
+    final check = SceneCheck(
+      groupId: gid,
+      sceneId: scene.number!,
+      name: scene.name,
+      hasTarget: target != null,
+      status: target == null
+          ? SceneCheckStatus.unknown
+          : members.every((m) => m.status == SceneLampStatus.ok)
+          ? SceneCheckStatus.ok
+          : SceneCheckStatus.differs,
+      members: members,
+      measuredLook: look,
+      checkedAt: DateTime.now(),
+    );
+    _sceneChecks[key] = check;
+    _rebuildRooms();
+    return check;
+  }
+
+  @override
+  Future<SceneCheck> checkScene(String roomId, int number) {
+    final (r, scene) = _syncScene(roomId, number);
+    return _measure(r, scene);
+  }
+
+  @override
+  Future<void> adoptScene(String roomId, int number) async {
+    final (r, scene) = _syncScene(roomId, number);
+    final gid = r.zigbeeGroupId!;
+    final key = '$gid:$number';
+    // Was die Lampen tun, bleibt so, auch wenn sich die Kartenfarben ändern.
+    _sceneLamps[key] ??= _styleMems(scene, _groupLamps(r));
+    final check = _sceneChecks[key] ?? await _measure(r, scene);
+    await _sceneDelay();
+    _sceneTargets[key] = {
+      for (final m in check.members)
+        if (m.measured != null) m.entityId: m.measured!,
+    };
+    _sceneChecks[key] = check.adopted();
+    final list = _sceneDefs[gid]!;
+    final i = list.indexWhere((s) => s['id'] == number);
+    if (i >= 0 && check.measuredLook != null) {
+      list[i] = <String, dynamic>{
+        ...list[i],
+        'look': check.measuredLook!.toJson(),
+      };
+    }
+    _rebuildRooms();
+  }
+
+  @override
+  Future<SceneCheck> repairScene(String roomId, int number) async {
+    final (r, scene) = _syncScene(roomId, number);
+    final key = '${r.zigbeeGroupId}:$number';
+    final target = _sceneTargets[key];
+    if (target == null) {
+      throw HavenException(
+        'Für diese Szene gibt es kein Soll. Erst übernehmen oder neu speichern.',
+        code: 'no_target',
+      );
+    }
+    final lamps = _groupLamps(r);
+    // Soll auf alle Lampen (ohne Soll: aus), Szene neu speichern; das
+    // Speichern merkt sich das Soll für alle Mitglieder.
+    final stored = {
+      for (final id in lamps) id: _memOf(id, target[id] ?? LampState.off),
+    };
+    if (simulate) await Future<void>.delayed(const Duration(milliseconds: 800));
+    _sceneLamps[key] = stored;
+    _sceneTargets[key] = {
+      for (final e in stored.entries) e.key: _stateOf(e.key, e.value),
+    };
+    return _measure(r, scene);
   }
 
   @override

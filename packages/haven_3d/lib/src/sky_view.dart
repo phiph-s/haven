@@ -33,9 +33,13 @@ class SkyLayers extends StatefulWidget {
     this.height = 2.5,
     this.animate = true,
     this.insets = EdgeInsets.zero,
+    this.dark = false,
   });
 
   final SceneSky sky;
+
+  /// Dunkles Design: immer Nachthimmel (Sterne), Sonne gedämpft.
+  final bool dark;
 
   /// Verdeckte Ränder (Kopf, Leisten, Seitenspalte): Sonne und Mond stehen
   /// nur in der freien Fläche.
@@ -114,6 +118,7 @@ class _SkyLayersState extends State<SkyLayers>
       insets: widget.insets,
       time: _time.value,
       clouds: _clouds!,
+      dark: widget.dark,
     );
     return Stack(
       fit: StackFit.expand,
@@ -156,7 +161,9 @@ class _SkyFrame {
     required this.insets,
     required this.time,
     required this.clouds,
+    this.dark = false,
   });
+  final bool dark;
   final EdgeInsets insets;
   final SceneSky sky;
   final OrbitCamera camera;
@@ -177,21 +184,10 @@ class _SkyPainter extends CustomPainter {
   /// Sonne, die übrigen Wolken.
   final bool front;
 
-  /// Bildschirmpunkt in Richtung [dir] (Welt) vom Szenenmittelpunkt aus,
-  /// auf einem Ring um die Bildmitte.
-  Offset _placed(_SkyFrame f, Size size, V3 dir) {
-    final p0 = f.camera.project(f.center, size).offset;
-    final p1 = f.camera.project(f.center + dir * 20, size).offset;
-    var v = p1 - p0;
-    if (v.distance < 1e-3) v = const Offset(0, -1);
-    v = v / v.distance;
-    final area = _free(f, size);
-    // Nah am Rand der freien Fläche (elliptisch, breite Ansichten nutzen den
-    // Platz): dort liegt meist Himmel, nicht die Wohnung; nie unter Kopf,
-    // Leisten oder Seitenspalte.
-    return area.center +
-        Offset(v.dx * area.width * 0.42, v.dy * area.height * 0.42);
-  }
+  /// Bildschirmpunkt der Himmelsrichtung [dir] (Welt) auf der
+  /// Himmelskugel, `null` wenn sie nicht im Bild liegt.
+  Offset? _placed(_SkyFrame f, Size size, V3 dir) =>
+      _SkyDome(f, _free(f, size)).project(dir);
 
   /// Sichtbare Fläche ohne die verdeckten Ränder (zu klein: alles).
   static Rect _free(_SkyFrame f, Size size) {
@@ -226,7 +222,8 @@ class _SkyPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     final f = frame();
     final s = f.sky;
-    final night = _night(s);
+    // Dunkles Design: immer Nachthimmel.
+    final night = f.dark ? 1.0 : _night(s);
     final cloud = s.cover;
     final home = _home(f, size);
     final sunUp = _smooth(-5, 2, s.sunElevation);
@@ -259,12 +256,17 @@ class _SkyPainter extends CustomPainter {
       // Mond und Sonne vorn (sonst lägen sie hinter Boden und Wohnung),
       // Wolken dämpfen sie.
       final moonA = moonUp * (0.3 + 0.7 * night) * (1 - 0.9 * cloud);
-      if (moonA > 0.02) _moon(canvas, moonAt, unit * 0.03, s, moonA);
-      final sunA = sunUp * (1 - 0.85 * cloud);
-      if (sunA > 0.02) _sun(canvas, sunAt, unit * 0.035, s, sunA);
+      if (moonA > 0.02 && moonAt != null) {
+        _moon(canvas, moonAt, unit * 0.03, s, moonA);
+      }
+      // Im dunklen Design gedämpft (ein Nachthimmel mit Sonne).
+      final sunA = sunUp * (1 - 0.85 * cloud) * (f.dark ? 0.55 : 1);
+      if (sunA > 0.02 && sunAt != null) {
+        _sun(canvas, sunAt, unit * 0.035, s, sunA);
+      }
       // Leichte Blendung über allem, nur bei freier Sonne.
       final glare = sunUp * (1 - cloud) * (1 - night);
-      if (glare > 0.02) _glare(canvas, size, sunAt, glare, s);
+      if (glare > 0.02 && sunAt != null) _glare(canvas, size, sunAt, glare, s);
     }
   }
 
@@ -316,50 +318,37 @@ class _SkyPainter extends CustomPainter {
     }
   }
 
-  /// Sterne auf der Himmelskuppel: Himmelsrichtung (Bogenmaß), Abstand von
-  /// der Mitte (1 = Rand der freien Fläche, wie Sonne und Mond bei 0,84),
-  /// Größe und Phase des Funkelns. Gleichmäßig über eine Scheibe, die auch
-  /// die Ecken des Bildschirms deckt.
-  static final List<(double, double, double, double)> _starField = () {
+  /// Sterne auf der Himmelskugel: Richtung (Welt, Länge 1, über dem
+  /// Horizont), Größe und Phase des Funkelns. Gleichmäßig verteilt.
+  static final List<(V3, double, double)> _starField = () {
     final rnd = math.Random(7);
-    return [
-      for (var i = 0; i < 560; i++)
-        (
-          rnd.nextDouble() * math.pi * 2,
-          1.7 * math.sqrt(rnd.nextDouble()),
-          0.5 + rnd.nextDouble() * 1.3,
-          rnd.nextDouble() * math.pi * 2,
-        ),
-    ];
+    final out = <(V3, double, double)>[];
+    while (out.length < 1400) {
+      final z = rnd.nextDouble();
+      final a = rnd.nextDouble() * math.pi * 2;
+      final r = math.sqrt(1 - z * z);
+      // Ein paar helle, viele schwache.
+      final m = rnd.nextDouble();
+      out.add((
+        V3(r * math.cos(a), r * math.sin(a), z),
+        0.45 + m * m * m * 1.6,
+        rnd.nextDouble() * math.pi * 2,
+      ));
+    }
+    return out;
   }();
-
-  /// Bildschirmrichtung (Länge 1) der waagrechten Himmelsrichtung [az]
-  /// (Welt, Bogenmaß) — so wie Sonne und Mond in [_placed]. Die Sterne
-  /// drehen damit mit der Kamera.
-  static Offset Function(double az) _skyDirections(_SkyFrame f, Size size) {
-    final o = f.camera.project(f.center, size).offset;
-    final ex = f.camera.project(f.center + const V3(20, 0, 0), size).offset - o;
-    final ey = f.camera.project(f.center + const V3(0, 20, 0), size).offset - o;
-    return (az) {
-      final v = ex * math.cos(az) + ey * math.sin(az);
-      final d = v.distance;
-      return d < 1e-6 ? const Offset(0, -1) : v / d;
-    };
-  }
 
   void _stars(Canvas canvas, Size size, _SkyFrame f, double a) {
     final p = Paint();
-    final area = _free(f, size);
-    final dir = _skyDirections(f, size);
+    final dome = _SkyDome(f, _free(f, size));
     final bounds = (Offset.zero & size).inflate(4);
-    for (final (az, rad, r, ph) in _starField) {
-      final d = dir(az);
-      final at =
-          area.center +
-          Offset(d.dx * rad * area.width / 2, d.dy * rad * area.height / 2);
-      if (!bounds.contains(at)) continue;
-      final tw = 0.65 + 0.35 * math.sin(f.time * 1.3 + ph);
-      p.color = const Color(0xFFFFFFFF).withValues(alpha: a * tw * 0.85);
+    for (final (d, r, ph) in _starField) {
+      final at = dome.project(d);
+      if (at == null || !bounds.contains(at)) continue;
+      // Zum Horizont hin im Dunst schwächer.
+      final haze = _smooth(0.02, 0.25, d.z);
+      final tw = 0.7 + 0.3 * math.sin(f.time * 1.3 + ph);
+      p.color = const Color(0xFFFFFFFF).withValues(alpha: a * tw * 0.85 * haze);
       canvas.drawCircle(at, r, p);
     }
   }
@@ -758,4 +747,48 @@ double lightningFlash(double t, double storm) {
       : u < 0.2
       ? 0.85
       : math.exp(-(u - 0.2) * 9);
+}
+
+/// Himmelskugel: Richtungen (Welt) aufs Bild über eine virtuelle,
+/// perspektivische Himmelskamera. Sie dreht mit der Karte und schaut je
+/// nach Neigung höher (Draufsicht) oder flacher (schräg) in den Himmel. So
+/// liegen Sterne, Sonne und Mond fest am Himmel und ziehen beim Drehen auf
+/// Kreisbögen vorbei, statt sich zu verzerren.
+class _SkyDome {
+  _SkyDome(_SkyFrame f, Rect area) : _center = area.center {
+    final b = f.camera.basis;
+    const up = V3(0, 0, 1);
+    // Bildschirm-oben als Himmelsrichtung (in der Draufsicht ist „unten“
+    // waagrecht, schräg zeigt es auch nach unten).
+    var h = V3(-b.down.x, -b.down.y, 0);
+    if (h.length < 1e-6) h = V3(-b.toCam.x, -b.toCam.y, 0);
+    if (h.length < 1e-6) h = const V3(0, 1, 0);
+    h = h.normalized;
+    final t = (f.camera.pitch / 1.2).clamp(0.0, 1.0);
+    final e = (62 - 34 * t) * math.pi / 180;
+    _fwd = h * math.cos(e) + up * math.sin(e);
+    var right = _fwd.cross(up).normalized;
+    // Gleiche Seite wie der Bildschirm.
+    if (right.dot(b.right) < 0) right = -right;
+    _right = right;
+    _up = _right.cross(_fwd).normalized;
+    if (_up.z < 0) _up = -_up;
+    // Etwa 110° Blickwinkel über die längere Seite.
+    _focal =
+        0.5 * math.max(area.width, area.height) / math.tan(55 * math.pi / 180);
+  }
+
+  final Offset _center;
+  late final V3 _fwd;
+  late final V3 _right;
+  late V3 _up;
+  late final double _focal;
+
+  /// Bildpunkt der Richtung [dir], `null` hinter der Kamera.
+  Offset? project(V3 dir) {
+    final d = dir.normalized;
+    final z = d.dot(_fwd);
+    if (z <= 0.05) return null;
+    return _center + Offset(d.dot(_right) / z, -d.dot(_up) / z) * _focal;
+  }
 }

@@ -55,12 +55,13 @@ class SceneStyle {
     // Raumumrisse leise, die Möbelkanten tragen die Zeichnung.
     roomEdgeOpacity: 0.38,
     accent: Color(0xFF2F7DF6),
-    // Tagsüber nur ein warmer Schimmer unter eingeschalteten Lampen.
-    lampGlow: 0.8,
-    // Ohne Linien beim Kippen trägt die Schattierung die Form: weniger
-    // Umgebungslicht, kräftigeres Hauptlicht für klare Seitenkontraste.
-    ambient: 0.7,
-    sun: 1.7,
+    // Lampen kräftig genug, dass ein beleuchteter Raum (mit Raumlicht)
+    // auch am Tag sichtbar warm wird.
+    lampGlow: 1.15,
+    // Ohne Linien beim Kippen trägt die Schattierung die Form; genug
+    // Umgebungslicht, dass nichts grau und schwer wirkt.
+    ambient: 0.8,
+    sun: 1.25,
   );
 
   /// Abend ohne Himmel (dunkles Design ohne Umgebung): dieselben Farben
@@ -73,10 +74,12 @@ class SceneStyle {
     return l.copyWith(
       ink: d.ink,
       roomEdgeOpacity: d.roomEdgeOpacity,
-      ambient: 0.3,
-      sun: 0.15,
-      lampGlow: d.lampGlow,
-      shadowFill: d.shadowFill,
+      // Hell genug, dass auch dunkle Räume lesbar bleiben; beleuchtete
+      // Räume heben sich über ihr Raumlicht ab, nicht über Finsternis.
+      ambient: 0.45,
+      sun: 0.3,
+      lampGlow: 1.3,
+      shadowFill: 0.55,
       // Kein Eigenleuchten: die Wände blieben sonst im Dunkeln hell.
       wallGlow: 0,
     );

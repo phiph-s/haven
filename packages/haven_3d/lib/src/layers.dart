@@ -32,7 +32,7 @@ const int kLayerFormat = 1;
 
 /// Aussehen der Bilder (Nachbarräume, Stil …): eine neue Nummer lässt die
 /// Apps neu rendern, ohne das Format für den Server zu ändern.
-const int kLayerLook = 4;
+const int kLayerLook = 5;
 
 /// Standard-Helligkeit der Lampen in den Ebenen: bei voller Helligkeit
 /// brennen Lichtflecke aus (Weiß lässt sich nicht zurückrechnen), zu wenig

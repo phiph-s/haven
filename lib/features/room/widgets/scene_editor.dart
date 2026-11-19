@@ -64,6 +64,10 @@ String sceneErrorText(Object e) {
         return 'Zigbee2MQTT ist gerade nicht erreichbar';
       case 'full':
         return 'In dieser Gruppe ist kein Platz für weitere Szenen';
+      case 'no_target':
+        return 'Für diese Szene gibt es kein Soll. Erst übernehmen oder neu speichern.';
+      case 'timeout':
+        return 'Home Assistant hat nicht rechtzeitig geantwortet';
     }
     return e.message;
   }

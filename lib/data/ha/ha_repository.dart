@@ -12,6 +12,7 @@ import '../models/entity_state.dart';
 import '../models/floor_plan.dart';
 import '../models/haven_automation.dart';
 import '../models/room_heating.dart';
+import '../models/scene_check.dart';
 import '../models/lamp.dart';
 import '../models/light_groups.dart';
 import '../models/room.dart';
@@ -508,6 +509,8 @@ class HaRepository extends BaseRepository {
               groupId: sceneCommands ? groupId : null,
               number: sceneCommands ? number : null,
               stored: look != null,
+              sync: SceneSync.parse(s['sync']),
+              checkedAt: DateTime.tryParse('${s['checked_at'] ?? ''}'),
             ),
           );
         }
@@ -832,6 +835,57 @@ class HaRepository extends BaseRepository {
     _activeScenes.remove(roomId);
     await reloadRooms();
   }
+
+  // ---- Szenen-Abgleich (Feature `scene_sync`) --------------------------------
+
+  @override
+  bool get canSyncScenes => _features.contains('scene_sync');
+
+  /// Messen und Abgleichen schalten Lampen und warten auf sie: mehr Zeit als
+  /// die übliche Frist.
+  static const _syncTimeout = Duration(seconds: 90);
+
+  Map<String, dynamic> _sceneRef(String roomId, int number) {
+    final gid = _room(roomId)?.zigbeeGroupId;
+    if (gid == null) {
+      throw HavenException(
+        'Dieser Raum hat keine Zigbee-Gruppe',
+        code: 'not_found',
+      );
+    }
+    return {'group_id': gid, 'scene_id': number};
+  }
+
+  Future<SceneCheck> _sceneCheckCommand(
+    String type,
+    String roomId,
+    int number,
+  ) async {
+    final res = await client.send({
+      'type': type,
+      ..._sceneRef(roomId, number),
+    }, timeout: _syncTimeout);
+    // Der Stand des Abgleichs steht in der Gruppenliste.
+    await reloadRooms();
+    return SceneCheck.fromJson(Map<String, dynamic>.from(res as Map));
+  }
+
+  @override
+  Future<SceneCheck> checkScene(String roomId, int number) =>
+      _sceneCheckCommand('haven/zigbee/scene_check', roomId, number);
+
+  @override
+  Future<void> adoptScene(String roomId, int number) async {
+    await client.send({
+      'type': 'haven/zigbee/scene_adopt',
+      ..._sceneRef(roomId, number),
+    }, timeout: _syncTimeout);
+    await reloadRooms();
+  }
+
+  @override
+  Future<SceneCheck> repairScene(String roomId, int number) =>
+      _sceneCheckCommand('haven/zigbee/scene_repair', roomId, number);
 
   @override
   Future<void> allLightsOff() =>

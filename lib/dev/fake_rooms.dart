@@ -26,7 +26,7 @@ class FakeRooms {
   }
 
   /// [scenes] ersetzt die Szenen der Gruppen (Gruppen-ID → `[{id, name,
-  /// look}]`), damit das Fake Szenen anlegen und ändern kann.
+  /// look, sync, checked_at}]`), damit das Fake Szenen anlegen und ändern kann.
   List<Room> derive({Map<int, List<Map<String, dynamic>>>? scenes}) {
     final rooms = <Room>[];
     for (final r in inventory['rooms'] as List) {
@@ -99,6 +99,8 @@ class FakeRooms {
               groupId: gid,
               number: s['id'] as int,
               stored: look != null,
+              sync: SceneSync.parse(s['sync']),
+              checkedAt: DateTime.tryParse('${s['checked_at'] ?? ''}'),
               onlyLightIds: look == null && name == 'Lichtleiste'
                   ? lights.where((l) => l.contains('lichtleiste')).toList()
                   : null,

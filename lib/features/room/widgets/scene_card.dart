@@ -6,7 +6,8 @@ import '../../../core/theme/tokens.dart';
 import '../../../core/widgets/press_scale.dart';
 import '../../../data/models/room.dart';
 
-/// Szene als farbige Karte. Aktiv: angehoben mit Häkchen.
+/// Szene als farbige Karte. Aktiv: angehoben mit Häkchen. Braucht die
+/// Szene einen Abgleich ([RoomScene.needsSync]), steht oben links ein Punkt.
 class SceneCard extends StatelessWidget {
   const SceneCard({
     super.key,
@@ -41,6 +42,7 @@ class SceneCard extends StatelessWidget {
       button: true,
       selected: active,
       label: 'Szene ${scene.name}',
+      value: scene.needsSync ? 'Abgleich nötig' : null,
       onLongPressHint: onEdit == null ? null : 'Bearbeiten',
       child: GestureDetector(
         onSecondaryTap: onEdit,
@@ -78,6 +80,11 @@ class SceneCard extends StatelessWidget {
                 style: TextStyle(color: fg),
                 child: Stack(
                   children: [
+                    if (scene.needsSync)
+                      Align(
+                        alignment: Alignment.topLeft,
+                        child: SceneSyncDot(ring: fg.withValues(alpha: 0.85)),
+                      ),
                     Align(
                       alignment: Alignment.topRight,
                       child: AnimatedScale(
@@ -124,4 +131,22 @@ class SceneCard extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Hinweispunkt: Szene neu abgleichen (Karte, Knopf).
+class SceneSyncDot extends StatelessWidget {
+  const SceneSyncDot({super.key, this.size = 10, this.ring});
+  final double size;
+  final Color? ring;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    width: size,
+    height: size,
+    decoration: BoxDecoration(
+      color: context.hv.warn,
+      shape: BoxShape.circle,
+      border: ring == null ? null : Border.all(color: ring!, width: 1.5),
+    ),
+  );
 }

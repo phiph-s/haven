@@ -3,6 +3,7 @@ import 'automations_api.dart';
 import 'heating_api.dart';
 import 'render_api.dart';
 import 'models/floor_plan.dart';
+import 'models/scene_check.dart';
 import 'models/snapshot.dart';
 import 'models/state_history.dart';
 import 'sync/app_data.dart';
@@ -74,6 +75,22 @@ abstract class HavenRepository
 
   /// Löscht eine Szene aus der Raumgruppe.
   Future<void> removeScene(String roomId, int number);
+
+  /// Szenen-Abgleich (Feature `scene_sync` der Integration): Szenen messen,
+  /// das Gemessene als Soll übernehmen oder das Soll auf alle Lampen bringen.
+  /// Braucht wie das Ändern Admin-Rechte in HA.
+  bool get canSyncScenes;
+
+  /// Ruft die Szene [number] der Raumgruppe auf, misst jede Lampe und stellt
+  /// das vorherige Licht wieder her. Dauert einige Sekunden.
+  Future<SceneCheck> checkScene(String roomId, int number);
+
+  /// Macht die letzte Messung zum Soll und ihren Look zur Kartenfarbe.
+  Future<void> adoptScene(String roomId, int number);
+
+  /// Bringt das Soll auf alle Lampen, speichert die Szene neu und misst.
+  /// Ohne Soll [HavenException] mit `no_target`.
+  Future<SceneCheck> repairScene(String roomId, int number);
 
   /// Alles aus im ganzen Haus (nur Lampen der Lichtsteuerung).
   Future<void> allLightsOff();

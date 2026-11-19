@@ -879,7 +879,7 @@ class _MapBodyState extends ConsumerState<_MapBody> {
             clipBehavior: Clip.none,
             children: [
               // Himmel hinter der Karte, auch unter Kopf und Statusleiste.
-              if (v.controller == null && supported != false && _environment)
+              if (v.controller == null && supported != false)
                 Positioned(
                   top: -widget.bleedTop,
                   left: 0,
@@ -889,7 +889,11 @@ class _MapBodyState extends ConsumerState<_MapBody> {
                     // Statusleiste in der Farbe, die auf dem Himmel lesbar ist.
                     child: SystemBars(
                       dark: _skyDark(v, supported) ?? context.hv.isDark,
-                      child: MapSkyBackdrop(north: v.plan.north),
+                      child: _environment
+                          ? MapSkyBackdrop(north: v.plan.north)
+                          : ColoredBox(
+                              color: mapGround(dark: context.hv.isDark),
+                            ),
                     ),
                   ),
                 ),
@@ -1136,8 +1140,12 @@ class _MapBodyState extends ConsumerState<_MapBody> {
         return Stack(
           children: [
             // Himmel hinter der Karte, auch unter Kopf und Statusleiste.
-            if (v.controller == null && supported != false && _environment)
-              Positioned.fill(child: MapSkyBackdrop(north: v.plan.north)),
+            if (v.controller == null && supported != false)
+              Positioned.fill(
+                child: _environment
+                    ? MapSkyBackdrop(north: v.plan.north)
+                    : ColoredBox(color: mapGround(dark: context.hv.isDark)),
+              ),
             Positioned.fill(
               child: EntryAnimation(
                 index: 1,
