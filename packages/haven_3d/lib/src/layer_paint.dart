@@ -48,6 +48,7 @@ class LayerImages {
     required this.lit,
     required this.lamps,
     required this.lampRooms,
+    required this.lampPoints,
   });
 
   final int width;
@@ -67,6 +68,10 @@ class LayerImages {
 
   /// Alle Lampen der Perspektive mit ihrem Raum (auch ohne Ausschnitt).
   final Map<String, String?> lampRooms;
+
+  /// Lampen-ID → Lage im Bild (Pixel): aus dem Satz oder, bei älteren
+  /// Sätzen, die Mitte des Lampenausschnitts.
+  final Map<String, ui.Offset> lampPoints;
 
   double get aspect => width / height;
 
@@ -93,10 +98,22 @@ class LayerImages {
     final lampMeta = (meta['lamps'] as Map?) ?? const {};
     final out = <LayerLamp>[];
     final lampRooms = <String, String?>{};
+    final points = <String, ui.Offset>{};
     for (final e in lampMeta.entries) {
       final id = '${e.key}';
       final m = Map<String, dynamic>.from(e.value as Map);
       lampRooms[id] = m['room'] as String?;
+      if (m['px'] is num && m['py'] is num) {
+        points[id] = ui.Offset(
+          (m['px'] as num).toDouble(),
+          (m['py'] as num).toDouble(),
+        );
+      } else if (m['x'] is num) {
+        points[id] = ui.Offset(
+          (m['x'] as num) + (m['w'] as num) / 2,
+          (m['y'] as num) + (m['h'] as num) / 2,
+        );
+      }
       final png = lamps[id];
       if (png == null || m['x'] == null) continue;
       out.add(
@@ -123,6 +140,7 @@ class LayerImages {
       lit: lit,
       lamps: out,
       lampRooms: lampRooms,
+      lampPoints: points,
     );
   }
 
@@ -299,4 +317,56 @@ ui.Rect containRect(ui.Rect box, double aspect, {double alignY = 0}) {
   final x = box.left + (box.width - w) / 2;
   final y = box.top + (box.height - h) * (alignY + 1) / 2;
   return ui.Rect.fromLTWH(x, y, w, h);
+}
+
+/// Lichtschein hinter dem Bild: je brennender Lampe des Raums der
+/// Perspektive ein weicher Fleck in ihrer Farbe an ihrer Stelle (darf über
+/// [dst] hinausreichen). [factors] wie bei [paintLayers], [strength] 0 … 1.
+void paintLampGlows(
+  ui.Canvas canvas,
+  ui.Rect dst,
+  LayerImages images,
+  Map<String, LayerFactor> factors, {
+  double strength = 1,
+}) {
+  if (strength <= 0) return;
+  final scale = dst.width / images.width;
+  double srgb(double l) => l <= 0.0031308
+      ? l * 12.92
+      : 1.055 * math.pow(l, 1 / 2.4).toDouble() - 0.055;
+  for (final e in factors.entries) {
+    final room = images.lampRooms[e.key];
+    if (images.viewRoom != null && room != images.viewRoom) continue;
+    final p = images.lampPoints[e.key];
+    if (p == null) continue;
+    final f = e.value;
+    final peak = math.max(f.r, math.max(f.g, f.b));
+    if (peak <= 0) continue;
+    // Faktor = Farbe (linear) · Helligkeit / gain.
+    final level = (peak * images.gain).clamp(0.0, 1.0);
+    final c = ui.Color.from(
+      alpha: 1,
+      red: srgb(f.r / peak),
+      green: srgb(f.g / peak),
+      blue: srgb(f.b / peak),
+    );
+    final center = dst.topLeft + p * scale;
+    final r = dst.shortestSide * (0.34 + 0.22 * level);
+    final a = strength * (0.35 + 0.4 * math.sqrt(level));
+    canvas.drawCircle(
+      center,
+      r,
+      ui.Paint()
+        ..shader = ui.Gradient.radial(
+          center,
+          r,
+          [
+            c.withValues(alpha: a),
+            c.withValues(alpha: a * 0.35),
+            c.withValues(alpha: 0),
+          ],
+          const [0, 0.45, 1],
+        ),
+    );
+  }
 }

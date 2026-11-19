@@ -6,6 +6,7 @@ import 'dart:io';
 import 'dart:ui' as ui;
 
 import 'package:flutter/rendering.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:haven/app.dart';
@@ -22,17 +23,49 @@ void main() {
   Scene3DSupport.debugOverride = true;
   testWidgets('Zuhause mit Raumbildern', (tester) async {
     addTearDown(tester.view.reset);
+    // Echte Schrift und Symbole statt Testkästchen (lesbare Bilder).
+    await tester.runAsync(() async {
+      final dir =
+          '${Platform.environment['FLUTTER_ROOT'] ?? ''}'
+          '/bin/cache/artifacts/material_fonts';
+      if (!Directory(dir).existsSync()) return;
+      Future<void> load(String family, List<String> files) async {
+        final l = FontLoader(family);
+        for (final f in files) {
+          final b = File('$dir/$f').readAsBytesSync();
+          l.addFont(Future.value(ByteData.sublistView(b)));
+        }
+        await l.load();
+      }
+
+      await load('Roboto', [
+        'Roboto-Regular.ttf',
+        'Roboto-Medium.ttf',
+        'Roboto-Bold.ttf',
+      ]);
+      await load('MaterialIcons', ['MaterialIcons-Regular.otf']);
+    });
     late FakeRepository repo;
     await tester.runAsync(() async {
       repo = FakeRepository(simulate: false);
       await repo.start();
       await MapRenderJob(repo, kFakeFloorPlan).run((_) {});
     });
-    for (final mode in ['dark', 'light']) {
+    for (final (mode, look) in [
+      ('dark', 'detailed'),
+      ('light', 'detailed'),
+      ('dark', 'compact'),
+      ('dark', 'desktop'),
+    ]) {
       // ignore: invalid_use_of_visible_for_testing_member
-      SharedPreferences.setMockInitialValues({'theme_mode': mode});
+      SharedPreferences.setMockInitialValues({
+        'theme_mode': mode,
+        'home_rooms_detailed': look != 'compact',
+      });
       final store = SettingsStore(await SharedPreferences.getInstance());
-      tester.view.physicalSize = const Size(412, 915) * 2;
+      tester.view.physicalSize = look == 'desktop'
+          ? const Size(1600, 1000) * 2
+          : const Size(412, 1400) * 2;
       tester.view.devicePixelRatio = 2;
       final container = ProviderContainer(
         overrides: [
@@ -64,11 +97,11 @@ void main() {
             key.currentContext!.findRenderObject() as RenderRepaintBoundary;
         final img = await b.toImage(pixelRatio: 2);
         final png = await img.toByteData(format: ui.ImageByteFormat.png);
-        File('build/gpu/home_render_$mode.png')
+        File('build/gpu/home_render_${mode}_$look.png')
           ..createSync(recursive: true)
           ..writeAsBytesSync(png!.buffer.asUint8List());
       });
-      if (mode == 'dark') {
+      if (mode == 'dark' && look == 'detailed') {
         // Raumseite mit dem Raum im Kopf.
         final ctx = key.currentContext!;
         await tester.tap(find.bySemanticsLabel('Salon öffnen').first);

@@ -27,7 +27,7 @@ const int kLayerFormat = 1;
 
 /// Aussehen der Bilder (Nachbarräume, Stil …): eine neue Nummer lässt die
 /// Apps neu rendern, ohne das Format für den Server zu ändern.
-const int kLayerLook = 2;
+const int kLayerLook = 3;
 
 /// Standard-Helligkeit der Lampen in den Ebenen: bei voller Helligkeit
 /// brennen Lichtflecke aus (Weiß lässt sich nicht zurückrechnen), zu wenig
@@ -163,6 +163,7 @@ class LayerSet {
     required this.rooms,
     required this.lamps,
     required this.lampRooms,
+    this.lampPoints = const {},
   });
 
   final LayerView view;
@@ -185,6 +186,10 @@ class LayerSet {
   /// sichtbare Wirkung (dann ohne Eintrag in [lamps]).
   final Map<String, String?> lampRooms;
 
+  /// Lampen-ID → wo die Lampe im Bild sitzt (Pixel), etwa für einen
+  /// Lichtschein hinter dem Bild.
+  final Map<String, ui.Offset> lampPoints;
+
   /// Beschreibung für den Server (ohne die Bilder).
   Map<String, Object?> meta() => {
     'format': kLayerFormat,
@@ -198,7 +203,14 @@ class LayerSet {
     'rooms': {for (final e in rooms.entries) e.key: e.value.toJson()},
     'lamps': {
       for (final e in lampRooms.entries)
-        e.key: {...?lamps[e.key]?.toJson(), 'room': e.value},
+        e.key: {
+          ...?lamps[e.key]?.toJson(),
+          'room': e.value,
+          if (lampPoints[e.key] case final p?) ...{
+            'px': (p.dx * 10).roundToDouble() / 10,
+            'py': (p.dy * 10).roundToDouble() / 10,
+          },
+        },
     },
   };
 
@@ -515,6 +527,7 @@ class LayerRenderer {
       if (p != null) lampPatches[id] = p;
       tick(room);
     }
+    final markers = {for (final m in fitted.markers) m.id: m};
     return LayerSet(
       view: v,
       theme: theme.id,
@@ -524,6 +537,14 @@ class LayerRenderer {
       rooms: roomPatches,
       lamps: lampPatches,
       lampRooms: lampRooms,
+      lampPoints: {
+        for (final id in lamps)
+          if (markers[id] case final m?)
+            id: () {
+              final p = cam.project(m.position, size);
+              return ui.Offset(p.x, p.y);
+            }(),
+      },
     );
   }
 

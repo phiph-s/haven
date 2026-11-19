@@ -16,7 +16,7 @@ import 'package:haven/features/map/floor_plan_store.dart';
 import 'package:haven/features/map/furniture_library.dart';
 import 'package:haven/features/map/map_inspector.dart';
 import 'package:haven/features/map/map_markers.dart';
-import 'package:haven/features/home/widgets/room_tile.dart';
+import 'package:haven/features/home/widgets/room_row.dart';
 import 'package:haven/features/room/room_screen.dart';
 import 'package:haven/features/shell/app_shell.dart';
 import 'package:haven/features/zigbee/zigbee_device_screen.dart';
@@ -180,7 +180,7 @@ void main() {
     await tester.tap(
       find
           .descendant(
-            of: find.byType(RoomTile),
+            of: find.byType(RoomRow),
             matching: find.byIcon(Icons.chevron_right_rounded),
           )
           .first,

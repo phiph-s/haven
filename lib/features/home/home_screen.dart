@@ -23,7 +23,7 @@ import '../updates/app_update_provider.dart';
 import '../updates/app_update_widgets.dart';
 import 'weather_text.dart';
 import 'widgets/home_widgets.dart';
-import 'widgets/room_tile.dart';
+import 'widgets/room_row.dart';
 import '../../core/widgets/horizontal_scroller.dart';
 
 /// Zuhause: Raumkacheln, darunter konfigurierbare Widgets.
@@ -151,9 +151,20 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               ),
             ),
           );
+          final detailed = desktop || ref.watch(homeRoomsDetailedProvider);
           final roomsHeader = SectionHeader(
             'Räume',
             padding: EdgeInsets.fromLTRB(pad, 12, pad, 10),
+            // Handy: ausführlich (einer je Zeile) oder kompakt (zwei).
+            trailing: desktop || _editing
+                ? null
+                : _LayoutToggle(
+                    detailed: detailed,
+                    onChanged: (v) {
+                      Haptics.tick();
+                      ref.read(homeRoomsDetailedProvider.notifier).set(v);
+                    },
+                  ),
           );
           final roomGrid = Padding(
             padding: EdgeInsets.symmetric(horizontal: pad),
@@ -165,43 +176,28 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   return _RoomSkeleton(half: half);
                 }
                 if (_editing) return _RoomOrderList(rooms: rooms);
-                if (desktop) {
-                  // Raster: gleich breite Kacheln, so viele wie passen.
-                  final n = gridColumns(
-                    c.maxWidth,
-                    minItem: DesktopMetrics.roomTileMin,
-                    max: 5,
-                  );
-                  final w = (c.maxWidth - 12 * (n - 1)) / n;
-                  return Wrap(
-                    spacing: 12,
-                    runSpacing: 12,
-                    children: [
-                      for (var i = 0; i < rooms.length; i++)
-                        SizedBox(
-                          width: w,
-                          child: EntryAnimation(
-                            index: i,
-                            child: RoomTile(roomId: rooms[i].id, wide: true),
-                          ),
-                        ),
-                    ],
-                  );
-                }
+                // Ohne Karten direkt auf dem Hintergrund: ausführlich einer
+                // je Zeile (Desktop: zwei, wenn es breit genug ist),
+                // kompakt zwei.
+                final n = desktop
+                    ? (c.maxWidth >= 900 ? 2 : 1)
+                    : (detailed ? 1 : 2);
+                const gap = 28.0;
+                final w = (c.maxWidth - gap * (n - 1)) / n;
                 return Wrap(
-                  spacing: 12,
-                  runSpacing: 12,
+                  spacing: gap,
+                  runSpacing: detailed ? 30 : 22,
                   children: [
                     for (var i = 0; i < rooms.length; i++)
                       SizedBox(
-                        width: (i == 0 && rooms.length.isOdd)
-                            ? c.maxWidth
-                            : half,
+                        width: w,
                         child: EntryAnimation(
                           index: i,
-                          child: RoomTile(
+                          child: RoomRow(
+                            key: ValueKey(rooms[i].id),
                             roomId: rooms[i].id,
-                            wide: i == 0 && rooms.length.isOdd,
+                            detailed: detailed,
+                            large: desktop,
                           ),
                         ),
                       ),
@@ -211,13 +207,18 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             ),
           );
           final roomHint = Padding(
-            padding: EdgeInsets.fromLTRB(pad, 8, pad, 0),
+            padding: EdgeInsets.fromLTRB(pad, 14, pad, 0),
             child: Text(
               _editing
                   ? 'Halten und ziehen sortiert die Räume, auf allen Geräten.'
                   : desktop
-                  ? 'Klick schaltet. Pfeil oder Rechtsklick öffnet den Raum.'
-                  : 'Tippen schaltet. Halten oder Pfeil öffnet den Raum.',
+                  ? 'Klick aufs Bild öffnet den Raum, der runde Knopf schaltet '
+                        'das Licht. Szene gedrückt halten zeigt sie vorab.'
+                  : detailed
+                  ? 'Bild öffnet den Raum, der Knopf schaltet, waagrecht '
+                        'ziehen dimmt. Szene halten zeigt sie vorab.'
+                  : 'Bild öffnet den Raum, der Knopf schaltet, waagrecht '
+                        'ziehen dimmt.',
               style: HavenText.caption.copyWith(color: hv.tx3),
             ),
           );
@@ -672,6 +673,58 @@ class _EditList extends ConsumerWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+/// Ausführlich / kompakt umschalten (Handy).
+class _LayoutToggle extends StatelessWidget {
+  const _LayoutToggle({required this.detailed, required this.onChanged});
+  final bool detailed;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final hv = context.hv;
+    Widget seg(bool value, IconData icon, String label) {
+      final on = detailed == value;
+      return Semantics(
+        button: true,
+        selected: on,
+        label: label,
+        excludeSemantics: true,
+        onTap: () => onChanged(value),
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: () => onChanged(value),
+          child: AnimatedContainer(
+            duration: context.motion(HavenMotion.d2),
+            width: 38,
+            height: 30,
+            decoration: BoxDecoration(
+              color: on ? hv.s2 : Colors.transparent,
+              borderRadius: BorderRadius.circular(15),
+            ),
+            child: Icon(icon, size: 17, color: on ? hv.tx : hv.tx3),
+          ),
+        ),
+      );
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(2),
+      decoration: BoxDecoration(
+        color: hv.s1.withValues(alpha: hv.isDark ? 0.6 : 0.8),
+        borderRadius: BorderRadius.circular(17),
+        border: Border.all(color: hv.ln),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          seg(true, Icons.view_agenda_outlined, 'Ausführlich'),
+          seg(false, Icons.grid_view_rounded, 'Kompakt'),
+        ],
+      ),
     );
   }
 }

@@ -67,6 +67,7 @@ class SettingsStore implements LocalPrefs {
   static const _kMap3dTilt = 'map_3d_tilt';
   static const _kMap3dTransparentWalls = 'map_3d_transparent_walls';
   static const _kMap3dEnvironment = 'map_3d_environment';
+  static const _kHomeRoomsDetailed = 'home_rooms_detailed';
   static const _kGhostIgnored = 'ghost_ignored';
   static const _kGhostHint = 'ghost_hint_dismissed';
 
@@ -189,6 +190,12 @@ class SettingsStore implements LocalPrefs {
   /// Umgebung der Karte: Sonne, Mond, Tageszeit und Wetter.
   bool get map3dEnvironment => _p.getBool(_kMap3dEnvironment) ?? true;
   Future<void> setMap3dEnvironment(bool v) => _p.setBool(_kMap3dEnvironment, v);
+
+  /// Räume auf Zuhause (Handy): ausführlich (einer je Zeile, mit Szenen)
+  /// oder kompakt (zwei je Zeile).
+  bool get homeRoomsDetailed => _p.getBool(_kHomeRoomsDetailed) ?? true;
+  Future<void> setHomeRoomsDetailed(bool v) =>
+      _p.setBool(_kHomeRoomsDetailed, v);
 
   /// Ignorierte Geister-Geräte: IEEE → `last_seen`-Stempel (siehe
   /// `ghostStamp`), gelten bis zur nächsten Meldung.

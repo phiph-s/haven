@@ -2,7 +2,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:haven/features/home/room_render.dart';
-import 'package:haven/features/home/widgets/room_tile.dart';
+import 'package:haven/features/home/widgets/room_row.dart';
 import 'package:haven/app.dart';
 import 'package:haven/core/state/providers.dart';
 import 'package:haven/core/widgets/haven_sheet.dart';
@@ -15,9 +15,11 @@ Future<Widget> _app({
   String? location,
   bool connected = true,
   ThemeMode? mode,
+  bool detailed = false,
 }) async {
   SharedPreferences.setMockInitialValues({
     if (mode != null) 'theme_mode': mode.name,
+    'home_rooms_detailed': detailed,
   });
   final store = SettingsStore(await SharedPreferences.getInstance());
   Session session = const Session(SessionMode.none);
@@ -37,8 +39,8 @@ Future<Widget> _app({
 }
 
 void _phone(WidgetTester tester) {
-  // Etwas höher als ein Handy: Die Update-Karte der Entwicklungsdaten schiebt Zuhause nach unten.
-  tester.view.physicalSize = const Size(412 * 2.625, 1080 * 2.625);
+  // Deutlich höher als ein Handy: Update-Karte und Räume schieben die Widgets nach unten.
+  tester.view.physicalSize = const Size(412 * 2.625, 1800 * 2.625);
   tester.view.devicePixelRatio = 2.625;
   addTearDown(tester.view.reset);
 }
@@ -65,7 +67,7 @@ void main() {
     expect(find.text('Kochbereich'), findsOneWidget);
     expect(find.text('Waschraum'), findsOneWidget);
     expect(find.textContaining('Tischlampe'), findsWidgets);
-    // Räume mit Heizungsregelung: Thermometer am Kachelrand mit der
+    // Räume mit Heizungsregelung: Thermometer neben dem Lichtknopf mit der
     // Raumtemperatur der Regelung und dem Ziel (mit Grad-Zeichen).
     final thermo = find.descendant(
       of: find.byType(ThermoEdge),
@@ -73,7 +75,8 @@ void main() {
     );
     final texts = [for (final e in thermo.evaluate()) (e.widget as Text).data];
     expect(texts, containsAll(['21,3', '21,0°']));
-    expect(find.text('kein Sensor'), findsWidgets);
+    // Ohne Sensor steht dort nichts (kein „kein Sensor“).
+    expect(find.textContaining('kein Sensor'), findsNothing);
     expect(find.text('Strom jetzt'), findsOneWidget);
     expect(find.textContaining('142', findRichText: true), findsWidgets);
     expect(find.text('Batterien'), findsOneWidget);
@@ -83,29 +86,39 @@ void main() {
     }
   });
 
-  testWidgets('Tippen auf die Kachel schaltet den Raum', (tester) async {
+  testWidgets('Der runde Knopf schaltet den Raum', (tester) async {
     _phone(tester);
     await tester.runAsync(() async => tester.pumpWidget(await _app()));
     await tester.pumpAndSettle();
     // Drei Räume aus (der Salon leuchtet).
-    expect(find.text('Aus'), findsNWidgets(3));
-    await tester.tap(find.text('Waschraum'));
+    // Status beginnt mit „Aus“ (ohne Regler steht die Temperatur dahinter).
+    final off = find.textContaining(RegExp(r'^Aus'));
+    expect(off, findsNWidgets(3));
+    await tester.ensureVisible(find.bySemanticsLabel('Licht Waschraum'));
     await tester.pumpAndSettle();
-    expect(find.text('Aus'), findsNWidgets(2));
-    expect(find.text('Lampe · 100 %'), findsOneWidget);
+    await tester.tap(find.bySemanticsLabel('Licht Waschraum'));
+    await tester.pumpAndSettle();
+    expect(off, findsNWidgets(2));
+    expect(find.textContaining('Lampe · 100 %'), findsOneWidget);
   });
 
-  testWidgets('Waagrecht ziehen auf der Kachel dimmt den Raum', (tester) async {
+  testWidgets('Waagrecht übers Bild ziehen dimmt den Raum', (tester) async {
     _phone(tester);
     await tester.runAsync(() async => tester.pumpWidget(await _app()));
     await tester.pumpAndSettle();
     // Waschraum ist aus: nach rechts ziehen schaltet ihn gedimmt ein.
     final tile = find.ancestor(
       of: find.text('Waschraum'),
-      matching: find.byType(RoomTile),
+      matching: find.byType(RoomRow),
+    );
+    await tester.ensureVisible(tile);
+    await tester.pumpAndSettle();
+    final picture = find.descendant(
+      of: tile,
+      matching: find.byIcon(Icons.meeting_room_outlined),
     );
     final w = tester.getSize(tile).width;
-    final gesture = await tester.startGesture(tester.getCenter(tile));
+    final gesture = await tester.startGesture(tester.getCenter(picture));
     await gesture.moveBy(Offset(w * 0.2, 0));
     await gesture.moveBy(Offset(w * 0.2, 0));
     await tester.pump();
@@ -209,7 +222,7 @@ void main() {
     await tester.pump();
     expect(tester.getTopLeft(grab).dy, greaterThan(top + 250));
     // Langsam über die Hälfte: schließt.
-    await g.moveBy(const Offset(0, 300));
+    await g.moveBy(const Offset(0, 800));
     await tester.pump(const Duration(milliseconds: 600));
     await g.up();
     await tester.pumpAndSettle();
@@ -331,5 +344,51 @@ void main() {
     expect(find.byIcon(Icons.remove_rounded), findsNWidgets(2));
     expect(find.text('Strom jetzt'), findsNothing);
     sem.dispose();
+  });
+
+  testWidgets('Szene halten zeigt sie vorab, Tippen ruft sie auf', (
+    tester,
+  ) async {
+    _phone(tester);
+    await tester.runAsync(
+      () async => tester.pumpWidget(await _app(detailed: true)),
+    );
+    await tester.pumpAndSettle();
+    final chip = find.bySemanticsLabel('Szene Neon Tokyo').first;
+    final gesture = await tester.startGesture(tester.getCenter(chip));
+    await tester.pump(const Duration(milliseconds: 700));
+    expect(find.text('Vorschau: Neon Tokyo'), findsOneWidget);
+    await gesture.up();
+    await tester.pumpAndSettle();
+    expect(find.text('Vorschau: Neon Tokyo'), findsNothing);
+  });
+
+  testWidgets('Kompakt zeigt zwei Räume je Zeile, ohne Szenen', (tester) async {
+    _phone(tester);
+    await tester.runAsync(
+      () async => tester.pumpWidget(await _app(detailed: true)),
+    );
+    await tester.pumpAndSettle();
+    double top(String name) => tester.getTopLeft(find.text(name)).dy;
+    expect(top('Ruheraum'), greaterThan(top('Salon') + 50));
+    await tester.tap(find.bySemanticsLabel('Kompakt'));
+    await tester.pumpAndSettle();
+    expect(top('Ruheraum'), closeTo(top('Salon'), 1));
+    expect(find.text('Golden Hour'), findsNothing);
+  });
+
+  testWidgets('Bewegungslicht lässt sich am Raum schalten', (tester) async {
+    _phone(tester);
+    await tester.runAsync(
+      () async => tester.pumpWidget(await _app(detailed: true)),
+    );
+    await tester.pumpAndSettle();
+    final chip = find.bySemanticsLabel('Bewegungslicht');
+    await tester.ensureVisible(chip);
+    await tester.pumpAndSettle();
+    expect(find.text('Bewegung an'), findsOneWidget);
+    await tester.tap(chip);
+    await tester.pumpAndSettle();
+    expect(find.text('Bewegung aus'), findsOneWidget);
   });
 }

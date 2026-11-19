@@ -140,18 +140,24 @@ final layerShaderProvider = FutureProvider<ui.FragmentProgram?>((ref) async {
 
 /// Der Render eines Raums mit dem aktuellen Licht. Wechsel blenden weich
 /// über; [dimPercent] setzt beim Ziehen die Helligkeit der Lampen des Raums
-/// sofort (ohne Überblendung).
+/// sofort (ohne Überblendung). [preview] zeigt andere Lampenzustände (etwa
+/// eine Szene, solange man sie hält), [glow] den Lichtschein der Lampen
+/// hinter dem Bild (0 … 1).
 class RoomRenderView extends ConsumerStatefulWidget {
   const RoomRenderView({
     super.key,
     required this.images,
     this.dimPercent,
+    this.preview,
     this.alignY = -0.6,
+    this.glow = 0,
   });
 
   final h3.LayerImages images;
   final int? dimPercent;
+  final Map<String, h3.LampState>? preview;
   final double alignY;
+  final double glow;
 
   @override
   ConsumerState<RoomRenderView> createState() => _RoomRenderViewState();
@@ -194,8 +200,9 @@ class _RoomRenderViewState extends ConsumerState<RoomRenderView>
     final out = <String, h3.LayerFactor>{};
     for (final id in img.lampRooms.keys) {
       final e = snap.entity(id);
-      if (e == null) continue;
-      var s = lampStateOf(Lamp.fromEntity(e));
+      final shown = widget.preview?[id];
+      if (e == null && shown == null) continue;
+      var s = shown ?? lampStateOf(Lamp.fromEntity(e!));
       final dim = widget.dimPercent;
       if (dim != null && img.lampRooms[id] == img.viewRoom) {
         s = h3.LampState(
@@ -250,6 +257,7 @@ class _RoomRenderViewState extends ConsumerState<RoomRenderView>
         _shaderOf(program),
         _now,
         widget.alignY,
+        widget.glow,
       ),
     );
   }
@@ -268,11 +276,12 @@ class _RoomRenderViewState extends ConsumerState<RoomRenderView>
 }
 
 class _LayerPainter extends CustomPainter {
-  _LayerPainter(this.images, this.shader, this.factors, this.alignY);
+  _LayerPainter(this.images, this.shader, this.factors, this.alignY, this.glow);
   final h3.LayerImages images;
   final ui.FragmentShader shader;
   final Map<String, h3.LayerFactor> factors;
   final double alignY;
+  final double glow;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -281,6 +290,7 @@ class _LayerPainter extends CustomPainter {
       images.aspect,
       alignY: alignY,
     );
+    h3.paintLampGlows(canvas, dst, images, factors, strength: glow);
     h3.paintLayers(canvas, dst, images, shader, factors);
   }
 
@@ -289,6 +299,7 @@ class _LayerPainter extends CustomPainter {
       old.images != images ||
       old.shader != shader ||
       old.alignY != alignY ||
+      old.glow != glow ||
       !_RoomRenderViewState._sameFactors(old.factors, factors);
 }
 
