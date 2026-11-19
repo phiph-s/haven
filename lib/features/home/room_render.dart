@@ -10,8 +10,10 @@ import 'package:material_ui/material_ui.dart';
 import '../../core/state/providers.dart';
 import '../../core/theme/tokens.dart';
 import '../../core/widgets/haptics.dart';
+import '../../core/widgets/press_scale.dart';
 import '../../data/models/lamp.dart';
 import '../../data/models/room_heating.dart';
+import '../../data/models/snapshot.dart' show ConnectionStatus;
 import '../../data/render_api.dart';
 import '../climate/heating_providers.dart';
 import '../climate/thermostat_providers.dart';
@@ -27,10 +29,19 @@ import '../map/map_data.dart' show snapshotRoomFor;
 /// anderen Geräten). `null`: keine Bilder möglich.
 final renderStatusProvider = StreamProvider<RenderStatus?>((ref) async* {
   final repo = ref.watch(sessionProvider.select((s) => s.repo));
+  // Erst verbunden kennt die App die Fähigkeiten der Integration; vorher
+  // gäbe es „keine Bilder“ bis zum nächsten Upload (Android: die App
+  // startet vor der Verbindung). Nach jedem (Wieder-)Verbinden neu laden.
+  final connected = ref.watch(
+    snapshotProvider.select((s) => s.status == ConnectionStatus.connected),
+  );
   if (repo == null) {
     yield null;
     return;
   }
+  // Getrennt: nichts melden, der letzte Stand bleibt sichtbar (Riverpod
+  // behält ihn beim Neuladen).
+  if (!connected) return;
   Future<RenderStatus?> load() async {
     try {
       return await repo.renderStatus();
@@ -369,31 +380,23 @@ TileClimate? tileClimateOf(WidgetRef ref, String roomId, double? roomTemp) {
   );
 }
 
-/// Thermometer am rechten Rand der Kachel über die volle Höhe: Füllung =
-/// Raumtemperatur (Zahl an der Füllkante), Pfeil mit Wert = Ziel.
-/// Senkrecht ziehen oder am PC scrollen ändert das Ziel in halben Grad.
-class ThermoEdge extends StatefulWidget {
-  const ThermoEdge({super.key, required this.climate, required this.name});
+/// Heizung mit Minus und Plus statt Schieber (am Handy verstellte der sich
+/// beim Scrollen): Raumtemperatur groß, darunter das Ziel in halben Grad.
+/// Am PC ändert auch das Mausrad über dem Ziel. Gesendet wird, wenn die
+/// Bedienung kurz ruht.
+class TempStepper extends StatefulWidget {
+  const TempStepper({super.key, required this.climate, required this.name});
 
   final TileClimate climate;
   final String name;
 
-  /// Breite der Fläche am Rand (Regler plus Rand).
-  static const double width = 36;
-
-  /// Skala des Thermometers.
-  static const double lo = 15, hi = 26;
-
   @override
-  State<ThermoEdge> createState() => _ThermoEdgeState();
+  State<TempStepper> createState() => _TempStepperState();
 }
 
-class _ThermoEdgeState extends State<ThermoEdge> {
+class _TempStepperState extends State<TempStepper> {
   /// Ziel während und kurz nach der Bedienung (bis HA es bestätigt).
   double? _pending;
-  double? _dragStart;
-  double _dragDy = 0;
-  bool _active = false;
   Timer? _commit;
   Timer? _forget;
   double _wheel = 0;
@@ -402,10 +405,12 @@ class _ThermoEdgeState extends State<ThermoEdge> {
   double get _target => _pending ?? c.target;
 
   @override
-  void didUpdateWidget(ThermoEdge old) {
+  void didUpdateWidget(TempStepper old) {
     super.didUpdateWidget(old);
     // HA hat das Ziel übernommen: wieder den echten Wert zeigen.
-    if (_pending != null && (c.target - _pending!).abs() < 0.05) {
+    if (_pending != null &&
+        _commit?.isActive != true &&
+        (c.target - _pending!).abs() < 0.05) {
       _pending = null;
     }
   }
@@ -417,17 +422,15 @@ class _ThermoEdgeState extends State<ThermoEdge> {
     super.dispose();
   }
 
-  double _clamp(double v) {
-    final lo = c.min > ThermoEdge.lo ? c.min : ThermoEdge.lo;
-    final hi = c.max < ThermoEdge.hi ? c.max : ThermoEdge.hi;
-    return ((v * 2).round() / 2).clamp(lo, hi);
-  }
+  double _clamp(double v) => ((v * 2).round() / 2).clamp(c.min, c.max);
 
-  void _set(double v, {Duration delay = Duration.zero}) {
-    final n = _clamp(v);
+  void _step(double by) {
+    final n = _clamp(_target + by);
+    if (n == _target) return;
+    Haptics.tick();
     setState(() => _pending = n);
     _commit?.cancel();
-    _commit = Timer(delay, () => _send(n));
+    _commit = Timer(const Duration(milliseconds: 700), () => _send(n));
   }
 
   Future<void> _send(double v) async {
@@ -447,26 +450,22 @@ class _ThermoEdgeState extends State<ThermoEdge> {
     });
   }
 
-  double _perHalf(double h) => (h - 18) / ((ThermoEdge.hi - ThermoEdge.lo) * 2);
-
   @override
   Widget build(BuildContext context) {
     final hv = context.hv;
+    String fmt(double v) => v.toStringAsFixed(1).replaceAll('.', ',');
     final heating =
         c.heating || (_pending != null && _target > (c.current ?? 99));
-    final fill = heating ? const Color(0xFFFF8A3D) : const Color(0xFF5AB0FF);
-    double frac(double v) =>
-        ((v - ThermoEdge.lo) / (ThermoEdge.hi - ThermoEdge.lo)).clamp(0.0, 1.0);
-    String fmt(double v) => v.toStringAsFixed(1).replaceAll('.', ',');
     final cur = c.current;
+    const warm = Color(0xFFFF8A3D);
     return Semantics(
       slider: true,
       label: 'Zieltemperatur ${widget.name}',
       value: c.off ? 'aus' : '${fmt(_target)} Grad',
       increasedValue: '${fmt(_clamp(_target + 0.5))} Grad',
       decreasedValue: '${fmt(_clamp(_target - 0.5))} Grad',
-      onIncrease: () => _set(_target + 0.5),
-      onDecrease: () => _set(_target - 0.5),
+      onIncrease: () => _step(0.5),
+      onDecrease: () => _step(-0.5),
       child: Listener(
         // Am PC: Mausrad, ein halbes Grad je Raststufe (Touchpads in
         // kleinen Schritten gesammelt); die Seite scrollt dabei nicht.
@@ -477,180 +476,117 @@ class _ThermoEdgeState extends State<ThermoEdge> {
             final steps = (_wheel / 40).truncate();
             if (steps == 0) return;
             _wheel -= steps * 40;
-            _set(
-              _target - steps * 0.5,
-              delay: const Duration(milliseconds: 600),
-            );
+            _step(-steps * 0.5);
           });
         },
-        child: GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          // Tippen aufs Thermometer schaltet nicht das Licht der Kachel.
-          onTap: () {},
-          onVerticalDragStart: (_) {
-            _dragStart = _target;
-            _dragDy = 0;
-            setState(() => _active = true);
-          },
-          onVerticalDragUpdate: (d) {
-            _dragDy += d.delta.dy;
-            final h = context.size?.height ?? 160;
-            final steps = (-_dragDy / _perHalf(h)).round();
-            final v = _clamp(_dragStart! + steps * 0.5);
-            if (v != _target) {
-              Haptics.tick();
-              setState(() => _pending = v);
-            }
-          },
-          onVerticalDragEnd: (_) {
-            setState(() => _active = false);
-            if (_pending != null) _set(_pending!);
-          },
-          child: LayoutBuilder(
-            builder: (context, box) {
-              final h = box.maxHeight;
-              double y(double v) => 9 + (h - 18) * (1 - frac(v));
-              return Stack(
-                clipBehavior: Clip.none,
-                children: [
-                  // Regler
-                  Positioned(
-                    right: 6,
-                    top: 8,
-                    bottom: 8,
-                    width: 24,
-                    child: Container(
-                      decoration: BoxDecoration(
-                        color: hv.s2.withValues(alpha: 0.72),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: hv.ln),
-                      ),
-                      clipBehavior: Clip.antiAlias,
-                      child: Stack(
-                        children: [
-                          if (cur != null)
-                            Positioned(
-                              left: 0,
-                              right: 0,
-                              bottom: 0,
-                              height: (h - 16) * frac(cur),
-                              child: AnimatedContainer(
-                                duration: const Duration(milliseconds: 300),
-                                decoration: BoxDecoration(
-                                  gradient: LinearGradient(
-                                    begin: Alignment.bottomCenter,
-                                    end: Alignment.topCenter,
-                                    colors: [
-                                      fill.withValues(alpha: 0.95),
-                                      fill.withValues(alpha: 0.5),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                            ),
-                          if (cur != null)
-                            Positioned(
-                              left: 0,
-                              right: 0,
-                              bottom:
-                                  ((h - 16) * frac(cur) -
-                                          (frac(cur) > 0.88 ? 15 : 0))
-                                      .clamp(2.0, h),
-                              child: Text(
-                                fmt(cur),
-                                textAlign: TextAlign.center,
-                                style: HavenText.caption.copyWith(
-                                  fontSize: 9.5,
-                                  fontWeight: FontWeight.w700,
-                                  color: Colors.white,
-                                  shadows: const [
-                                    Shadow(
-                                      blurRadius: 2,
-                                      color: Colors.black54,
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                        ],
-                      ),
-                    ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(
+                  heating
+                      ? Icons.local_fire_department_rounded
+                      : Icons.thermostat_rounded,
+                  size: 20,
+                  color: heating ? warm : hv.tx3,
+                ),
+                const SizedBox(width: 2),
+                Text(
+                  cur == null ? '–' : '${fmt(cur)}°',
+                  style: HavenText.headline.copyWith(
+                    color: hv.tx,
+                    fontSize: 22,
+                    height: 1.15,
                   ),
-                  // Ziel: Strich über den Regler, Pfeil mit Wert daneben.
-                  if (!c.off) ...[
-                    Positioned(
-                      right: 6,
-                      width: 24,
-                      top: y(_target) - 1,
-                      height: 2,
-                      child: ColoredBox(color: hv.tx),
-                    ),
-                    Positioned(
-                      right: 31,
-                      top: y(_target) - 10,
-                      height: 20,
-                      child: AnimatedScale(
-                        scale: _active ? 1.15 : 1,
-                        duration: const Duration(milliseconds: 150),
-                        alignment: Alignment.centerRight,
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 5,
-                                vertical: 1,
-                              ),
-                              decoration: BoxDecoration(
-                                color: hv.tx,
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              child: Text(
-                                '${fmt(_target)}°',
-                                style: HavenText.caption.copyWith(
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w700,
-                                  color: hv.s1,
-                                ),
-                              ),
-                            ),
-                            CustomPaint(
-                              size: const Size(6, 10),
-                              painter: _ArrowPainter(hv.tx),
-                            ),
-                          ],
+                ),
+              ],
+            ),
+            Text(
+              c.off ? 'Heizung aus' : (heating ? 'heizt' : 'im Raum'),
+              textAlign: TextAlign.center,
+              style: HavenText.caption.copyWith(color: heating ? warm : hv.tx3),
+            ),
+            const SizedBox(height: 6),
+            Row(
+              children: [
+                _StepButton(
+                  icon: Icons.remove_rounded,
+                  label: 'Kälter',
+                  onTap: c.off ? null : () => _step(-0.5),
+                ),
+                Expanded(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        c.off ? 'Aus' : '${fmt(_target)}°',
+                        style: HavenText.label.copyWith(
+                          color: hv.tx,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w700,
                         ),
                       ),
-                    ),
-                  ],
-                ],
-              );
-            },
-          ),
+                      Text(
+                        'Ziel',
+                        style: HavenText.caption.copyWith(
+                          color: hv.tx3,
+                          fontSize: 11,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                _StepButton(
+                  icon: Icons.add_rounded,
+                  label: 'Wärmer',
+                  onTap: c.off ? null : () => _step(0.5),
+                ),
+              ],
+            ),
+          ],
         ),
       ),
     );
   }
 }
 
-class _ArrowPainter extends CustomPainter {
-  _ArrowPainter(this.color);
-  final Color color;
+class _StepButton extends StatelessWidget {
+  const _StepButton({required this.icon, required this.label, this.onTap});
+  final IconData icon;
+  final String label;
+  final VoidCallback? onTap;
 
   @override
-  void paint(Canvas canvas, Size size) {
-    canvas.drawPath(
-      Path()
-        ..moveTo(0, 0)
-        ..lineTo(size.width, size.height / 2)
-        ..lineTo(0, size.height)
-        ..close(),
-      Paint()..color = color,
+  Widget build(BuildContext context) {
+    final hv = context.hv;
+    return Semantics(
+      button: true,
+      label: label,
+      excludeSemantics: true,
+      onTap: onTap,
+      child: PressScale(
+        onTap: onTap,
+        pressedScale: 0.88,
+        child: Container(
+          width: 36,
+          height: 36,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: hv.s1.withValues(alpha: hv.isDark ? 0.8 : 0.9),
+            border: Border.all(color: hv.ln),
+          ),
+          child: Icon(
+            icon,
+            size: 20,
+            color: onTap == null ? hv.tx3.withValues(alpha: 0.5) : hv.tx,
+          ),
+        ),
+      ),
     );
   }
-
-  @override
-  bool shouldRepaint(_ArrowPainter old) => old.color != color;
 }
 
 // ---- Kopf der Raumseite --------------------------------------------------

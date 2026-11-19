@@ -7,7 +7,18 @@ import 'core/state/providers.dart';
 import 'core/theme/theme.dart';
 import 'core/widgets/system_bars.dart';
 import 'features/home_widget/room_widget_bridge.dart';
+import 'features/map/map_3d.dart' show mapPreloadProvider;
 import 'features/zigbee/widgets/zb_common.dart' show zbToast;
+
+/// Kommt die App wieder nach vorne, stößt sie die Verbindung zu Home
+/// Assistant an (siehe `HavenRepository.nudgeConnection`): Im Hintergrund
+/// kann sie unbemerkt gestorben oder die Wartezeit lang geworden sein.
+final connectionNudgeProvider = Provider<void>((ref) {
+  final l = AppLifecycleListener(
+    onResume: () => ref.read(repositoryProvider).nudgeConnection(),
+  );
+  ref.onDispose(l.dispose);
+});
 
 /// Wurzel der App: Theme (Hell, Dunkel, System), Router, Deutsch.
 class HavenApp extends ConsumerWidget {
@@ -21,6 +32,15 @@ class HavenApp extends ConsumerWidget {
     final router = ref.watch(routerProvider(initialLocation));
     // Raum-Widgets auf dem Startbildschirm aktuell halten (nur Android).
     ref.watch(roomWidgetSyncProvider);
+    // Wieder vorne: Verbindung zu HA gleich prüfen bzw. neu aufbauen.
+    ref.watch(connectionNudgeProvider);
+    // Karte schon jetzt aufbauen (Baking im Hintergrund). Nicht in der
+    // Widget-Einrichtung: deren Activity endet gleich wieder, und eine
+    // abgebaute Engine mit 3D-Szene stürzt beim Freigeben der GPU-Puffer
+    // ab (Vulkan-Gerät schon weg).
+    if (!(initialLocation?.startsWith('/widget-config') ?? false)) {
+      ref.watch(mapPreloadProvider);
+    }
     final mode = ref.watch(themeModeProvider);
     // Hinweise beim Speichern geteilter Daten (z. B. ohne Admin-Rechte).
     ref.listen(syncNoticeProvider, (_, n) {

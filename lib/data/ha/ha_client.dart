@@ -66,6 +66,9 @@ class HaClient {
   Completer<void>? _closedSignal;
   Timer? _pingTimer;
   Timer? _pongTimer;
+
+  /// Weckt die Wartezeit vor dem nächsten Versuch ([nudge]).
+  Completer<void>? _wake;
   bool _stopped = false;
   bool _authFailed = false;
   int _nextId = 1;
@@ -162,7 +165,18 @@ class HaClient {
       if (_authFailed) return;
       _setStatus(ConnectionStatus.reconnecting);
       final jitter = Duration(milliseconds: _rng.nextInt(400));
-      await Future<void>.delayed(backoff + jitter);
+      final wake = _wake = Completer<void>();
+      final woken = await Future.any([
+        Future<bool>.delayed(backoff + jitter, () => false),
+        wake.future.then((_) => true),
+      ]);
+      _wake = null;
+      if (woken) {
+        // Von außen geweckt (App wieder vorne): gleich und wieder mit
+        // kurzer Wartezeit.
+        backoff = minBackoff;
+        continue;
+      }
       backoff = Duration(
         milliseconds: min(
           backoff.inMilliseconds * 2,
@@ -283,15 +297,34 @@ class HaClient {
   void _startPing() {
     _pingTimer?.cancel();
     _pingTimer = Timer.periodic(pingInterval, (_) {
-      if (!isConnected) return;
-      _sendRaw({'id': _nextId++, 'type': 'ping'});
-      _pongTimer?.cancel();
-      _pongTimer = Timer(const Duration(seconds: 10), () {
-        // Keine Antwort: Verbindung gilt als tot.
-        _channel?.sink.close();
-        _signalClosed();
-      });
+      if (isConnected) _ping(const Duration(seconds: 10));
     });
+  }
+
+  /// Ping senden; ohne Antwort binnen [wait] gilt die Verbindung als tot
+  /// und wird neu aufgebaut.
+  void _ping(Duration wait) {
+    if (_pongTimer?.isActive ?? false) return;
+    _sendRaw({'id': _nextId++, 'type': 'ping'});
+    _pongTimer = Timer(wait, () {
+      _channel?.sink.close();
+      _signalClosed();
+    });
+  }
+
+  /// Die App ist wieder vorne (oder das Netz zurück): Im Hintergrund kann
+  /// die Verbindung gestorben sein, ohne dass es jemand merkt, und die
+  /// Wartezeit bis zum nächsten Versuch auf bis zu [maxBackoff] gewachsen
+  /// sein. Verbunden: kurz prüfen (Ping, wenige Sekunden). Sonst: sofort neu
+  /// versuchen.
+  void nudge({Duration wait = const Duration(seconds: 4)}) {
+    if (_stopped || _authFailed) return;
+    if (isConnected) {
+      _ping(wait);
+      return;
+    }
+    final w = _wake;
+    if (w != null && !w.isCompleted) w.complete();
   }
 
   /// Sendet einen Befehl, `id` wird gesetzt. Das Future liefert `result`.

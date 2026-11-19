@@ -43,6 +43,7 @@ class GpuScene {
     Map<String, bool?> open = const {},
     V3? sun,
     this.deferBake = false,
+    this.reach = LightReach.doors,
   }) : _sunDir = sun ?? kSunDirection {
     _openState.addAll(open);
     _build();
@@ -508,6 +509,12 @@ class GpuScene {
 
   late _Materials _mat;
 
+  /// Wie weit Lampenlicht reicht (siehe [LightReach]).
+  final LightReach reach;
+
+  /// Lichtzonen fürs Baking bei [reach].
+  late final Map<String, String> _bakeZones = source.bakeZones(reach);
+
   /// Sichtbare Räume (`null`: alle).
   Set<String>? _focus;
 
@@ -532,7 +539,7 @@ class GpuScene {
     source.rooms,
     // Nur offene Wände teilen sich das Echtzeitlicht; durch Türen fällt es
     // gebaken (sonst durch die Wände auf Möbel und Wände nebenan).
-    source.openZones,
+    source.liveZones(reach),
     lampReach(source),
   );
 
@@ -902,10 +909,10 @@ class GpuScene {
   /// [flushLight] (wenige Millisekunden je Bild).
   void _rebakeZoneOf(String roomId) {
     if (_baking) _staleRooms.add(roomId);
-    final zone = source.lightZones[roomId] ?? roomId;
+    final zone = _bakeZones[roomId] ?? roomId;
     final byRoom = {
       for (final e in _roomReceivers.entries)
-        if ((source.lightZones[e.key] ?? e.key) == zone)
+        if ((_bakeZones[e.key] ?? e.key) == zone)
           e.key: [for (final i in e.value) _receivers[i]],
     };
     final occ = _zoneOccluders(byRoom.keys.toSet());
@@ -1436,7 +1443,7 @@ class GpuScene {
   List<Map<String, List<_Receiver>>> _zones() {
     final zones = <String, Set<String>>{};
     for (final id in _roomReceivers.keys) {
-      (zones[source.lightZones[id] ?? id] ??= {}).add(id);
+      (zones[_bakeZones[id] ?? id] ??= {}).add(id);
     }
     return [
       for (final z in zones.values)

@@ -13,6 +13,7 @@ import '../../data/models/floor_plan.dart';
 import '../../data/models/lamp.dart';
 import '../../data/models/snapshot.dart';
 import 'floor_geometry.dart';
+import 'floor_plan_store.dart';
 import 'heatmap.dart';
 import 'map_data.dart';
 import 'map_readings.dart';
@@ -37,9 +38,14 @@ class Map3DSettings {
     this.tilt = false,
     this.transparentWalls = false,
     this.environment = true,
+    this.lightReach = h3.LightReach.doors,
   });
 
   final h3.SceneQuality quality;
+
+  /// Wie weit Lampenlicht reicht: durch Türen, nur offene Wände oder nur
+  /// im Raum. Weniger lädt schneller (weniger Baking).
+  final h3.LightReach lightReach;
 
   /// Wände halbdurchsichtig statt deckend (Nachbarräume scheinen durch).
   final bool transparentWalls;
@@ -60,12 +66,14 @@ class Map3DSettings {
     bool? tilt,
     bool? transparentWalls,
     bool? environment,
+    h3.LightReach? lightReach,
   }) => Map3DSettings(
     quality: quality ?? this.quality,
     perspective: perspective ?? this.perspective,
     tilt: tilt ?? this.tilt,
     transparentWalls: transparentWalls ?? this.transparentWalls,
     environment: environment ?? this.environment,
+    lightReach: lightReach ?? this.lightReach,
   );
 
   @override
@@ -75,11 +83,18 @@ class Map3DSettings {
       other.perspective == perspective &&
       other.tilt == tilt &&
       other.transparentWalls == transparentWalls &&
-      other.environment == environment;
+      other.environment == environment &&
+      other.lightReach == lightReach;
 
   @override
-  int get hashCode =>
-      Object.hash(quality, perspective, tilt, transparentWalls, environment);
+  int get hashCode => Object.hash(
+    quality,
+    perspective,
+    tilt,
+    transparentWalls,
+    environment,
+    lightReach,
+  );
 }
 
 class Map3DSettingsNotifier extends Notifier<Map3DSettings> {
@@ -95,7 +110,16 @@ class Map3DSettingsNotifier extends Notifier<Map3DSettings> {
       tilt: s.map3dTilt,
       transparentWalls: s.map3dTransparentWalls,
       environment: s.map3dEnvironment,
+      lightReach: h3.LightReach.values.firstWhere(
+        (r) => r.name == s.map3dLightReach,
+        orElse: () => h3.LightReach.doors,
+      ),
     );
+  }
+
+  void setLightReach(h3.LightReach v) {
+    state = state.copyWith(lightReach: v);
+    unawaited(ref.read(settingsStoreProvider).setMap3dLightReach(v.name));
   }
 
   void setTransparentWalls(bool v) {
@@ -135,6 +159,25 @@ final map3dControllerProvider = Provider<h3.SceneController>((ref) {
   final c = h3.SceneController();
   ref.onDispose(c.dispose);
   return c;
+});
+
+/// Die Wohnungskarte schon beim Start der App aufbauen und backen (kurz
+/// nachdem Zuhause steht), nicht erst beim Öffnen der Karte. In `app.dart`
+/// beobachtet.
+final mapPreloadProvider = Provider<void>((ref) {
+  final plan = ref.watch(floorPlanProvider).value;
+  final supported = ref.watch(map3dSupportedProvider).value ?? false;
+  if (plan == null || !supported || h3.Scene3DSupport.headlessTest) return;
+  final quality = ref.watch(map3dSettingsProvider.select((s) => s.quality));
+  final reach = ref.watch(map3dSettingsProvider.select((s) => s.lightReach));
+  final c = ref.read(map3dControllerProvider);
+  final scene = sceneOfPlan(plan);
+  final t = Timer(const Duration(milliseconds: 800), () {
+    // Türen und Fenster wie in HA: das Baking passt dann gleich.
+    syncMapOpenings(c, scene, ref.read(snapshotProvider));
+    unawaited(c.prepare(scene, h3.SceneStyle.light(), quality, reach: reach));
+  });
+  ref.onDispose(t.cancel);
 });
 
 /// Kamera und Szene der Netzkarte (Vollbild und Kartenart Funknetz): eigene
@@ -741,6 +784,7 @@ class _Map3DViewState extends ConsumerState<Map3DView> {
       controller: c,
       style: style,
       quality: widget.quality ?? settings.quality,
+      lightReach: settings.lightReach,
       gestures: widget.interactive
           ? h3.SceneGestures.map
           : h3.SceneGestures.none,

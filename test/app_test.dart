@@ -1,7 +1,6 @@
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:haven/features/home/room_render.dart';
 import 'package:haven/features/home/widgets/room_row.dart';
 import 'package:haven/app.dart';
 import 'package:haven/core/state/providers.dart';
@@ -67,14 +66,9 @@ void main() {
     expect(find.text('Kochbereich'), findsOneWidget);
     expect(find.text('Waschraum'), findsOneWidget);
     expect(find.textContaining('Tischlampe'), findsWidgets);
-    // Räume mit Heizungsregelung: Thermometer neben dem Lichtknopf mit der
-    // Raumtemperatur der Regelung und dem Ziel (mit Grad-Zeichen).
-    final thermo = find.descendant(
-      of: find.byType(ThermoEdge),
-      matching: find.byType(Text),
-    );
-    final texts = [for (final e in thermo.evaluate()) (e.widget as Text).data];
-    expect(texts, containsAll(['21,3', '21,0°']));
+    // Kompakt: Räume mit Heizungsregelung zeigen die Raumtemperatur im
+    // Status (der Regler steht ausführlich im Tab Heizung).
+    expect(find.textContaining('21,3°'), findsWidgets);
     // Ohne Sensor steht dort nichts (kein „kein Sensor“).
     expect(find.textContaining('kein Sensor'), findsNothing);
     expect(find.text('Strom jetzt'), findsOneWidget);
@@ -374,21 +368,40 @@ void main() {
     await tester.tap(find.bySemanticsLabel('Kompakt'));
     await tester.pumpAndSettle();
     expect(top('Ruheraum'), closeTo(top('Salon'), 1));
-    expect(find.text('Golden Hour'), findsNothing);
+    expect(find.bySemanticsLabel('Szene Golden Hour'), findsNothing);
   });
 
-  testWidgets('Bewegungslicht lässt sich am Raum schalten', (tester) async {
+  testWidgets('Tabs neben dem Raum: Heizung mit Plus, Bewegungslicht', (
+    tester,
+  ) async {
     _phone(tester);
     await tester.runAsync(
       () async => tester.pumpWidget(await _app(detailed: true)),
     );
     await tester.pumpAndSettle();
-    final chip = find.bySemanticsLabel('Bewegungslicht');
-    await tester.ensureVisible(chip);
+    // Salon: Heizungs-Tab zeigt Raumtemperatur und Ziel.
+    await tester.tap(find.bySemanticsLabel('Heizung').first);
     await tester.pumpAndSettle();
-    expect(find.text('Bewegung an'), findsOneWidget);
-    await tester.tap(chip);
+    expect(find.text('21,3°'), findsWidgets);
+    expect(find.text('21,0°'), findsOneWidget);
+    await tester.tap(find.bySemanticsLabel('Wärmer').first);
+    await tester.pump();
+    expect(find.text('21,5°'), findsOneWidget);
+    await tester.pump(const Duration(seconds: 8));
+    // Waschraum: Bewegungslicht im eigenen Tab schalten.
+    final row = find.ancestor(
+      of: find.text('Waschraum'),
+      matching: find.byType(RoomRow),
+    );
+    await tester.ensureVisible(row);
     await tester.pumpAndSettle();
-    expect(find.text('Bewegung aus'), findsOneWidget);
+    await tester.tap(
+      find.descendant(of: row, matching: find.bySemanticsLabel('Bewegung')),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Licht vom Melder'), findsOneWidget);
+    await tester.tap(find.bySemanticsLabel('Bewegungslicht'));
+    await tester.pumpAndSettle();
+    expect(find.text('Aus'), findsWidgets);
   });
 }

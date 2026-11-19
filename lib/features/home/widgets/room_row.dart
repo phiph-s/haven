@@ -16,7 +16,7 @@ import '../../../core/state/providers.dart';
 import '../../../core/theme/tokens.dart';
 import '../../../core/widgets/animated_palette.dart';
 import '../../../core/widgets/haptics.dart';
-import '../../../core/widgets/horizontal_scroller.dart';
+import '../../../core/widgets/haven_switch.dart';
 import '../../../core/widgets/press_scale.dart';
 import '../../../data/models/haven_automation.dart';
 import '../../../data/models/room.dart';
@@ -28,11 +28,11 @@ import '../room_render.dart';
 import '../weather_text.dart';
 
 // Räume auf Zuhause, ohne Karte direkt auf dem Hintergrund: der Raum mit
-// seinem Licht (Lichtschein der Lampen dahinter), daneben ein runder
-// Lichtknopf und das Thermometer. Ausführlich darunter Szenen und das
-// Bewegungslicht; eine Szene gedrückt halten zeigt sie im Bild.
+// seinem Licht (Lichtschein der Lampen dahinter), rechts daneben Tabs für
+// Licht (Knopf und Szenen), Heizung und Bewegungslicht. Unter dem Raum
+// steht nichts. Eine Szene gedrückt halten zeigt sie im Bild.
 
-/// Räume ausführlich (einer je Zeile, mit Szenen) oder kompakt (zwei je
+/// Räume ausführlich (einer je Zeile, mit Tabs) oder kompakt (zwei je
 /// Zeile). Gilt auf dem Handy; am Desktop immer ausführlich.
 final homeRoomsDetailedProvider =
     NotifierProvider<HomeRoomsDetailedNotifier, bool>(
@@ -85,8 +85,11 @@ final roomMotionProvider = Provider.family<HavenAutomation?, String>((
       .firstOrNull;
 });
 
-/// Ein Raum auf Zuhause. [detailed]: Bild, Lichtknopf und Thermometer
-/// nebeneinander, darunter Szenen; sonst schmal für zwei je Zeile.
+/// Tabs rechts vom Raum.
+enum RoomTab { light, heat, motion }
+
+/// Ein Raum auf Zuhause. [detailed]: Bild und Tabs nebeneinander; sonst
+/// schmal (Bild, darunter Name und Lichtknopf) für zwei je Zeile.
 class RoomRow extends ConsumerStatefulWidget {
   const RoomRow({
     super.key,
@@ -98,7 +101,7 @@ class RoomRow extends ConsumerStatefulWidget {
   final String roomId;
   final bool detailed;
 
-  /// Mehr Platz (Desktop): größeres Bild und größerer Knopf.
+  /// Mehr Platz (Desktop): größeres Bild, breitere Tabs.
   final bool large;
 
   @override
@@ -113,6 +116,8 @@ class _RoomRowState extends ConsumerState<RoomRow> {
 
   /// Gehaltene Szene (Vorschau im Bild).
   RoomScene? _preview;
+
+  RoomTab _tab = RoomTab.light;
 
   String get roomId => widget.roomId;
 
@@ -139,9 +144,13 @@ class _RoomRowState extends ConsumerState<RoomRow> {
 
     final dim = _dim;
     final preview = _preview;
-    final temp = climate == null && view.temperature != null
-        ? '${num1(view.temperature!)}°'
-        : null;
+    final current = climate?.current ?? view.temperature;
+    // Ausführlich steht die Temperatur im Heizungs-Tab, sonst im Status.
+    final temp = current == null || (widget.detailed && climate != null)
+        ? null
+        : view.humidity == null || climate != null
+        ? '${num1(current)}°'
+        : '${num1(current)}° · ${view.humidity!.round()} %';
     final status = preview != null
         ? 'Vorschau: ${preview.name}'
         : view.lamps.isEmpty
@@ -223,7 +232,7 @@ class _RoomRowState extends ConsumerState<RoomRow> {
                   images: images,
                   dimPercent: dim,
                   preview: preview == null ? null : scenePreview(view, preview),
-                  alignY: widget.detailed ? 0 : -0.2,
+                  alignY: 0,
                   glow: hv.isDark ? 1 : 0.75,
                 )
               : _NoPicture(palette: palette),
@@ -233,42 +242,18 @@ class _RoomRowState extends ConsumerState<RoomRow> {
 
     final title = _Title(
       name: view.name,
-      status: status,
-      extra: temp == null
-          ? null
-          : view.humidity == null
-          ? temp
-          : '$temp · ${view.humidity!.round()} %',
+      status: temp == null ? status : '$status · $temp',
       onOpen: _open,
       large: widget.large,
     );
 
     if (!widget.detailed) {
-      // Kompakt: Bild mit Thermometer am Rand, darunter Name und Knopf.
+      // Kompakt: Bild, darunter Name und Lichtknopf.
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         mainAxisSize: MainAxisSize.min,
         children: [
-          SizedBox(
-            height: 124,
-            child: Stack(
-              clipBehavior: Clip.none,
-              children: [
-                Positioned.fill(
-                  right: climate == null ? 0 : ThermoEdge.width - 6,
-                  child: picture,
-                ),
-                if (climate != null)
-                  Positioned(
-                    right: -6,
-                    top: 0,
-                    bottom: 0,
-                    width: ThermoEdge.width,
-                    child: ThermoEdge(climate: climate, name: view.name),
-                  ),
-              ],
-            ),
-          ),
+          SizedBox(height: 120, child: picture),
           const SizedBox(height: 8),
           Row(
             children: [
@@ -289,47 +274,41 @@ class _RoomRowState extends ConsumerState<RoomRow> {
       );
     }
 
-    final h = widget.large ? 210.0 : 156.0;
-    final chips = <Widget>[
-      for (final s in view.room.scenes)
-        _SceneChip(
-          scene: s,
-          active: view.activeSceneId == s.id,
-          previewing: identical(preview, s),
-          onTap: () {
-            HapticFeedback.selectionClick();
-            repo.applyScene(roomId, s.id);
-          },
-          onHold: (on) {
-            if (on) Haptics.tick();
-            setState(() => _preview = on ? s : null);
-          },
-        ),
-      if (motion != null)
-        _MotionChip(
-          on: motion.enabled,
-          onTap: () async {
-            Haptics.tap();
-            try {
-              await ref
-                  .read(havenAutomationsProvider.notifier)
-                  .setEnabled(motion.id!, !motion.enabled);
-            } catch (e) {
-              if (context.mounted) {
-                ScaffoldMessenger.maybeOf(
-                  context,
-                )?.showSnackBar(SnackBar(content: Text('$e')));
-              }
-            }
-          },
-        ),
+    final tabs = [
+      if (view.lamps.isNotEmpty) RoomTab.light,
+      if (climate != null) RoomTab.heat,
+      if (motion != null) RoomTab.motion,
     ];
+    final tab = tabs.contains(_tab) ? _tab : (tabs.isEmpty ? null : tabs.first);
+    final h = widget.large ? 200.0 : 156.0;
+    final panelW = widget.large ? 250.0 : 152.0;
+
+    final Widget? panel = switch (tab) {
+      null => null,
+      RoomTab.light => _LightPanel(
+        view: view,
+        palette: palette,
+        preview: preview,
+        large: widget.large,
+        onToggle: toggle,
+        onScene: (s) {
+          HapticFeedback.selectionClick();
+          repo.applyScene(roomId, s.id);
+        },
+        onHold: (s) {
+          if (s != null) Haptics.tick();
+          setState(() => _preview = s);
+        },
+      ),
+      RoomTab.heat => TempStepper(climate: climate!, name: view.name),
+      RoomTab.motion => _MotionPanel(automation: motion!),
+    };
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       mainAxisSize: MainAxisSize.min,
       children: [
-        Padding(padding: const EdgeInsets.only(right: 4), child: title),
+        title,
         const SizedBox(height: 6),
         SizedBox(
           height: h,
@@ -337,45 +316,40 @@ class _RoomRowState extends ConsumerState<RoomRow> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Expanded(child: picture),
-              if (view.lamps.isNotEmpty) ...[
-                const SizedBox(width: 10),
-                Center(
-                  child: LightButton(
-                    palette: palette,
-                    on: view.anyOn,
-                    name: view.name,
-                    size: widget.large ? 84 : 68,
-                    brightness: view.anyOn ? view.brightness : null,
-                    onTap: toggle,
+              if (panel != null) ...[
+                const SizedBox(width: 12),
+                SizedBox(
+                  width: panelW,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      if (tabs.length > 1)
+                        _Tabs(
+                          tabs: tabs,
+                          selected: tab!,
+                          heating: climate?.heating ?? false,
+                          motionOn: motion?.enabled ?? false,
+                          onSelect: (t) {
+                            Haptics.tick();
+                            setState(() => _tab = t);
+                          },
+                        ),
+                      // Ohne Leiste derselbe Abstand: die Knöpfe aller
+                      // Räume stehen auf einer Höhe.
+                      SizedBox(height: tabs.length > 1 ? 10 : 44),
+                      Expanded(
+                        child: AnimatedSwitcher(
+                          duration: context.motion(HavenMotion.d2),
+                          child: KeyedSubtree(key: ValueKey(tab), child: panel),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ],
-              // Platz links vom Regler für den Zielwert. Auch ohne Regler
-              // frei: so stehen die Lichtknöpfe aller Räume untereinander.
-              SizedBox(
-                width: ThermoEdge.width + 58,
-                child: climate == null
-                    ? null
-                    : ThermoEdge(climate: climate, name: view.name),
-              ),
             ],
           ),
         ),
-        if (chips.isNotEmpty) ...[
-          const SizedBox(height: 10),
-          SizedBox(
-            height: 38,
-            child: HorizontalScroller(
-              builder: (context, controller) => ListView.separated(
-                controller: controller,
-                scrollDirection: Axis.horizontal,
-                itemCount: chips.length,
-                separatorBuilder: (_, _) => const SizedBox(width: 8),
-                itemBuilder: (_, i) => chips[i],
-              ),
-            ),
-          ),
-        ],
       ],
     );
   }
@@ -387,19 +361,17 @@ String _shortName(String lamp, String room) {
   return rest.isEmpty ? lamp : rest;
 }
 
-/// Name, Status und (ohne Thermometer) Temperatur; öffnet den Raum.
+/// Name und Status; öffnet den Raum.
 class _Title extends StatelessWidget {
   const _Title({
     required this.name,
     required this.status,
     required this.onOpen,
-    this.extra,
     this.large = false,
   });
 
   final String name;
   final String status;
-  final String? extra;
   final VoidCallback onOpen;
   final bool large;
 
@@ -419,45 +391,34 @@ class _Title extends StatelessWidget {
           child: GestureDetector(
             behavior: HitTestBehavior.opaque,
             onTap: onOpen,
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.center,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
               children: [
-                Flexible(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Flexible(
-                            child: Text(
-                              name,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: HavenText.headline.copyWith(
-                                color: hv.tx,
-                                fontSize: large ? 20 : 17,
-                              ),
-                            ),
-                          ),
-                          Icon(
-                            Icons.chevron_right_rounded,
-                            size: 20,
-                            color: hv.tx3,
-                          ),
-                        ],
-                      ),
-                      Text(
-                        extra == null ? status : '$status · $extra',
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Flexible(
+                      child: Text(
+                        name,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: HavenText.caption.copyWith(
-                          color: hv.tx2,
-                          fontSize: 12.5,
+                        style: HavenText.headline.copyWith(
+                          color: hv.tx,
+                          fontSize: large ? 20 : 17,
                         ),
                       ),
-                    ],
+                    ),
+                    Icon(Icons.chevron_right_rounded, size: 20, color: hv.tx3),
+                  ],
+                ),
+                Text(
+                  status,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: HavenText.caption.copyWith(
+                    color: hv.tx2,
+                    fontSize: 12.5,
                   ),
                 ),
               ],
@@ -465,6 +426,307 @@ class _Title extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// Tab-Leiste: nur Symbole, das gewählte hinterlegt. Heizung und Bewegung
+/// zeigen ihren Zustand in der Farbe des Symbols.
+class _Tabs extends StatelessWidget {
+  const _Tabs({
+    required this.tabs,
+    required this.selected,
+    required this.heating,
+    required this.motionOn,
+    required this.onSelect,
+  });
+
+  final List<RoomTab> tabs;
+  final RoomTab selected;
+  final bool heating;
+  final bool motionOn;
+  final ValueChanged<RoomTab> onSelect;
+
+  @override
+  Widget build(BuildContext context) {
+    final hv = context.hv;
+    return Container(
+      height: 34,
+      padding: const EdgeInsets.all(2),
+      decoration: BoxDecoration(
+        color: hv.s1.withValues(alpha: hv.isDark ? 0.55 : 0.75),
+        borderRadius: BorderRadius.circular(17),
+        border: Border.all(color: hv.ln),
+      ),
+      child: Row(
+        children: [
+          for (final t in tabs)
+            Expanded(
+              child: Semantics(
+                button: true,
+                selected: t == selected,
+                label: switch (t) {
+                  RoomTab.light => 'Licht',
+                  RoomTab.heat => 'Heizung',
+                  RoomTab.motion => 'Bewegung',
+                },
+                excludeSemantics: true,
+                onTap: () => onSelect(t),
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: () => onSelect(t),
+                  child: AnimatedContainer(
+                    duration: context.motion(HavenMotion.d2),
+                    decoration: BoxDecoration(
+                      color: t == selected ? hv.s2 : Colors.transparent,
+                      borderRadius: BorderRadius.circular(15),
+                    ),
+                    child: Icon(
+                      switch (t) {
+                        RoomTab.light => Icons.lightbulb_outline_rounded,
+                        RoomTab.heat => Icons.thermostat_rounded,
+                        RoomTab.motion => Icons.directions_walk_rounded,
+                      },
+                      size: 18,
+                      color: switch (t) {
+                        RoomTab.heat when heating => const Color(0xFFFF8A3D),
+                        RoomTab.motion when motionOn => hv.acc,
+                        _ => t == selected ? hv.tx : hv.tx3,
+                      },
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Licht-Tab: runder Knopf und die Szenen als Farbpunkte (Tippen ruft sie
+/// auf, Halten zeigt sie im Bild).
+class _LightPanel extends StatelessWidget {
+  const _LightPanel({
+    required this.view,
+    required this.palette,
+    required this.preview,
+    required this.large,
+    required this.onToggle,
+    required this.onScene,
+    required this.onHold,
+  });
+
+  final RoomView view;
+  final RoomPalette palette;
+  final RoomScene? preview;
+  final bool large;
+  final VoidCallback onToggle;
+  final ValueChanged<RoomScene> onScene;
+  final ValueChanged<RoomScene?> onHold;
+
+  @override
+  Widget build(BuildContext context) {
+    final scenes = view.room.scenes;
+    final button = LightButton(
+      palette: palette,
+      on: view.anyOn,
+      name: view.name,
+      size: large ? 84 : 64,
+      brightness: view.anyOn ? view.brightness : null,
+      onTap: onToggle,
+    );
+    if (scenes.isEmpty) return Center(child: button);
+    return Row(
+      children: [
+        button,
+        const SizedBox(width: 10),
+        Expanded(
+          child: LayoutBuilder(
+            builder: (context, c) {
+              const dot = 30.0, gap = 8.0;
+              final cols = ((c.maxWidth + gap) / (dot + gap)).floor().clamp(
+                1,
+                8,
+              );
+              return Center(
+                child: SingleChildScrollView(
+                  child: Wrap(
+                    spacing: gap,
+                    runSpacing: gap,
+                    children: [
+                      for (final s in scenes)
+                        SizedBox(
+                          width: dot,
+                          height: dot,
+                          child: _SceneDot(
+                            scene: s,
+                            active: view.activeSceneId == s.id,
+                            previewing: identical(preview, s),
+                            onTap: () => onScene(s),
+                            onHold: (on) => onHold(on ? s : null),
+                          ),
+                        ),
+                    ],
+                  ).withMaxWidth(cols * (dot + gap) - gap),
+                ),
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+extension on Widget {
+  Widget withMaxWidth(double w) => ConstrainedBox(
+    constraints: BoxConstraints(maxWidth: w),
+    child: this,
+  );
+}
+
+/// Szene als Farbpunkt. Aktiv: Ring; gehalten: größer.
+class _SceneDot extends StatelessWidget {
+  const _SceneDot({
+    required this.scene,
+    required this.active,
+    required this.previewing,
+    required this.onTap,
+    required this.onHold,
+  });
+
+  final RoomScene scene;
+  final bool active;
+  final bool previewing;
+  final VoidCallback onTap;
+  final ValueChanged<bool> onHold;
+
+  @override
+  Widget build(BuildContext context) {
+    final hv = context.hv;
+    final colors = scene.brightness <= 0
+        ? [colorOf(sceneOffColor), colorOf(sceneOffColor)]
+        : scene.kelvin != null
+        ? [
+            colorOf(kelvinToRgb(scene.kelvin!)),
+            colorOf(kelvinToRgb(scene.kelvin!)),
+          ]
+        : [for (final c in scene.colors) colorOf(c)];
+    return Semantics(
+      button: true,
+      selected: active,
+      label: 'Szene ${scene.name}',
+      onLongPressHint: 'Vorschau',
+      excludeSemantics: true,
+      onTap: onTap,
+      child: DesktopTooltip(
+        message: scene.name,
+        child: GestureDetector(
+          onLongPressStart: (_) => onHold(true),
+          onLongPressEnd: (_) => onHold(false),
+          onLongPressCancel: () => onHold(false),
+          child: PressScale(
+            onTap: onTap,
+            pressedScale: 0.88,
+            child: AnimatedScale(
+              scale: previewing ? 1.18 : 1,
+              duration: context.motion(HavenMotion.d2),
+              child: AnimatedContainer(
+                duration: context.motion(HavenMotion.d2),
+                padding: EdgeInsets.all(active ? 3 : 0),
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  border: active
+                      ? Border.all(color: hv.tx, width: 2)
+                      : Border.all(color: hv.ln),
+                ),
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    gradient: LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: colors.length == 1
+                          ? [colors.first, colors.first]
+                          : colors,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Bewegungs-Tab: Bewegungslicht an/aus und was es gerade tut.
+class _MotionPanel extends ConsumerWidget {
+  const _MotionPanel({required this.automation});
+  final HavenAutomation automation;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final hv = context.hv;
+    final on = automation.enabled;
+    final phase = automation.motionStatus?.phase;
+    final what = !on
+        ? 'Aus'
+        : switch (phase) {
+            MotionPhase.motion => 'Licht vom Melder',
+            MotionPhase.warn => 'Dimmt gleich aus',
+            MotionPhase.manual => 'Von Hand übernommen',
+            _ => 'Wartet auf Bewegung',
+          };
+    Future<void> set(bool v) async {
+      Haptics.tap();
+      try {
+        await ref
+            .read(havenAutomationsProvider.notifier)
+            .setEnabled(automation.id!, v);
+      } catch (e) {
+        if (context.mounted) {
+          ScaffoldMessenger.maybeOf(
+            context,
+          )?.showSnackBar(SnackBar(content: Text('$e')));
+        }
+      }
+    }
+
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Icon(
+              Icons.directions_walk_rounded,
+              size: 22,
+              color: on ? hv.acc : hv.tx3,
+            ),
+            const Spacer(),
+            HavenSwitch(
+              key: ValueKey('motion-${automation.id}'),
+              value: on,
+              onChanged: set,
+              semanticLabel: 'Bewegungslicht',
+            ),
+          ],
+        ),
+        const SizedBox(height: 4),
+        Text(
+          'Bewegungslicht',
+          style: HavenText.label.copyWith(color: hv.tx, fontSize: 14),
+        ),
+        Text(
+          what,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: HavenText.caption.copyWith(color: hv.tx2),
+        ),
+      ],
     );
   }
 }
@@ -581,153 +843,6 @@ class _NoPicture extends StatelessWidget {
             Icons.meeting_room_outlined,
             size: 34,
             color: hv.tx3.withValues(alpha: 0.6),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// Szene als Chip: Tippen ruft sie auf, Halten zeigt sie im Bild.
-class _SceneChip extends StatelessWidget {
-  const _SceneChip({
-    required this.scene,
-    required this.active,
-    required this.previewing,
-    required this.onTap,
-    required this.onHold,
-  });
-
-  final RoomScene scene;
-  final bool active;
-  final bool previewing;
-  final VoidCallback onTap;
-  final ValueChanged<bool> onHold;
-
-  @override
-  Widget build(BuildContext context) {
-    final hv = context.hv;
-    final colors = scene.brightness <= 0
-        ? [colorOf(sceneOffColor), colorOf(sceneOffColor)]
-        : scene.kelvin != null
-        ? [
-            colorOf(kelvinToRgb(scene.kelvin!)),
-            colorOf(kelvinToRgb(scene.kelvin!)),
-          ]
-        : [for (final c in scene.colors) colorOf(c)];
-    final lead = colors.first;
-    final strong = active || previewing;
-    return Semantics(
-      button: true,
-      selected: active,
-      label: 'Szene ${scene.name}',
-      onLongPressHint: 'Vorschau',
-      excludeSemantics: true,
-      onTap: onTap,
-      child: GestureDetector(
-        onLongPressStart: (_) => onHold(true),
-        onLongPressEnd: (_) => onHold(false),
-        onLongPressCancel: () => onHold(false),
-        child: PressScale(
-          onTap: onTap,
-          pressedScale: 0.94,
-          child: AnimatedContainer(
-            duration: context.motion(HavenMotion.d2),
-            padding: const EdgeInsets.fromLTRB(6, 0, 14, 0),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(19),
-              color: strong
-                  ? lead.withValues(alpha: hv.isDark ? 0.26 : 0.22)
-                  : hv.s1.withValues(alpha: hv.isDark ? 0.55 : 0.75),
-              border: Border.all(
-                color: strong ? lead.withValues(alpha: 0.85) : hv.ln,
-              ),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  width: 24,
-                  height: 24,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    gradient: LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      colors: colors.length == 1
-                          ? [colors.first, colors.first]
-                          : colors,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  scene.name,
-                  style: HavenText.label.copyWith(
-                    color: hv.tx,
-                    fontSize: 13,
-                    fontWeight: strong ? FontWeight.w700 : FontWeight.w600,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// Bewegungslicht des Raums an/aus.
-class _MotionChip extends StatelessWidget {
-  const _MotionChip({required this.on, required this.onTap});
-  final bool on;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final hv = context.hv;
-    return Semantics(
-      button: true,
-      toggled: on,
-      label: 'Bewegungslicht',
-      excludeSemantics: true,
-      onTap: onTap,
-      child: PressScale(
-        onTap: onTap,
-        pressedScale: 0.94,
-        child: AnimatedContainer(
-          duration: context.motion(HavenMotion.d2),
-          padding: const EdgeInsets.fromLTRB(10, 0, 14, 0),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(19),
-            color: on
-                ? hv.acc.withValues(alpha: hv.isDark ? 0.22 : 0.16)
-                : hv.s1.withValues(alpha: hv.isDark ? 0.55 : 0.75),
-            border: Border.all(
-              color: on ? hv.acc.withValues(alpha: 0.8) : hv.ln,
-            ),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                on
-                    ? Icons.directions_walk_rounded
-                    : Icons.do_not_disturb_on_outlined,
-                size: 18,
-                color: on ? hv.acc : hv.tx3,
-              ),
-              const SizedBox(width: 6),
-              Text(
-                on ? 'Bewegung an' : 'Bewegung aus',
-                style: HavenText.label.copyWith(
-                  color: on ? hv.tx : hv.tx2,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ],
           ),
         ),
       ),

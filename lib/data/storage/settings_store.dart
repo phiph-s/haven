@@ -68,6 +68,7 @@ class SettingsStore implements LocalPrefs {
   static const _kMap3dTransparentWalls = 'map_3d_transparent_walls';
   static const _kMap3dEnvironment = 'map_3d_environment';
   static const _kHomeRoomsDetailed = 'home_rooms_detailed';
+  static const _kMap3dLightReach = 'map_3d_light_reach';
   static const _kGhostIgnored = 'ghost_ignored';
   static const _kGhostHint = 'ghost_hint_dismissed';
 
@@ -190,6 +191,11 @@ class SettingsStore implements LocalPrefs {
   /// Umgebung der Karte: Sonne, Mond, Tageszeit und Wetter.
   bool get map3dEnvironment => _p.getBool(_kMap3dEnvironment) ?? true;
   Future<void> setMap3dEnvironment(bool v) => _p.setBool(_kMap3dEnvironment, v);
+
+  /// Wie weit Lampenlicht in der 3D-Karte reicht (`doors`, `open`, `room`).
+  String? get map3dLightReach => _p.getString(_kMap3dLightReach);
+  Future<void> setMap3dLightReach(String v) =>
+      _p.setString(_kMap3dLightReach, v);
 
   /// Räume auf Zuhause (Handy): ausführlich (einer je Zeile, mit Szenen)
   /// oder kompakt (zwei je Zeile).

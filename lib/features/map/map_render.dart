@@ -94,12 +94,21 @@ typedef MapRenderProgress = ({
 
 /// Rendert alle Perspektiven zu [plan] und lädt sie hoch.
 class MapRenderJob {
-  MapRenderJob(this.repo, this.plan, {List<h3.LayerView>? views})
-    : views = views ?? mapLayerViews(plan);
+  MapRenderJob(
+    this.repo,
+    this.plan, {
+    List<h3.LayerView>? views,
+    this.reach = h3.LightReach.doors,
+  }) : views = views ?? mapLayerViews(plan);
 
   final HavenRepository repo;
   final HavenFloorPlan plan;
   final List<h3.LayerView> views;
+
+  /// Reichweite des Lichts wie in der Karte dieses Geräts. Nicht im
+  /// Schlüssel: Geräte mit anderer Einstellung sollen nicht abwechselnd
+  /// neu rendern.
+  final h3.LightReach reach;
 
   late final String key = mapRenderKey(plan, views);
   h3.LayerRenderer? _renderer;
@@ -118,6 +127,7 @@ class MapRenderJob {
     final renderer = _renderer = h3.LayerRenderer(
       sceneOfPlan(plan),
       quality: h3.SceneQuality.high,
+      reach: reach,
     );
     final sets = await renderer.render(
       views,
@@ -215,7 +225,12 @@ class _MapRenderGateState extends ConsumerState<MapRenderGate> {
       ref.read(mapRenderHandledProvider.notifier).add(key);
       await showMapRenderDialog(
         context,
-        MapRenderJob(repo, plan, views: views),
+        MapRenderJob(
+          repo,
+          plan,
+          views: views,
+          reach: ref.read(map3dSettingsProvider).lightReach,
+        ),
       );
     } catch (e) {
       // Kein Admin, keine Verbindung: diesmal nicht.

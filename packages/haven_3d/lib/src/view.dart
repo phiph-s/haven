@@ -92,7 +92,7 @@ class SceneController extends ChangeNotifier {
 
   (Scene, double, double)? _fittedKey;
   Scene? _fitted;
-  (Scene, double, double, SceneQuality)? _gpuKey;
+  (Scene, double, double, SceneQuality, LightReach)? _gpuKey;
   GpuScene? _gpu;
 
   Scene _fittedFor(Scene scene, SceneStyle style) {
@@ -113,7 +113,12 @@ class SceneController extends ChangeNotifier {
   int _buildToken = 0;
   bool _disposed = false;
 
-  GpuScene _makeGpu(Scene scene, SceneStyle style, SceneQuality quality) {
+  GpuScene _makeGpu(
+    Scene scene,
+    SceneStyle style,
+    SceneQuality quality,
+    LightReach reach,
+  ) {
     final g = GpuScene(
       _fittedFor(scene, style),
       style,
@@ -121,6 +126,7 @@ class SceneController extends ChangeNotifier {
       open: _open,
       sun: _sun,
       deferBake: true,
+      reach: reach,
     );
     _applyStates(g);
     return g;
@@ -147,9 +153,10 @@ class SceneController extends ChangeNotifier {
     Scene scene,
     SceneStyle style,
     SceneQuality quality, {
+    LightReach reach = LightReach.doors,
     bool background = false,
   }) {
-    final key = (scene, style.roomGap, style.roomRadius, quality);
+    final key = (scene, style.roomGap, style.roomRadius, quality, reach);
     if (_gpuKey == key && _gpu != null) {
       _gpu!.restyle(style);
       return _gpu;
@@ -158,7 +165,7 @@ class SceneController extends ChangeNotifier {
       _buildingKey = null;
       _buildToken++;
       _gpuKey = key;
-      final g = _gpu = _makeGpu(scene, style, quality);
+      final g = _gpu = _makeGpu(scene, style, quality, reach);
       g.bakeInBackground().then((_) {
         if (!_disposed) notifyListeners();
       });
@@ -171,7 +178,7 @@ class SceneController extends ChangeNotifier {
     _gpuKey = null;
     Future<void> build() async {
       if (token != _buildToken || _disposed) return;
-      final g = _makeGpu(scene, style, quality);
+      final g = _makeGpu(scene, style, quality, reach);
       await g.bakeInBackground();
       if (token != _buildToken || _disposed) return;
       _applyStates(g);
@@ -186,6 +193,22 @@ class SceneController extends ChangeNotifier {
       ..addPostFrameCallback((_) => Timer.run(build))
       ..scheduleFrame();
     return null;
+  }
+
+  /// Szene schon vorab aufbauen und backen (etwa beim Start der App), ohne
+  /// dass ein [Scene3DView] sie zeigt. Erscheint die Karte später mit
+  /// derselben Szene, Qualität und Reichweite, steht sie sofort.
+  Future<void> prepare(
+    Scene scene,
+    SceneStyle style,
+    SceneQuality quality, {
+    LightReach reach = LightReach.doors,
+  }) async {
+    if (!await Scene3DSupport.available()) return;
+    await fs.Scene.initializeStaticResources();
+    // Eine sichtbare Karte baut selbst.
+    if (_disposed || _view != null) return;
+    _gpuFor(scene, style, quality, reach: reach, background: true);
   }
 
   @override
@@ -423,6 +446,7 @@ class Scene3DView extends StatefulWidget {
     this.raisedRooms,
     this.stretchDuration = const Duration(milliseconds: 700),
     this.quality = SceneQuality.high,
+    this.lightReach = LightReach.doors,
     this.showStats = false,
     this.selectedRoomId,
     this.heatmap,
@@ -461,6 +485,9 @@ class Scene3DView extends StatefulWidget {
 
   /// Qualitätsstufe (siehe [SceneQuality]). Ein Wechsel baut die Szene neu.
   final SceneQuality quality;
+
+  /// Wie weit Lampenlicht reicht (weniger: schneller fertig gebaken).
+  final LightReach lightReach;
 
   /// Bildrate und Renderzeiten oben links einblenden.
   final bool showStats;
@@ -569,6 +596,7 @@ class _Scene3DViewState extends State<Scene3DView>
           widget.scene,
           widget.style,
           widget.quality,
+          reach: widget.lightReach,
           background:
               widget.placeholder != null && widget.buildBehindPlaceholder,
         )
@@ -835,14 +863,21 @@ class _Scene3DViewState extends State<Scene3DView>
     final delta = d.localFocalPoint - _startFocal;
     final keys = HardwareKeyboard.instance;
     if (d.pointerCount > 1) {
-      // Um den Mittelpunkt der Finger zoomen, mitschieben, geneigt drehen.
+      // Um den Mittelpunkt der Finger zoomen, mitschieben und drehen.
       final scale = (s.scale * d.scale).clamp(4.0, 600.0);
       final k = scale / s.scale;
       final mid = _size.center(Offset.zero);
+      var rel = (_startFocal - mid - s.pan) * k;
+      if (s.pitch < 0.05) {
+        // Draufsicht: das Bild dreht sich um die Kamera-Mitte; so
+        // verschieben, dass der Punkt unter den Fingern bleibt.
+        final c = math.cos(d.rotation), si = math.sin(d.rotation);
+        rel = Offset(rel.dx * c - rel.dy * si, rel.dx * si + rel.dy * c);
+      }
       _c.camera = s.copyWith(
         scale: scale,
-        pan: d.localFocalPoint - mid - (_startFocal - mid - s.pan) * k,
-        yaw: s.pitch > 0.05 ? s.yaw + d.rotation : null,
+        pan: d.localFocalPoint - mid - rel,
+        yaw: s.yaw + d.rotation,
       );
       return;
     }

@@ -1,5 +1,3 @@
-import 'dart:ui' show SemanticsAction, SemanticsActionEvent;
-
 import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -21,9 +19,9 @@ void main() {
         home: Scaffold(
           body: Center(
             child: SizedBox(
-              width: ThermoEdge.width,
-              height: 176,
-              child: ThermoEdge(
+              width: 152,
+              height: 112,
+              child: TempStepper(
                 name: 'Salon',
                 climate: TileClimate(
                   current: 19.5,
@@ -47,58 +45,47 @@ void main() {
     return sent;
   }
 
-  testWidgets('Zeigt Ist und Ziel, Ziehen nach oben erhöht in halben Grad', (
-    tester,
-  ) async {
+  testWidgets(
+    'Plus und Minus ändern das Ziel in halben Grad, gesendet wird, wenn die '
+    'Bedienung ruht',
+    (tester) async {
+      final sent = await pump(tester);
+      expect(find.text('19,5°'), findsOneWidget);
+      expect(find.text('20,0°'), findsOneWidget);
+      await tester.tap(find.bySemanticsLabel('Wärmer'));
+      await tester.tap(find.bySemanticsLabel('Wärmer'));
+      await tester.tap(find.bySemanticsLabel('Kälter'));
+      await tester.pump();
+      expect(find.text('20,5°'), findsOneWidget);
+      expect(sent, isEmpty);
+      await tester.pump(const Duration(milliseconds: 800));
+      expect(sent, [20.5]);
+      await tester.pump(const Duration(seconds: 7));
+    },
+  );
+
+  testWidgets('Senkrecht wischen verstellt nichts (Scrollen)', (tester) async {
     final sent = await pump(tester);
-    expect(find.text('19,5'), findsOneWidget);
+    await tester.drag(find.byType(TempStepper), const Offset(0, -60));
+    await tester.pump(const Duration(seconds: 1));
     expect(find.text('20,0°'), findsOneWidget);
-    // Skala 15–26 °C: ein halbes Grad je (176 - 18) / 22 ≈ 7,2 px.
-    await tester.drag(find.byType(ThermoEdge), const Offset(0, -30));
-    await tester.pump(const Duration(milliseconds: 10));
-    expect(sent, hasLength(1));
-    expect(sent.single, greaterThan(20));
-    expect(sent.single * 2, (sent.single * 2).roundToDouble());
-    expect(
-      find.text('${sent.single.toStringAsFixed(1).replaceAll('.', ',')}°'),
-      findsOneWidget,
-    );
+    expect(sent, isEmpty);
   });
 
   testWidgets('Mausrad: ein halbes Grad je Raststufe, nach oben wärmer', (
     tester,
   ) async {
     final sent = await pump(tester);
-    final center = tester.getCenter(find.byType(ThermoEdge));
+    final center = tester.getCenter(find.byType(TempStepper));
     final pointer = TestPointer(1, PointerDeviceKind.mouse);
     await tester.sendEventToBinding(pointer.hover(center));
     await tester.sendEventToBinding(pointer.scroll(const Offset(0, -40)));
     await tester.sendEventToBinding(pointer.scroll(const Offset(0, -40)));
     await tester.pump();
     expect(find.text('21,0°'), findsOneWidget);
-    // Gesendet wird erst, wenn das Rad ruht.
     expect(sent, isEmpty);
-    await tester.pump(const Duration(milliseconds: 700));
+    await tester.pump(const Duration(milliseconds: 800));
     expect(sent, [21.0]);
-  });
-
-  testWidgets('Bedienhilfe: Schieberegler mit Erhöhen und Verringern', (
-    tester,
-  ) async {
-    final handle = tester.ensureSemantics();
-    final sent = await pump(tester, target: 21);
-    final node = tester.getSemantics(find.byType(ThermoEdge));
-    expect(node.label, contains('Zieltemperatur Salon'));
-    expect(node.value, '21,0 Grad');
-    tester.binding.performSemanticsAction(
-      SemanticsActionEvent(
-        type: SemanticsAction.increase,
-        nodeId: node.id,
-        viewId: tester.view.viewId,
-      ),
-    );
-    await tester.pump(const Duration(milliseconds: 10));
-    expect(sent, [21.5]);
-    handle.dispose();
+    await tester.pump(const Duration(seconds: 7));
   });
 }

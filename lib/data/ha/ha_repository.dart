@@ -105,6 +105,7 @@ class HaRepository extends BaseRepository {
       _push();
     });
     _connSub = client.onConnected.listen((_) => _load());
+
     publish(const HavenSnapshot());
     // Beim Start im Hintergrund: Fehler zeigt der Status, kein Wurf.
     await client.start(failFast: failFast);
@@ -1010,7 +1011,13 @@ class HaRepository extends BaseRepository {
 
   // ---- Bilder der Wohnung (haven/render/*) ---------------------------------
   @override
+  void nudgeConnection() => client.nudge();
+
+  @override
   Future<RenderStatus?> renderStatus() async {
+    // Der Client meldet „verbunden“ schon vor `haven/info` (siehe _load):
+    // dann die Fähigkeiten hier holen, sonst gäbe es „keine Bilder“.
+    if (_features.isEmpty) await _loadInfo();
     if (!_features.contains('render')) return null;
     return _render.status(files: _features.contains('render_files'));
   }

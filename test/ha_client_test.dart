@@ -188,6 +188,72 @@ void main() {
       await c.close();
     });
 
+    test(
+      'nudge: tote Verbindung (kein Pong) wird sofort neu aufgebaut',
+      () async {
+        final channels = <FakeChannel>[];
+        final c = _client(channels);
+        await c.start();
+        // Der Server antwortet nicht mehr (Handy war im Hintergrund).
+        c.nudge(wait: const Duration(milliseconds: 20));
+        await Future<void>.delayed(Duration.zero);
+        expect(channels.single.server.received.last['type'], 'ping');
+        await _until(() => channels.length == 2 && c.isConnected);
+        await c.close();
+      },
+    );
+
+    test('nudge: Pong hält die Verbindung', () async {
+      final channels = <FakeChannel>[];
+      final c = _client(
+        channels,
+        onOpen: (ch) => ch.server.onMessage = (srv, m) {
+          if (m['type'] == 'ping') srv.send({'id': m['id'], 'type': 'pong'});
+        },
+      );
+      await c.start();
+      c.nudge(wait: const Duration(milliseconds: 20));
+      await Future<void>.delayed(const Duration(milliseconds: 60));
+      expect(channels, hasLength(1));
+      expect(c.isConnected, isTrue);
+      await c.close();
+    });
+
+    test(
+      'nudge: lange Wartezeit vor dem nächsten Versuch endet sofort',
+      () async {
+        final channels = <FakeChannel>[];
+        var refuse = true;
+        final c = HaClient(
+          url: 'http://ha.local:8123',
+          token: 'geheim',
+          minBackoff: const Duration(minutes: 5),
+          maxBackoff: const Duration(minutes: 5),
+          pingInterval: const Duration(minutes: 5),
+          channelFactory: (uri) {
+            final ch = FakeChannel();
+            channels.add(ch);
+            scheduleMicrotask(() {
+              // Erst nicht erreichbar (Verbindung geht gleich zu).
+              if (refuse) {
+                ch.server.close();
+              } else {
+                ch.server.greet();
+              }
+            });
+            return ch;
+          },
+        );
+        unawaited(c.start().catchError((_) {}));
+        await _until(() => c.status == ConnectionStatus.reconnecting);
+        refuse = false;
+        c.nudge();
+        await _until(() => c.isConnected);
+        expect(channels, hasLength(2));
+        await c.close();
+      },
+    );
+
     test('Senden ohne Verbindung scheitert sofort', () async {
       final c = HaClient(url: 'x', token: 't');
       await expectLater(

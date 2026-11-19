@@ -1,11 +1,16 @@
+import 'dart:async';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_scene/scene.dart' as fs;
+// ignore: implementation_imports
+import 'package:flutter_scene/src/render/frame_transients.dart'
+    show rendererSubmissions;
 
 import 'camera.dart';
 import 'gpu_scene.dart';
+import 'picking.dart' show convexHull;
 import 'quality.dart';
 import 'scene.dart';
 import 'style.dart';
@@ -27,7 +32,7 @@ const int kLayerFormat = 1;
 
 /// Aussehen der Bilder (Nachbarräume, Stil …): eine neue Nummer lässt die
 /// Apps neu rendern, ohne das Format für den Server zu ändern.
-const int kLayerLook = 3;
+const int kLayerLook = 4;
 
 /// Standard-Helligkeit der Lampen in den Ebenen: bei voller Helligkeit
 /// brennen Lichtflecke aus (Weiß lässt sich nicht zurückrechnen), zu wenig
@@ -103,7 +108,8 @@ class LayerTheme {
     this.exposure = 1,
     this.gain = kLayerGain,
     this.contextTint = const ui.Color(0xFF000000),
-    this.contextFade = 0.5,
+    this.contextFade = 0.45,
+    this.contextAlpha = 0.6,
   });
 
   final String id;
@@ -117,19 +123,21 @@ class LayerTheme {
   /// Belichtung höher, damit das Licht genug 8-Bit-Stufen behält.
   final double gain;
 
-  /// Verbundene Räume in Raumbildern: ohne Licht und Schattierung, um
-  /// [contextFade] (0 … 1) zu [contextTint] hin getönt (dunkles Design
-  /// dunkler, helles heller), damit der Raum selbst vorne steht.
+  /// Offen verbundene Räume in Raumbildern: ohne Licht und Schattierung,
+  /// um [contextFade] (0 … 1) zu [contextTint] hin getönt (dunkler) und
+  /// halb durchsichtig ([contextAlpha]), zum Rand hin ausgeblendet. So steht
+  /// der Raum selbst vorne.
   final ui.Color contextTint;
   final double contextFade;
+  final double contextAlpha;
 
   static final light = LayerTheme(
     'light',
     opaque(SceneStyle.light()),
     exposure: 0.5,
     gain: 0.5,
-    contextTint: const ui.Color(0xFFFFFFFF),
-    contextFade: 0.45,
+    contextFade: 0.3,
+    contextAlpha: 0.65,
   );
   // Dunkel wie die Karte im dunklen Design ohne Himmel.
   static final dark = LayerTheme('dark', opaque(SceneStyle.evening()));
@@ -231,11 +239,15 @@ class LayerRenderer {
   LayerRenderer(
     this.scene, {
     this.quality = SceneQuality.high,
+    this.reach = LightReach.doors,
     List<LayerTheme>? themes,
   }) : themes = themes ?? [LayerTheme.light, LayerTheme.dark];
 
   final Scene scene;
   final SceneQuality quality;
+
+  /// Wie weit Lampenlicht reicht (wie in der Karte).
+  final LightReach reach;
   final List<LayerTheme> themes;
 
   bool _cancelled = false;
@@ -260,24 +272,20 @@ class LayerRenderer {
   List<String> lampsFor(LayerView v) {
     final room = v.roomId;
     if (room == null) return _allLamps;
-    final zone = _fitted.lightZones[room];
+    final zones = _fitted.bakeZones(reach);
+    final zone = zones[room];
     return [
       for (final id in _allLamps)
         if (_fitted.markerRoom[id] case final r?)
-          if (r == room || (zone != null && _fitted.lightZones[r] == zone)) id,
+          if (r == room || (zone != null && zones[r] == zone)) id,
     ];
   }
 
-  /// Verbundene Räume einer Raumperspektive (Tür oder offene Wand, wie
-  /// die Lichtzonen); in der Übersicht keine.
+  /// Räume, die eine offene Wand mit dem Raum der Perspektive verbindet
+  /// (nicht über Türen); in der Übersicht keine.
   Set<String> neighboursFor(LayerView v) {
     final room = v.roomId;
-    final zone = room == null ? null : _fitted.lightZones[room];
-    if (zone == null) return const {};
-    return {
-      for (final r in _fitted.rooms)
-        if (r.id != room && _fitted.lightZones[r.id] == zone) r.id,
-    };
+    return room == null ? const {} : _fitted.openNeighbours(room);
   }
 
   /// Räume mit Lampen in [v], deren Möbellinien ausblenden können.
@@ -317,6 +325,7 @@ class LayerRenderer {
       themes.first.style,
       quality: quality,
       deferBake: true,
+      reach: reach,
     )..instantLight = true;
     // Immer neu rendern: sonst zeigt flutter_scene das vorige Bild, solange
     // die GPU noch an einem arbeitet (Bildrate der Karte, hier schädlich).
@@ -407,14 +416,28 @@ class LayerRenderer {
       viewport: ui.Offset.zero & size,
       pixelRatio: 1,
     );
+    await gpuIdle();
     final pic = rec.endRecording();
     final raw = await pic.toImage(v.width, v.height);
     pic.dispose();
     // Zur Tönung hin mischen (auf nicht vormultiplizierten Farben).
     final f = theme.contextFade.clamp(0.0, 1.0), k = 1 - f;
     final t = theme.contextTint;
+    final hull = convexHull([
+      for (final p in fitted.points(roomId: v.roomId))
+        cam.project(p, size).offset,
+    ]);
+    final bounds = ui.Offset.zero & size;
+    final reach = 0.3 * size.shortestSide;
+    final border = 0.08 * size.shortestSide;
+    final white = const ui.Color(0xFFFFFFFF);
+    // Alles auf der GPU: aus Rohpixeln gebaute Bilder kamen auf manchen
+    // Handys (Mali, Vulkan) mit Speichermüll an.
     final rec2 = ui.PictureRecorder();
-    ui.Canvas(rec2).drawImage(
+    final c = ui.Canvas(rec2);
+    c.saveLayer(bounds, ui.Paint());
+    // Zur Tönung hin mischen (nicht vormultipliziert) und halb durchsichtig.
+    c.drawImage(
       raw,
       ui.Offset.zero,
       ui.Paint()
@@ -423,9 +446,41 @@ class LayerRenderer {
           k, 0, 0, 0, 255 * t.r * f, //
           0, k, 0, 0, 255 * t.g * f,
           0, 0, k, 0, 255 * t.b * f,
-          0, 0, 0, 1, 0,
+          0, 0, 0, theme.contextAlpha, 0,
         ]),
     );
+    // Weg vom Raum ausblenden: Umriss samt Rand, weich.
+    if (hull.length >= 3) {
+      final path = ui.Path()..addPolygon(hull, true);
+      final blur = ui.MaskFilter.blur(ui.BlurStyle.normal, reach * 0.35);
+      c.saveLayer(bounds, ui.Paint()..blendMode = ui.BlendMode.dstIn);
+      c.drawPath(
+        path,
+        ui.Paint()
+          ..color = white
+          ..maskFilter = blur,
+      );
+      c.drawPath(
+        path,
+        ui.Paint()
+          ..color = white
+          ..style = ui.PaintingStyle.stroke
+          ..strokeWidth = reach * 0.6
+          ..strokeJoin = ui.StrokeJoin.round
+          ..maskFilter = blur,
+      );
+      c.restore();
+    }
+    // Zum Bildrand hin ausblenden.
+    c.saveLayer(bounds, ui.Paint()..blendMode = ui.BlendMode.dstIn);
+    c.drawRect(
+      bounds.deflate(border * 0.8),
+      ui.Paint()
+        ..color = white
+        ..maskFilter = ui.MaskFilter.blur(ui.BlurStyle.normal, border * 0.4),
+    );
+    c.restore();
+    c.restore();
     final pic2 = rec2.endRecording();
     final img = await pic2.toImage(v.width, v.height);
     pic2.dispose();
@@ -477,6 +532,7 @@ class LayerRenderer {
         viewport: ui.Offset.zero & size,
         pixelRatio: 1,
       );
+      await gpuIdle();
       final pic = rec.endRecording();
       final img = await pic.toImage(v.width, v.height);
       pic.dispose();
@@ -621,4 +677,26 @@ class LayerCancelled implements Exception {
     }
   }
   return x1 < 0 ? null : (x0, y0, x1, y1);
+}
+
+/// Wartet, bis die GPU alle bisher abgeschickte Arbeit von flutter_scene
+/// erledigt hat. Erst danach ist ein Bild sicher fertig: Auf Kachel-GPUs
+/// (Mali, Vulkan) las `toImage` sonst halb gerenderte Bilder, mit
+/// versetzten Kacheln voller Bruchstücke.
+Future<void> gpuIdle({Duration limit = const Duration(seconds: 5)}) async {
+  final t = rendererSubmissions;
+  final target = t.latestSubmission;
+  if (t.completedThrough >= target) return;
+  final done = Completer<void>();
+  void check() {
+    if (t.completedThrough >= target && !done.isCompleted) done.complete();
+  }
+
+  t.addCompletionListener(check);
+  check();
+  try {
+    await done.future.timeout(limit, onTimeout: () {});
+  } finally {
+    t.removeCompletionListener(check);
+  }
 }

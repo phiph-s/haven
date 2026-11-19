@@ -11,6 +11,20 @@ import 'shape.dart';
 /// Standardhöhe der Wände in Metern.
 const double kDefaultWallHeight = 2.5;
 
+/// Wie weit Lampenlicht in andere Räume reicht. Weniger Reichweite heißt
+/// kleinere Lichtzonen und damit deutlich weniger Baking (jede Lampe auf
+/// jede Fläche ihrer Zone).
+enum LightReach {
+  /// Durch Türen (gebaken) und offene Wände.
+  doors,
+
+  /// Nur durch offene Wände.
+  open,
+
+  /// Nur im eigenen Raum.
+  room,
+}
+
 /// Ein Raum: Grundriss-Polygon in Metern (Ecken in Reihenfolge), Wände bis
 /// [wallHeight].
 @immutable
@@ -572,6 +586,44 @@ class Scene {
   /// nur gebaken (Böden, Oberseiten); in Echtzeit ginge es ohne Schatten
   /// durch die Wände.
   late final Map<String, String> openZones = _zones(doors: false);
+
+  /// Räume, die direkt eine offene Wand mit [roomId] teilen (eine offene
+  /// Kante des einen liegt auf einer Kante des anderen).
+  Set<String> openNeighbours(String roomId) {
+    final me = room(roomId);
+    if (me == null) return const {};
+    bool opensTo(SceneRoom a, SceneRoom b) {
+      final n = a.outline.length, m = b.outline.length;
+      for (final i in a.openEdges) {
+        if (i >= n) continue;
+        final a0 = a.outline[i], a1 = a.outline[(i + 1) % n];
+        for (var j = 0; j < m; j++) {
+          if (_overlap(a0, a1, b.outline[j], b.outline[(j + 1) % m]) > 0.05) {
+            return true;
+          }
+        }
+      }
+      return false;
+    }
+
+    return {
+      for (final r in rooms)
+        if (r.id != roomId && (opensTo(me, r) || opensTo(r, me))) r.id,
+    };
+  }
+
+  /// Zonen fürs gebakene Licht bei [reach] (Raum → Zone).
+  Map<String, String> bakeZones(LightReach reach) => switch (reach) {
+    LightReach.doors => lightZones,
+    LightReach.open => openZones,
+    LightReach.room => {for (final r in rooms) r.id: r.id},
+  };
+
+  /// Zonen fürs Echtzeitlicht bei [reach]: offene Wände, nur im Raum
+  /// jeder für sich.
+  Map<String, String> liveZones(LightReach reach) => reach == LightReach.room
+      ? {for (final r in rooms) r.id: r.id}
+      : openZones;
 
   Map<String, String> _zones({bool doors = true}) {
     final parent = {for (final r in rooms) r.id: r.id};

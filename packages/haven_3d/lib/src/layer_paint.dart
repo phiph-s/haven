@@ -193,36 +193,36 @@ class LayerImages {
     return img;
   }
 
-  /// [base] mit dem Raumausschnitt [patch] bei [box], nur wo er sich vom
-  /// Grundbild unterscheidet (wie beim Server). Vormultipliziert gelesen:
-  /// so erwartet `ImageDescriptor.raw` die Pixel.
+  /// [base] mit dem Raumausschnitt [patch] bei [box] (wie beim Server).
+  /// Auf der GPU gezeichnet: aus Rohpixeln gebaute Bilder kamen auf manchen
+  /// Handys (Mali, Vulkan) mit Speichermüll an.
   static Future<ui.Image> _withPatch(
     ui.Image base,
     ui.Image patch,
     Map<dynamic, dynamic> box,
   ) async {
-    final b = (await base.toByteData(
-      format: ui.ImageByteFormat.rawRgba,
-    ))!.buffer.asUint8List();
-    final p = (await patch.toByteData(
-      format: ui.ImageByteFormat.rawRgba,
-    ))!.buffer.asUint8List();
+    final rec = ui.PictureRecorder();
+    final c = ui.Canvas(rec);
+    final none = ui.Paint()
+      ..blendMode = ui.BlendMode.src
+      ..filterQuality = ui.FilterQuality.none;
+    c.drawImage(base, ui.Offset.zero, none);
+    c.drawImageRect(
+      patch,
+      ui.Rect.fromLTWH(0, 0, patch.width.toDouble(), patch.height.toDouble()),
+      ui.Rect.fromLTWH(
+        (box['x'] as num).toDouble(),
+        (box['y'] as num).toDouble(),
+        patch.width.toDouble(),
+        patch.height.toDouble(),
+      ),
+      none,
+    );
+    final pic = rec.endRecording();
+    final img = await pic.toImage(base.width, base.height);
+    pic.dispose();
     patch.dispose();
-    final out = Uint8List.fromList(b);
-    final x0 = (box['x'] as num).toInt(), y0 = (box['y'] as num).toInt();
-    final pw = (box['w'] as num).toInt(), ph = (box['h'] as num).toInt();
-    for (var y = 0; y < ph; y++) {
-      for (var x = 0; x < pw; x++) {
-        final s = (y * pw + x) * 4, t = ((y0 + y) * base.width + x0 + x) * 4;
-        if (p[s] != b[t] ||
-            p[s + 1] != b[t + 1] ||
-            p[s + 2] != b[t + 2] ||
-            p[s + 3] != b[t + 3]) {
-          out.setRange(t, t + 4, p, s);
-        }
-      }
-    }
-    return _fromPixels(out, base.width, base.height);
+    return img;
   }
 }
 

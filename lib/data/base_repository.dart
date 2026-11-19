@@ -24,6 +24,9 @@ abstract class BaseRepository implements HavenRepository {
 
   bool get disposed => _disposed;
 
+  @override
+  void nudgeConnection() {}
+
   // ---- Gesperrte Geräte („immer an“) -----------------------------------
 
   /// Wirft, wenn [id] (Entity oder IEEE) gesperrt ist.

@@ -76,7 +76,14 @@ class _MapRenderSettingsRowState extends ConsumerState<MapRenderSettingsRow> {
             title: 'Bilder für Widgets',
             subtitle: subtitle,
             onTap: () async {
-              await showMapRenderDialog(context, MapRenderJob(repo, plan));
+              await showMapRenderDialog(
+                context,
+                MapRenderJob(
+                  repo,
+                  plan,
+                  reach: ref.read(map3dSettingsProvider).lightReach,
+                ),
+              );
               await _load();
             },
           ),

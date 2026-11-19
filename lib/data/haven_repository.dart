@@ -99,6 +99,10 @@ abstract class HavenRepository
   /// Lädt Zustände und Räume neu (Ziehen zum Aktualisieren).
   Future<void> refresh();
 
+  /// Die App ist wieder vorne: Verbindung prüfen bzw. sofort neu aufbauen,
+  /// statt die Wartezeit bis zum nächsten Versuch abzusitzen.
+  void nudgeConnection();
+
   /// Beliebiger Dienstaufruf (`call_service`), z. B. `switch.toggle`.
   Future<void> callService(
     String domain,

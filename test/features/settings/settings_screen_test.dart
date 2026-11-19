@@ -169,7 +169,10 @@ void main() {
       200,
       scrollable: find.byType(Scrollable).first,
     );
-    expect(find.text('Deckende Wände, mit Umgebung'), findsOneWidget);
+    expect(
+      find.text('Deckende Wände, mit Umgebung, volles Licht'),
+      findsOneWidget,
+    );
     await tester.tap(find.text('Erweiterte Render-Einstellungen'));
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('render-transparent-walls')));
@@ -178,10 +181,19 @@ void main() {
     await tester.pumpAndSettle();
     expect(store.map3dTransparentWalls, isTrue);
     expect(store.map3dEnvironment, isFalse);
+    // Licht nur im Raum: weniger Baking.
+    await tester.ensureVisible(find.byKey(const ValueKey('light-reach-room')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('light-reach-room')));
+    await tester.pumpAndSettle();
+    expect(store.map3dLightReach, 'room');
     // Blatt schließen: Ohne Umgebung kein Abschnitt „Wetter“.
     await tester.tapAt(const Offset(200, 60));
     await tester.pumpAndSettle();
-    expect(find.text('Durchsichtige Wände, ohne Umgebung'), findsOneWidget);
+    expect(
+      find.text('Durchsichtige Wände, ohne Umgebung, Licht je Raum'),
+      findsOneWidget,
+    );
     expect(find.text('Außentemperatur', skipOffstage: false), findsNothing);
   });
 }
