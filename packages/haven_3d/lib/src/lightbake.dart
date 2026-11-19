@@ -154,6 +154,7 @@ Float32List bakeLamp(
   int samples = 7,
   Float32List? unshadowed,
   double? cone,
+  double softness = kConeSoftness,
   V3 axis = const V3(0, 0, -1),
 }) {
   final pts = [
@@ -184,7 +185,7 @@ Float32List bakeLamp(
           .toDouble();
       var e = cos / d2 * win;
       // Lichtkegel entlang [axis] (Spot, Pendel): weich zum Rand.
-      if (cone != null) e *= coneFactor(-l.dot(axis) / d, cone);
+      if (cone != null) e *= coneFactor(-l.dot(axis) / d, cone, softness);
       if (e <= 0) continue;
       unshadowed?[iy * r.width + ix] = e;
       if (inside) {
@@ -353,6 +354,7 @@ final class LampBakeTask extends BakeTask {
     required this.position,
     required this.axis,
     required this.cone,
+    this.softness = kConeSoftness,
     required this.gain,
     required this.own,
     required this.objects,
@@ -362,6 +364,7 @@ final class LampBakeTask extends BakeTask {
   final String lampId;
   final V3 position, axis;
   final double? cone;
+  final double softness;
   final double gain;
   final bool own;
   final LightOccluders objects, lamp, walls;
@@ -405,6 +408,7 @@ BakeResult runBakeTask(BakeTask t) {
           samples: t.samples,
           unshadowed: open,
           cone: t.cone,
+          softness: t.softness,
           axis: t.axis,
         );
         return BakeResult(t.receiver, t.lampId, scaled(lit), scaled(open));
@@ -417,6 +421,7 @@ BakeResult runBakeTask(BakeTask t) {
         t.walls,
         samples: 1,
         cone: t.cone,
+        softness: t.softness,
         axis: t.axis,
       );
       if (!through.any((v) => v > 0)) {
@@ -428,6 +433,7 @@ BakeResult runBakeTask(BakeTask t) {
         t.lamp,
         samples: t.samples,
         cone: t.cone,
+        softness: t.softness,
         axis: t.axis,
       );
       return BakeResult(t.receiver, t.lampId, scaled(lit), scaled(through));

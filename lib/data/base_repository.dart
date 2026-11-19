@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'haven_repository.dart';
+import 'render_api.dart';
 import 'models/room_heating.dart';
 import 'models/snapshot.dart';
 import 'models/state_history.dart';
@@ -68,6 +69,22 @@ abstract class BaseRepository implements HavenRepository {
   @override
   Future<void> removeScene(String roomId, int number) => throw HavenException(
     'Szenen lassen sich hier nicht löschen',
+    code: 'not_supported',
+  );
+
+  // ---- Bilder der Wohnung: ohne Unterstützung -----------------------------
+
+  @override
+  Future<RenderStatus?> renderStatus() async => null;
+
+  @override
+  Future<void> uploadRenders(
+    String key,
+    List<RenderFile> files, {
+    void Function(int sent, int total)? onProgress,
+    bool Function()? cancelled,
+  }) => throw HavenException(
+    'Bilder für Widgets gibt es hier nicht',
     code: 'not_supported',
   );
 

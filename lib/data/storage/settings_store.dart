@@ -65,6 +65,8 @@ class SettingsStore implements LocalPrefs {
   static const _kMap3dQuality = 'map_3d_quality';
   static const _kMap3dPerspective = 'map_3d_perspective';
   static const _kMap3dTilt = 'map_3d_tilt';
+  static const _kMap3dTransparentWalls = 'map_3d_transparent_walls';
+  static const _kMap3dEnvironment = 'map_3d_environment';
   static const _kGhostIgnored = 'ghost_ignored';
   static const _kGhostHint = 'ghost_hint_dismissed';
 
@@ -177,6 +179,16 @@ class SettingsStore implements LocalPrefs {
   /// Zuletzt gewählte Ansicht: schräg (Puppenhaus) statt Draufsicht.
   bool get map3dTilt => _p.getBool(_kMap3dTilt) ?? false;
   Future<void> setMap3dTilt(bool v) => _p.setBool(_kMap3dTilt, v);
+
+  /// Wände halbdurchsichtig (Nachbarräume scheinen durch); Standard deckend.
+  bool get map3dTransparentWalls =>
+      _p.getBool(_kMap3dTransparentWalls) ?? false;
+  Future<void> setMap3dTransparentWalls(bool v) =>
+      _p.setBool(_kMap3dTransparentWalls, v);
+
+  /// Umgebung der Karte: Sonne, Mond, Tageszeit und Wetter.
+  bool get map3dEnvironment => _p.getBool(_kMap3dEnvironment) ?? true;
+  Future<void> setMap3dEnvironment(bool v) => _p.setBool(_kMap3dEnvironment, v);
 
   /// Ignorierte Geister-Geräte: IEEE → `last_seen`-Stempel (siehe
   /// `ghostStamp`), gelten bis zur nächsten Meldung.

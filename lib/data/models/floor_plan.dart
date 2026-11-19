@@ -331,7 +331,13 @@ class FloorPlacement {
     this.model,
     this.height,
     this.mount,
+    this.rotation,
+    this.cone,
+    this.spread,
   });
+
+  static double? _num(Object? v) =>
+      v is num && v.isFinite ? v.toDouble() : null;
 
   factory FloorPlacement.fromJson(Map<String, dynamic> j) => FloorPlacement(
     entityId: j['entityId'] as String,
@@ -344,6 +350,9 @@ class FloorPlacement {
         ? (j['height'] as num).toDouble()
         : null,
     mount: j['mount'] is String ? j['mount'] as String : null,
+    rotation: _num(j['rotation']),
+    cone: _num(j['cone']),
+    spread: _num(j['spread']),
   );
 
   final String entityId;
@@ -362,6 +371,17 @@ class FloorPlacement {
   /// Montage (`ceiling`, `wall`, `up`), `null`: Standard der Bauform.
   final String? mount;
 
+  /// Drehung um die Hochachse in Grad (drehbare Bauformen, nicht an der
+  /// Wand), `null`: 0.
+  final double? rotation;
+
+  /// Lichtkegel als ganzer Abstrahlwinkel in Grad (Lampen mit Kegel),
+  /// `null`: Standard der Bauform.
+  final double? cone;
+
+  /// Streuung 0 … 1: weicher Anteil am Kegelrand, `null`: Standard.
+  final double? spread;
+
   FloorKind get resolvedKind => kind ?? FloorKind.ofEntity(entityId);
   GridPoint get cell => GridPoint(x, y);
 
@@ -377,6 +397,9 @@ class FloorPlacement {
     if (model != null) 'model': model,
     if (height != null) 'height': (height! * 100).roundToDouble() / 100,
     if (mount != null) 'mount': mount,
+    if (rotation != null) 'rotation': rotation!.roundToDouble(),
+    if (cone != null) 'cone': cone!.roundToDouble(),
+    if (spread != null) 'spread': (spread! * 100).roundToDouble() / 100,
   };
 
   FloorPlacement copyWith({
@@ -391,6 +414,12 @@ class FloorPlacement {
     bool clearHeight = false,
     String? mount,
     bool clearMount = false,
+    double? rotation,
+    bool clearRotation = false,
+    double? cone,
+    bool clearCone = false,
+    double? spread,
+    bool clearSpread = false,
   }) => FloorPlacement(
     entityId: entityId ?? this.entityId,
     x: x ?? this.x,
@@ -400,6 +429,9 @@ class FloorPlacement {
     model: clearModel ? null : (model ?? this.model),
     height: clearHeight ? null : (height ?? this.height),
     mount: clearMount ? null : (mount ?? this.mount),
+    rotation: clearRotation ? null : (rotation ?? this.rotation),
+    cone: clearCone ? null : (cone ?? this.cone),
+    spread: clearSpread ? null : (spread ?? this.spread),
   );
 
   @override
@@ -412,11 +444,25 @@ class FloorPlacement {
       other.deviceId == deviceId &&
       other.model == model &&
       other.height == height &&
-      other.mount == mount;
+      other.mount == mount &&
+      other.rotation == rotation &&
+      other.cone == cone &&
+      other.spread == spread;
 
   @override
-  int get hashCode =>
-      Object.hash(entityId, x, y, kind, deviceId, model, height, mount);
+  int get hashCode => Object.hash(
+    entityId,
+    x,
+    y,
+    kind,
+    deviceId,
+    model,
+    height,
+    mount,
+    rotation,
+    cone,
+    spread,
+  );
 
   @override
   String toString() => 'FloorPlacement($entityId @ $x, $y)';

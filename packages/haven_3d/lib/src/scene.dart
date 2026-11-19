@@ -365,7 +365,11 @@ class SceneMarker {
     this.lamp,
     this.model,
     this.mount,
-  }) : position = V3(
+    this.rotation = 0,
+    double? cone,
+    this.coneSoftness,
+  }) : _cone = cone, // ignore: prefer_initializing_formals
+       position = V3(
          at.dx,
          at.dy,
          height ??
@@ -394,8 +398,22 @@ class SceneMarker {
   V3 get lightAxis =>
       model == null ? const V3(0, 0, -1) : deviceSpec(model).lightAxis(mount);
 
-  /// Lichtkegel (halber Winkel nach unten) oder `null` (rundum).
-  double? get cone => model == null ? null : deviceSpec(model).lamp?.cone;
+  /// Lichtkegel (halber Winkel, Bogenmaß) oder `null` (rundum). Ein eigener
+  /// Kegel gilt nur für Bauformen mit Kegel.
+  double? get cone {
+    final std = model == null ? null : deviceSpec(model).lamp?.cone;
+    return std == null ? null : (_cone ?? std);
+  }
+
+  final double? _cone;
+
+  /// Streuung: weicher Anteil am Kegelwinkel (siehe `coneFactor`), `null`:
+  /// Standard.
+  final double? coneSoftness;
+
+  /// Drehung um die Hochachse in Grad (nur drehbare Bauformen, nicht an der
+  /// Wand; siehe `DeviceSpec.canRotate`).
+  final double rotation;
 
   final String id;
   final MarkerKind kind;
@@ -549,7 +567,13 @@ class Scene {
   /// Wand oder eine Tür verbindet, teilen sich das Licht ihrer Lampen.
   late final Map<String, String> lightZones = _zones();
 
-  Map<String, String> _zones() {
+  /// Wie [lightZones], aber nur über offene Wände (ohne Türen): Räume, die
+  /// sich das Echtzeitlicht ihrer Lampen teilen. Durch Türen fällt Licht
+  /// nur gebaken (Böden, Oberseiten); in Echtzeit ginge es ohne Schatten
+  /// durch die Wände.
+  late final Map<String, String> openZones = _zones(doors: false);
+
+  Map<String, String> _zones({bool doors = true}) {
     final parent = {for (final r in rooms) r.id: r.id};
     String find(String x) {
       while (parent[x] != x) {
@@ -583,7 +607,7 @@ class Scene {
       }
     }
     // Türen: die Räume knapp vor und hinter der Öffnung.
-    for (final o in objects) {
+    for (final o in doors ? objects : const <SceneObject>[]) {
       final d = o.doorOpening;
       if (d == null) continue;
       final e = d.b - d.a;

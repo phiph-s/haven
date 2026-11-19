@@ -63,6 +63,25 @@ class SceneStyle {
     sun: 1.7,
   );
 
+  /// Abend ohne Himmel (dunkles Design ohne Umgebung): dieselben Farben
+  /// wie [SceneStyle.light] (wie mit Himmel bei Nacht), nur das feste Licht
+  /// gedämpft, und Linien hell wie im dunklen Stil. So ändert das Ausschalten
+  /// der Umgebung Licht und Hintergrund, nicht die Farben der Dinge.
+  factory SceneStyle.evening() {
+    final l = SceneStyle.light();
+    final d = SceneStyle.dark();
+    return l.copyWith(
+      ink: d.ink,
+      roomEdgeOpacity: d.roomEdgeOpacity,
+      ambient: 0.3,
+      sun: 0.15,
+      lampGlow: d.lampGlow,
+      shadowFill: d.shadowFill,
+      // Kein Eigenleuchten: die Wände blieben sonst im Dunkeln hell.
+      wallGlow: 0,
+    );
+  }
+
   /// Dunkel: Abend, wenig Umgebungslicht, die Lampen tragen das Bild.
   factory SceneStyle.dark() => const SceneStyle(
     // Linien hell: vor dunklen Böden und Wänden gut zu sehen.

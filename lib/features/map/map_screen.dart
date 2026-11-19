@@ -47,6 +47,7 @@ import 'map_actions.dart';
 import 'map_layer_widgets.dart';
 import 'map_inspector.dart';
 import 'map_info.dart';
+import 'map_render.dart';
 import 'map_layers.dart';
 import 'map_3d.dart';
 import 'map_light_controls.dart';
@@ -130,6 +131,8 @@ class MapScreen extends ConsumerWidget {
                   ),
                 ],
               ),
+            // Bilder für Widgets: nach Kartenänderungen neu rendern lassen.
+            if (has) MapRenderGate(plan: p),
           ],
         ),
       ),
@@ -876,7 +879,7 @@ class _MapBodyState extends ConsumerState<_MapBody> {
             clipBehavior: Clip.none,
             children: [
               // Himmel hinter der Karte, auch unter Kopf und Statusleiste.
-              if (v.controller == null && supported != false)
+              if (v.controller == null && supported != false && _environment)
                 Positioned(
                   top: -widget.bleedTop,
                   left: 0,
@@ -1035,11 +1038,17 @@ class _MapBodyState extends ConsumerState<_MapBody> {
     );
   }
 
+  /// Umgebung (Himmel) eingeschaltet? Aus: kein Himmel hinter der Karte.
+  bool get _environment =>
+      ref.watch(map3dSettingsProvider.select((s) => s.environment));
+
   /// Ist der Himmel hinter dem Kopf zu dunkel (hell) für das Design?
   /// `true`: Kopf und Statusleiste hell auf dunklem Himmel, `false`: dunkel
   /// auf hellem, `null`: kein Himmel oder das Design passt.
   bool? _skyDark(_LayerView v, bool? supported) {
-    if (v.controller != null || supported == false) return null;
+    if (v.controller != null || supported == false || !_environment) {
+      return null;
+    }
     final hv = context.hv;
     final w = ref.watch(mapWeatherProvider(v.plan.north));
     final top = mapSkyGradient(w.sky, dark: hv.isDark).first;
@@ -1127,7 +1136,7 @@ class _MapBodyState extends ConsumerState<_MapBody> {
         return Stack(
           children: [
             // Himmel hinter der Karte, auch unter Kopf und Statusleiste.
-            if (v.controller == null && supported != false)
+            if (v.controller == null && supported != false && _environment)
               Positioned.fill(child: MapSkyBackdrop(north: v.plan.north)),
             Positioned.fill(
               child: EntryAnimation(

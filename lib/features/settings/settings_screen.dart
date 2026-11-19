@@ -21,6 +21,8 @@ import '../map/map_routes.dart';
 import '../updates/app_update_provider.dart';
 import '../updates/app_update_widgets.dart';
 import '../updates/ha_updates_provider.dart';
+import 'advanced_render_settings.dart';
+import 'render_settings.dart';
 import 'settings_widgets.dart';
 import 'sync_section.dart';
 import '../room/widgets/light_control_list.dart';
@@ -284,9 +286,16 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             if (ref.watch(map3dSupportedProvider).value ?? false) ...[
               section('Karte'),
               pad(const _Map3DSettings()),
-              // Woher der Live-Himmel der Karte sein Wetter nimmt.
-              section('Wetter'),
-              pad(const WeatherSettingsGroup()),
+              pad(const AdvancedRenderSettingsRow()),
+              pad(const MapRenderSettingsRow()),
+              // Woher der Live-Himmel der Karte sein Wetter nimmt (nur mit
+              // Umgebung).
+              if (ref.watch(
+                map3dSettingsProvider.select((s) => s.environment),
+              )) ...[
+                section('Wetter'),
+                pad(const WeatherSettingsGroup()),
+              ],
             ],
             section('Updates'),
             pad(

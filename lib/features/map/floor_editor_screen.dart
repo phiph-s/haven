@@ -38,6 +38,7 @@ import 'map_3d.dart'
         deviceModelsFor,
         deviceMountOf,
         lampStateOf,
+        map3dSettingsProvider,
         mapSunOf,
         markerHeightOf,
         sceneOfPlan,
@@ -752,6 +753,10 @@ class _FloorEditorScreenState extends ConsumerState<FloorEditorScreen> {
       model: old?.model == null ? null : deviceModelOf(old!),
       mount: how == spec.mountOf(null) ? null : how?.name,
       height: (z - std).abs() < 1e-6 ? null : z,
+      // Drehung und Licht ziehen mit um.
+      rotation: old?.rotation,
+      cone: old?.cone,
+      spread: old?.spread,
     );
     Haptics.tap();
     _commit(plan, plan.withPlacement(p));
@@ -921,7 +926,7 @@ class _FloorEditorScreenState extends ConsumerState<FloorEditorScreen> {
   void _deviceMenu(String entityId, Offset at) {
     showHavenContextMenu(context, at, [
       HavenMenuItem(
-        label: 'Bauform und Höhe',
+        label: 'Bauform, Höhe und Licht',
         icon: Icons.tune_rounded,
         onSelected: () => setState(() => _dsel = entityId),
       ),
@@ -974,6 +979,79 @@ class _FloorEditorScreenState extends ConsumerState<FloorEditorScreen> {
             ),
           ),
         );
+    // Lichtkegel (ganzer Winkel in Grad) und Streuung nur bei Lampen mit
+    // Kegel, die nicht nach oben strahlen (dort kommt das Licht von der
+    // Decke zurück, ohne Kegel).
+    final stdCone = spec.lamp?.cone;
+    final cone = how == h3.DeviceMount.up ? null : stdCone;
+    final stdConeDeg = (stdCone ?? 0) * 2 * 180 / math.pi;
+    final coneDeg = p.cone ?? stdConeDeg;
+    final spread = p.spread ?? h3.kConeSoftness;
+
+    /// Regler mit Beschriftung und „Standard“: ändert den Plan beim Ziehen,
+    /// ein Schritt zum Rückgängigmachen beim Loslassen.
+    List<Widget> slider({
+      required String key,
+      required String label,
+      required double value,
+      required double min,
+      required double max,
+      required int divisions,
+      required String Function(double) show,
+      required bool isDefault,
+      required String reset,
+      required VoidCallback onReset,
+      required FloorPlacement Function(FloorPlacement, double) apply,
+    }) => [
+      const SizedBox(height: 6),
+      Row(
+        children: [
+          Expanded(
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: HavenText.caption.copyWith(color: hv.tx2),
+            ),
+          ),
+          if (!isDefault)
+            Flexible(
+              child: TextButton(
+                onPressed: onReset,
+                style: TextButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  visualDensity: VisualDensity.compact,
+                ),
+                child: Text(
+                  reset,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ),
+        ],
+      ),
+      Slider(
+        key: ValueKey(key),
+        value: value.clamp(min, max),
+        min: min,
+        max: max,
+        divisions: divisions,
+        label: show(value),
+        onChangeStart: (_) => _heightBase = _plan,
+        onChanged: (v) => setState(
+          () => _plan = _plan!.withPlacement(
+            apply(_plan!.placementOf(p.entityId)!, v),
+          ),
+        ),
+        onChangeEnd: (_) {
+          final base = _heightBase;
+          _heightBase = null;
+          if (base != null) _commit(base, _plan!);
+        },
+      ),
+    ];
+
     return Container(
       key: ValueKey('dsel-${p.entityId}'),
       margin: const EdgeInsets.only(bottom: 10, right: 8),
@@ -1061,39 +1139,61 @@ class _FloorEditorScreenState extends ConsumerState<FloorEditorScreen> {
               ],
             ),
           ],
-          const SizedBox(height: 6),
-          Row(
-            children: [
-              Text(
-                'Höhe ${meters(height)}',
-                style: HavenText.caption.copyWith(color: hv.tx2),
-              ),
-              const Spacer(),
-              if (p.height != null)
-                TextButton(
-                  onPressed: () => _setDevice(p.copyWith(clearHeight: true)),
-                  child: Text('Standard (${meters(std)})'),
-                ),
-            ],
-          ),
-          Slider(
-            value: height.clamp(0.0, 2.6),
+          ...slider(
+            key: 'device-height',
+            label: 'Höhe ${meters(height)}',
+            value: height,
             min: 0,
             max: 2.6,
             divisions: 52,
-            label: meters(height),
-            onChangeStart: (_) => _heightBase = _plan,
-            onChanged: (v) => setState(
-              () => _plan = _plan!.withPlacement(
-                _plan!.placementOf(p.entityId)!.copyWith(height: v),
-              ),
-            ),
-            onChangeEnd: (_) {
-              final base = _heightBase;
-              _heightBase = null;
-              if (base != null) _commit(base, _plan!);
-            },
+            show: meters,
+            isDefault: p.height == null,
+            reset: 'Standard (${meters(std)})',
+            onReset: () => _setDevice(p.copyWith(clearHeight: true)),
+            apply: (q, v) => q.copyWith(height: v),
           ),
+          if (spec.canRotate(how))
+            ...slider(
+              key: 'device-rotation',
+              label: 'Drehung ${(p.rotation ?? 0).round()}°',
+              value: p.rotation ?? 0,
+              min: 0,
+              max: 345,
+              divisions: 23,
+              show: (v) => '${v.round()}°',
+              isDefault: (p.rotation ?? 0) == 0,
+              reset: '0°',
+              onReset: () => _setDevice(p.copyWith(clearRotation: true)),
+              apply: (q, v) => q.copyWith(rotation: v),
+            ),
+          if (cone != null) ...[
+            ...slider(
+              key: 'device-cone',
+              label: 'Lichtkegel ${coneDeg.round()}°',
+              value: coneDeg,
+              min: 10,
+              max: 170,
+              divisions: 32,
+              show: (v) => '${v.round()}°',
+              isDefault: p.cone == null,
+              reset: 'Standard (${stdConeDeg.round()}°)',
+              onReset: () => _setDevice(p.copyWith(clearCone: true)),
+              apply: (q, v) => q.copyWith(cone: v),
+            ),
+            ...slider(
+              key: 'device-spread',
+              label: 'Streuung ${(spread * 100).round()} %',
+              value: spread,
+              min: 0.05,
+              max: 1,
+              divisions: 19,
+              show: (v) => '${(v * 100).round()} %',
+              isDefault: p.spread == null,
+              reset: 'Standard (${(h3.kConeSoftness * 100).round()} %)',
+              onReset: () => _setDevice(p.copyWith(clearSpread: true)),
+              apply: (q, v) => q.copyWith(spread: v),
+            ),
+          ],
         ],
       ),
     );
@@ -2066,7 +2166,10 @@ class _FloorEditorScreenState extends ConsumerState<FloorEditorScreen> {
       plan: stable,
       lit: lit,
       lamps: lit ? _lampsFor(stable) : const {},
-      sun: mapSunOf(ref, stable.north),
+      sun: ref.watch(map3dSettingsProvider).environment
+          ? mapSunOf(ref, stable.north)
+          : null,
+      transparentWalls: ref.watch(map3dSettingsProvider).transparentWalls,
       geo: geo,
       tilt: _view3d,
       projection: _proj,
@@ -3273,10 +3376,14 @@ class _EditorScene extends StatefulWidget {
     this.lit = false,
     this.lamps = const {},
     this.sun,
+    this.transparentWalls = false,
   });
 
   /// Sonnenrichtung (siehe `mapSunOf`), `null`: Standard.
   final h3.V3? sun;
+
+  /// Wände halbdurchsichtig statt deckend (Einstellungen).
+  final bool transparentWalls;
 
   /// Lampen leuchten in Echtzeit (Zustand aus [lamps], fehlende sind aus).
   final bool lit;
@@ -3336,8 +3443,14 @@ class _EditorSceneState extends State<_EditorScene> {
       );
     }
     final byId = {for (final n in w.nodes) n.id: n};
-    final style = (hv.isDark ? h3.SceneStyle.dark() : h3.SceneStyle.light())
-        .copyWith(accent: hv.acc);
+    // Wie die Karte ohne Himmel: im dunklen Design dieselben Farben mit
+    // gedämpftem Licht; Wände deckend, wenn nicht anders eingestellt.
+    final style = (hv.isDark ? h3.SceneStyle.evening() : h3.SceneStyle.light())
+        .copyWith(
+          accent: hv.acc,
+          wallOpacity: widget.transparentWalls ? null : 1,
+          floorOpacity: widget.transparentWalls ? null : 1,
+        );
     final scene = sceneOfPlan(w.plan);
     // Lampen nach dem Bild setzen (nur geänderte rechnen neu).
     WidgetsBinding.instance.addPostFrameCallback((_) {

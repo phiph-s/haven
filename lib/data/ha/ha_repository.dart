@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import '../../core/light/color_math.dart';
 import '../base_repository.dart';
 import '../haven_repository.dart';
+import '../render_api.dart';
 import '../light_targets.dart';
 import '../models/device.dart';
 import '../models/entity_state.dart';
@@ -24,6 +25,7 @@ import '../storage/settings_store.dart';
 import '../sync/app_data.dart';
 import 'ha_automations.dart';
 import 'ha_heating.dart';
+import 'ha_render.dart';
 import 'ha_zigbee.dart';
 import 'ha_client.dart';
 import '../models/weather.dart';
@@ -60,6 +62,7 @@ class HaRepository extends BaseRepository {
   late final HaZigbee _zb = HaZigbee(client);
   late final HaAutomations _auto = HaAutomations(client);
   late final HaHeating _heat = HaHeating(client);
+  late final HaRender _render = HaRender(client);
 
   /// HA-Ereignisse, nach denen die Räume neu geladen werden.
   static const registryEvents = [
@@ -1003,6 +1006,22 @@ class HaRepository extends BaseRepository {
 
   @override
   Stream<ZbMeasureResult> get zigbeeMeasureResults => _measureResults.stream;
+
+  // ---- Bilder der Wohnung (haven/render/*) ---------------------------------
+  @override
+  Future<RenderStatus?> renderStatus() async {
+    if (!_features.contains('render')) return null;
+    return _render.status();
+  }
+
+  @override
+  Future<void> uploadRenders(
+    String key,
+    List<RenderFile> files, {
+    void Function(int sent, int total)? onProgress,
+    bool Function()? cancelled,
+  }) =>
+      _render.upload(key, files, onProgress: onProgress, cancelled: cancelled);
 
   // ---- Heizungsregelung (haven/heating/*) ----------------------------------
   @override

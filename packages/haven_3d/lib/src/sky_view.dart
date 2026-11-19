@@ -236,9 +236,10 @@ class _SkyPainter extends CustomPainter {
     final unit = math.min(size.width, size.height);
 
     if (!front) {
-      // Sterne: fester Satz, leises Funkeln, hinter Wolken weg.
+      // Sterne: fester Satz auf der Himmelskuppel (dreht mit der Kamera wie
+      // Sonne und Mond), hinter Wolken weg.
       final stars = night * (1 - 0.85 * cloud);
-      if (stars > 0.02) _stars(canvas, size, f.time, stars);
+      if (stars > 0.02) _stars(canvas, size, f, stars);
     }
     // Wolken vorn: Sie ziehen um die Wohnung, nie über sie, und liegen so
     // auch über einem großen Boden (Dunst) sichtbar.
@@ -315,24 +316,51 @@ class _SkyPainter extends CustomPainter {
     }
   }
 
-  static final List<(Offset, double, double)> _starField = () {
+  /// Sterne auf der Himmelskuppel: Himmelsrichtung (Bogenmaß), Abstand von
+  /// der Mitte (1 = Rand der freien Fläche, wie Sonne und Mond bei 0,84),
+  /// Größe und Phase des Funkelns. Gleichmäßig über eine Scheibe, die auch
+  /// die Ecken des Bildschirms deckt.
+  static final List<(double, double, double, double)> _starField = () {
     final rnd = math.Random(7);
     return [
-      for (var i = 0; i < 260; i++)
+      for (var i = 0; i < 560; i++)
         (
-          Offset(rnd.nextDouble(), rnd.nextDouble()),
+          rnd.nextDouble() * math.pi * 2,
+          1.7 * math.sqrt(rnd.nextDouble()),
           0.5 + rnd.nextDouble() * 1.3,
           rnd.nextDouble() * math.pi * 2,
         ),
     ];
   }();
 
-  void _stars(Canvas canvas, Size size, double t, double a) {
+  /// Bildschirmrichtung (Länge 1) der waagrechten Himmelsrichtung [az]
+  /// (Welt, Bogenmaß) — so wie Sonne und Mond in [_placed]. Die Sterne
+  /// drehen damit mit der Kamera.
+  static Offset Function(double az) _skyDirections(_SkyFrame f, Size size) {
+    final o = f.camera.project(f.center, size).offset;
+    final ex = f.camera.project(f.center + const V3(20, 0, 0), size).offset - o;
+    final ey = f.camera.project(f.center + const V3(0, 20, 0), size).offset - o;
+    return (az) {
+      final v = ex * math.cos(az) + ey * math.sin(az);
+      final d = v.distance;
+      return d < 1e-6 ? const Offset(0, -1) : v / d;
+    };
+  }
+
+  void _stars(Canvas canvas, Size size, _SkyFrame f, double a) {
     final p = Paint();
-    for (final (o, r, ph) in _starField) {
-      final tw = 0.65 + 0.35 * math.sin(t * 1.3 + ph);
+    final area = _free(f, size);
+    final dir = _skyDirections(f, size);
+    final bounds = (Offset.zero & size).inflate(4);
+    for (final (az, rad, r, ph) in _starField) {
+      final d = dir(az);
+      final at =
+          area.center +
+          Offset(d.dx * rad * area.width / 2, d.dy * rad * area.height / 2);
+      if (!bounds.contains(at)) continue;
+      final tw = 0.65 + 0.35 * math.sin(f.time * 1.3 + ph);
       p.color = const Color(0xFFFFFFFF).withValues(alpha: a * tw * 0.85);
-      canvas.drawCircle(Offset(o.dx * size.width, o.dy * size.height), r, p);
+      canvas.drawCircle(at, r, p);
     }
   }
 

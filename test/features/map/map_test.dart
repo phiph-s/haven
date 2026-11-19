@@ -281,4 +281,15 @@ void main() {
     expect(c.read(settingsStoreProvider).mapSky['mode'], 'manual');
     expect(c.read(mapWeatherProvider(0)).live, isFalse);
   });
+
+  testWidgets('Ohne Umgebung kein Wetterknopf', (tester) async {
+    final c = await _pump(
+      tester,
+      '/map',
+      repo: _MemoryRepo(),
+      prefs: const {'map_3d_environment': false},
+    );
+    expect(c.read(map3dSettingsProvider).environment, isFalse);
+    expect(find.byKey(const ValueKey('map-weather')), findsNothing);
+  });
 }

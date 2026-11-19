@@ -1,5 +1,5 @@
 import 'package:flutter/services.dart';
-import 'package:flutter/widgets.dart' show Scrollable;
+import 'package:flutter/widgets.dart' show Scrollable, ValueKey;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:haven/app.dart';
@@ -128,9 +128,60 @@ void main() {
       scrollable: find.byType(Scrollable).first,
     );
     await tester.ensureVisible(find.text('Home Assistant öffnen'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Home Assistant öffnen'));
     await tester.pumpAndSettle();
     expect(find.text('Öffnet in Home Assistant'), findsOneWidget);
     expect(find.textContaining('external_auth'), findsNothing);
+  });
+
+  testWidgets('Erweiterte Render-Einstellungen: Wände und Umgebung', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(412 * 2.625, 915 * 2.625);
+    tester.view.devicePixelRatio = 2.625;
+    addTearDown(tester.view.reset);
+    SharedPreferences.setMockInitialValues({});
+    final store = SettingsStore(await SharedPreferences.getInstance());
+    late FakeRepository repo;
+    await tester.runAsync(() async {
+      repo = FakeRepository(simulate: false, localPrefs: store);
+      await repo.start();
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            settingsStoreProvider.overrideWithValue(store),
+            tokenStoreProvider.overrideWithValue(MemoryTokenStore()),
+            initialSessionProvider.overrideWithValue(
+              Session(SessionMode.fake, repo),
+            ),
+          ],
+          child: const HavenApp(initialLocation: '/settings'),
+        ),
+      );
+    });
+    await tester.pumpAndSettle();
+    // Standard: deckende Wände, mit Umgebung.
+    expect(store.map3dTransparentWalls, isFalse);
+    expect(store.map3dEnvironment, isTrue);
+    await tester.scrollUntilVisible(
+      find.text('Erweiterte Render-Einstellungen'),
+      200,
+      scrollable: find.byType(Scrollable).first,
+    );
+    expect(find.text('Deckende Wände, mit Umgebung'), findsOneWidget);
+    await tester.tap(find.text('Erweiterte Render-Einstellungen'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('render-transparent-walls')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('render-environment')));
+    await tester.pumpAndSettle();
+    expect(store.map3dTransparentWalls, isTrue);
+    expect(store.map3dEnvironment, isFalse);
+    // Blatt schließen: Ohne Umgebung kein Abschnitt „Wetter“.
+    await tester.tapAt(const Offset(200, 60));
+    await tester.pumpAndSettle();
+    expect(find.text('Durchsichtige Wände, ohne Umgebung'), findsOneWidget);
+    expect(find.text('Außentemperatur', skipOffstage: false), findsNothing);
   });
 }

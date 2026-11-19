@@ -48,5 +48,7 @@ void main() {
     final z = scene.lightZones;
     expect(z['a'], z['b']);
     expect(z['c'], isNot(z['b']));
+    // Echtzeitlicht teilt sich nur über offene Wände, nicht durch Türen.
+    expect(scene.openZones['a'], isNot(scene.openZones['b']));
   });
 }

@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:haven_3d/haven_3d.dart';
-import 'package:haven_3d/src/gpu_scene.dart' show roomChannels;
+import 'package:haven_3d/src/gpu_scene.dart' show lampReach, roomChannels;
 
 void main() {
   test('Benachbarte Räume bekommen verschiedene Lichtkanäle', () {
@@ -16,6 +16,28 @@ void main() {
     for (final bit in ch.values) {
       expect(bit & (bit - 1), 0, reason: 'genau ein Bit');
       expect(bit, lessThan(0x80));
+    }
+  });
+
+  test('Räume in Reichweite einer Lampe bekommen ein anderes Bit', () {
+    final scene = sampleScene();
+    // Ohne Reichweite teilen sich Wohnen und Schlafen ein Bit (sie
+    // berühren sich nicht).
+    expect(
+      roomChannels(scene.rooms)['wohnen'],
+      roomChannels(scene.rooms)['schlafen'],
+    );
+    final reach = lampReach(scene);
+    expect(reach['wohnen'], contains('flur'));
+    final ch = roomChannels(scene.rooms, null, {
+      ...reach,
+      'wohnen': {...?reach['wohnen'], 'schlafen'},
+    });
+    expect(ch['wohnen'], isNot(ch['schlafen']));
+    expect(ch['wohnen'], isNot(ch['flur']));
+    for (final bit in ch.values) {
+      expect(bit & (bit - 1), 0, reason: 'genau ein Bit');
+      expect(bit, lessThan(0x40));
     }
   });
 

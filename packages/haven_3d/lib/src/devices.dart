@@ -55,6 +55,7 @@ class DeviceSpec {
     this.glow,
     this.mounts = const [],
     this.legacy = false,
+    this.rotatable = false,
   });
 
   final String id;
@@ -71,6 +72,13 @@ class DeviceSpec {
 
   /// Alte Bauform: wird noch gezeigt, aber nicht mehr angeboten.
   final bool legacy;
+
+  /// Lässt sich um die Hochachse drehen (nicht rund, z. B. Lightbar). An
+  /// der Wand richtet die Wand das Gerät aus.
+  final bool rotatable;
+
+  /// Drehbar in der Montage [m]?
+  bool canRotate(DeviceMount? m) => rotatable && !isWall(m);
 
   bool get isLamp => lamp != null;
 
@@ -221,6 +229,7 @@ final List<DeviceSpec> _devices = [
     // Wand; unter Regalen oder an der Wand auch nach unten bzw. in den Raum.
     lamp: const LampProfile(cone: 1.05, lightZ: -0.05, range: 5),
     mounts: const [DeviceMount.up, DeviceMount.ceiling, DeviceMount.wall],
+    rotatable: true,
     build: (b) {
       b.box(-0.3, -0.025, -0.035, 0.3, 0.025, 0);
       b.line(const V3(-0.3, 0, -0.035), const V3(0.3, 0, -0.035));
@@ -331,11 +340,20 @@ final List<DeviceSpec> _devices = [
   ),
 ];
 
-/// Faktor des Lichtkegels für eine Richtung mit [cosAngle] zur Achse
-/// (nach unten): 1 innerhalb von 70 % des Kegels, weich bis 0 am Rand.
-double coneFactor(double cosAngle, double cone) {
+/// Standard der Streuung: der Rand des Lichtkegels (Anteil des Winkels),
+/// über den das Licht weich ausläuft.
+const double kConeSoftness = 0.3;
+
+/// Faktor des Lichtkegels [cone] (halber Winkel) für eine Richtung mit
+/// [cosAngle] zur Achse: 1 im Kern, weich bis 0 am Rand. [softness] ist der
+/// weiche Anteil am Winkel (0 hart … 1 von der Mitte an gleichmäßig).
+double coneFactor(
+  double cosAngle,
+  double cone, [
+  double softness = kConeSoftness,
+]) {
   final a = math.acos(cosAngle.clamp(-1.0, 1.0));
-  final inner = cone * 0.7;
+  final inner = cone * (1 - softness.clamp(0.02, 1.0));
   if (a <= inner) return 1;
   if (a >= cone) return 0;
   final t = (a - inner) / (cone - inner);

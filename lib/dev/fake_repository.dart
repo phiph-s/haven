@@ -25,6 +25,7 @@ import 'fake_thermostat_sim.dart';
 import 'fake_updates.dart';
 import 'fake_zigbee.dart';
 import '../data/models/weather.dart';
+import '../data/render_api.dart';
 
 /// Gedächtnis einer Lampe, damit Farbe und Helligkeit beim Aus- und
 /// Einschalten erhalten bleiben (HA macht das über die Lampe selbst).
@@ -103,6 +104,34 @@ class FakeRepository extends BaseRepository {
 
   @override
   bool get isFake => true;
+
+  // ---- Bilder der Wohnung: im Speicher (für die Vorschau des Ablaufs) ----
+
+  String? _renderKey;
+  Set<String> _renderSets = const {};
+
+  @override
+  Future<RenderStatus?> renderStatus() async =>
+      RenderStatus(key: _renderKey, sets: _renderSets);
+
+  @override
+  Future<void> uploadRenders(
+    String key,
+    List<RenderFile> files, {
+    void Function(int sent, int total)? onProgress,
+    bool Function()? cancelled,
+  }) async {
+    final total = files.fold<int>(0, (a, f) => a + f.bytes.length);
+    var sent = 0;
+    for (final f in files) {
+      if (cancelled?.call() ?? false) throw const RenderUploadCancelled();
+      await Future<void>.delayed(Duration.zero);
+      sent += f.bytes.length;
+      onProgress?.call(sent, total);
+    }
+    _renderKey = key;
+    _renderSets = {for (final f in files) f.path.split('/').first};
+  }
 
   @override
   HavenFloorPlan? get sampleFloorPlan => kFakeFloorPlan;

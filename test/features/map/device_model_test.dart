@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:haven/data/models/floor_plan.dart';
 import 'package:haven/features/map/map_3d.dart';
@@ -32,6 +34,53 @@ void main() {
     expect(markerHeightOf(pendant), spec.height + spec.lamp!.lightZ);
     final low = pendant.copyWith(height: 2.0);
     expect(markerHeightOf(low), 2.0 + spec.lamp!.lightZ);
+  });
+
+  test('Drehung, Lichtkegel und Streuung: JSON und Szene', () {
+    const p = FloorPlacement(
+      entityId: 'light.bar',
+      x: 1,
+      y: 1,
+      model: 'lightbar',
+      mount: 'ceiling',
+    );
+    for (final k in ['rotation', 'cone', 'spread']) {
+      expect(p.toJson().containsKey(k), isFalse, reason: k);
+    }
+    final q = p.copyWith(rotation: 90, cone: 40, spread: 0.6);
+    expect(FloorPlacement.fromJson(q.toJson()), q);
+    expect(
+      q.copyWith(clearRotation: true, clearCone: true, clearSpread: true),
+      p,
+    );
+    final plan = HavenFloorPlan(placements: [q]);
+    final m = sceneOfPlan(plan).markers.single;
+    expect(m.rotation, 90);
+    // Ganzer Winkel 40° → halber im Bogenmaß.
+    expect(m.cone, closeTo(20 * 3.141592653589793 / 180, 1e-9));
+    expect(m.coneSoftness, 0.6);
+    // Nur Bauformen mit Kegel bekommen einen; drehbar nur, wo es Sinn hat.
+    expect(h3.deviceSpec('lightbar').canRotate(h3.DeviceMount.ceiling), isTrue);
+    expect(h3.deviceSpec('lightbar').canRotate(h3.DeviceMount.wall), isFalse);
+    expect(h3.deviceSpec('table_lamp').canRotate(null), isFalse);
+    expect(
+      h3.SceneMarker(
+        id: 'x',
+        at: Offset.zero,
+        model: 'table_lamp',
+        cone: 0.5,
+      ).cone,
+      isNull,
+    );
+  });
+
+  test('Streuung: weicher Rand des Kegels', () {
+    // Hart: bis kurz vor den Rand voll; weich: schon zur Hälfte gedämpft.
+    const cone = 0.6;
+    final mid = math.cos(cone * 0.6);
+    expect(h3.coneFactor(mid, cone, 0.05), 1);
+    expect(h3.coneFactor(mid, cone, 1), lessThan(0.6));
+    expect(h3.coneFactor(math.cos(cone * 1.01), cone, 1), 0);
   });
 
   mountTests();

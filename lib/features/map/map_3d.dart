@@ -35,9 +35,18 @@ class Map3DSettings {
     this.quality = h3.SceneQuality.medium,
     this.perspective = false,
     this.tilt = false,
+    this.transparentWalls = false,
+    this.environment = true,
   });
 
   final h3.SceneQuality quality;
+
+  /// Wände halbdurchsichtig statt deckend (Nachbarräume scheinen durch).
+  final bool transparentWalls;
+
+  /// Umgebung: Himmel mit Sonne, Mond, Tageszeit und Wetter, Sonnenstand
+  /// nach draußen. Aus: ruhiges Kartenlicht wie früher.
+  final bool environment;
 
   /// Perspektive in der Schrägansicht.
   final bool perspective;
@@ -49,10 +58,14 @@ class Map3DSettings {
     h3.SceneQuality? quality,
     bool? perspective,
     bool? tilt,
+    bool? transparentWalls,
+    bool? environment,
   }) => Map3DSettings(
     quality: quality ?? this.quality,
     perspective: perspective ?? this.perspective,
     tilt: tilt ?? this.tilt,
+    transparentWalls: transparentWalls ?? this.transparentWalls,
+    environment: environment ?? this.environment,
   );
 
   @override
@@ -60,10 +73,13 @@ class Map3DSettings {
       other is Map3DSettings &&
       other.quality == quality &&
       other.perspective == perspective &&
-      other.tilt == tilt;
+      other.tilt == tilt &&
+      other.transparentWalls == transparentWalls &&
+      other.environment == environment;
 
   @override
-  int get hashCode => Object.hash(quality, perspective, tilt);
+  int get hashCode =>
+      Object.hash(quality, perspective, tilt, transparentWalls, environment);
 }
 
 class Map3DSettingsNotifier extends Notifier<Map3DSettings> {
@@ -77,7 +93,19 @@ class Map3DSettingsNotifier extends Notifier<Map3DSettings> {
       ),
       perspective: s.map3dPerspective,
       tilt: s.map3dTilt,
+      transparentWalls: s.map3dTransparentWalls,
+      environment: s.map3dEnvironment,
     );
+  }
+
+  void setTransparentWalls(bool v) {
+    state = state.copyWith(transparentWalls: v);
+    unawaited(ref.read(settingsStoreProvider).setMap3dTransparentWalls(v));
+  }
+
+  void setEnvironment(bool v) {
+    state = state.copyWith(environment: v);
+    unawaited(ref.read(settingsStoreProvider).setMap3dEnvironment(v));
   }
 
   void setQuality(h3.SceneQuality q) {
@@ -201,6 +229,11 @@ h3.Scene sceneOfPlan(HavenFloorPlan plan) {
           mount: deviceMountOf(p),
           height: p.height,
           lamp: p.resolvedKind == FloorKind.light ? h3.LampState.off : null,
+          rotation: p.rotation ?? 0,
+          // Gespeichert als ganzer Winkel in Grad, die Szene rechnet mit dem
+          // halben im Bogenmaß.
+          cone: p.cone == null ? null : p.cone! / 2 * math.pi / 180,
+          coneSoftness: p.spread,
         ),
     ],
   );
@@ -593,7 +626,9 @@ class _Map3DViewState extends ConsumerState<Map3DView> {
       }
     });
     // Sonne wie draußen: Stand aus `sun.sun`, gedreht nach Norden des Plans.
-    final sun = mapSunOf(ref, plan.north);
+    // Ohne Umgebung die feste Kartensonne.
+    final env = settings.environment;
+    final sun = env ? mapSunOf(ref, plan.north) : h3.kSunDirection;
     if (sun != null && sun != _sun) {
       _sun = sun;
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -609,7 +644,7 @@ class _Map3DViewState extends ConsumerState<Map3DView> {
     }
     final m = plan.grid.cellMeters;
     // Himmel: Licht und Schnee in die Szene (Änderungen nach dem Bild).
-    final weather = widget.sky
+    final weather = widget.sky && env
         ? ref.watch(mapWeatherProvider(plan.north))
         : null;
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -636,13 +671,19 @@ class _Map3DViewState extends ConsumerState<Map3DView> {
         : 0.0;
     final light = h3.SceneStyle.light();
     final dark = h3.SceneStyle.dark();
-    final style = (weather != null || !hv.isDark ? light : dark).copyWith(
-      accent: hv.acc,
-      ink: night > 0 ? Color.lerp(light.ink, dark.ink, night) : null,
-      roomEdgeOpacity: night > 0
-          ? lerpDouble(light.roomEdgeOpacity, dark.roomEdgeOpacity, night)
-          : null,
-    );
+    // Ohne Himmel im dunklen Design: dieselben Farben, nur gedämpftes Licht.
+    final style = (weather != null || !hv.isDark ? light : h3.SceneStyle.evening())
+        .copyWith(
+          accent: hv.acc,
+          ink: night > 0 ? Color.lerp(light.ink, dark.ink, night) : null,
+          roomEdgeOpacity: night > 0
+              ? lerpDouble(light.roomEdgeOpacity, dark.roomEdgeOpacity, night)
+              : null,
+          // Standard: deckende Wände und Böden (Wände zur Kamera schneidet die
+          // Szene weg). Durchsichtig nur auf Wunsch (Einstellungen).
+          wallOpacity: settings.transparentWalls ? null : 1,
+          floorOpacity: settings.transparentWalls ? null : 1,
+        );
     final view = h3.Scene3DView(
       scene: scene,
       controller: c,
@@ -886,7 +927,8 @@ class Map3DControls extends ConsumerWidget {
           ),
         ),
       ),
-      if (weather) const MapWeatherButton(),
+      if (weather && ref.watch(map3dSettingsProvider).environment)
+        const MapWeatherButton(),
     ];
     return DecoratedBox(
       decoration: BoxDecoration(

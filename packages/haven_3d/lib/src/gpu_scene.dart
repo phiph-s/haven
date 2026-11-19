@@ -362,6 +362,9 @@ class GpuScene {
   /// Lichtquelle je Lampe (Punkt- oder Spotlicht) und was dazu gehört.
   final Map<String, fs.Component> _lampNodes = {};
   final Map<String, double?> _lampCone = {};
+
+  /// Streuung (weicher Rand des Kegels) je Lampe.
+  final Map<String, double> _lampSoft = {};
   final Map<String, fs.Geometry> _bulbGeos = {};
 
   /// Wo das Licht einer Lampe entsteht (Welt, nach dem Ausrichten an der
@@ -519,7 +522,10 @@ class GpuScene {
   /// ohne Schatten (die flutter_scene nur für vier Punktlichter rechnet).
   late final Map<String, int> _channel = roomChannels(
     source.rooms,
-    source.lightZones,
+    // Nur offene Wände teilen sich das Echtzeitlicht; durch Türen fällt es
+    // gebaken (sonst durch die Wände auf Möbel und Wände nebenan).
+    source.openZones,
+    lampReach(source),
   );
 
   int _maskOf(String? roomId) =>
@@ -597,7 +603,9 @@ class GpuScene {
       final how = spec?.mountOf(m.mount);
       // Montagepunkt: Wandgeräte an die nächste Wand, zum Raum gedreht.
       var at = m.position.xy;
-      var rot = 0.0;
+      // Eigene Drehung nur bei drehbaren Bauformen; an der Wand richtet die
+      // Wand aus.
+      var rot = spec != null && spec.canRotate(how) ? m.rotation : 0.0;
       if (spec != null && spec.isWall(how) && roomId != null) {
         final pose = _wallPose(at, roomId);
         if (pose != null) (at, rot) = pose;
@@ -640,7 +648,8 @@ class GpuScene {
       node.add(holder);
       _lampMask[m.id] = roomId == null ? 0xFF : _maskOf(roomId);
       _lampState[m.id] = lamp;
-      _lampCone[m.id] = spec?.lamp?.cone;
+      _lampCone[m.id] = m.cone;
+      _lampSoft[m.id] = m.coneSoftness ?? kConeSoftness;
       final lightNode = fs.Node(name: 'light:${m.id}')
         ..position = toFs(V3(0, 0, spec?.lamp?.lightZ ?? 0));
       final light = _lightComponent(m.id, lamp);
@@ -939,7 +948,12 @@ class GpuScene {
   void _applyLamp(String id, LampState s) {
     final c = _lampNodes[id];
     if (c is fs.SpotLightComponent) {
-      c.light = _spotLight(s, _lampMask[id] ?? 0xFF, _lampCone[id]!);
+      c.light = _spotLight(
+        s,
+        _lampMask[id] ?? 0xFF,
+        _lampCone[id]!,
+        _lampSoft[id] ?? kConeSoftness,
+      );
     } else if (c is fs.PointLightComponent) {
       c.light = _pointLight(s, _lampMask[id] ?? 0xFF);
     }
@@ -954,17 +968,25 @@ class GpuScene {
     final mask = _lampMask[id] ?? 0xFF;
     return cone == null
         ? fs.PointLightComponent(_pointLight(s, mask))
-        : fs.SpotLightComponent(_spotLight(s, mask, cone));
+        : fs.SpotLightComponent(
+            _spotLight(s, mask, cone, _lampSoft[id] ?? kConeSoftness),
+          );
   }
 
   /// Lichtkegel nach unten (Spot, Pendel, Deckenleuchte).
-  fs.SpotLight _spotLight(LampState s, int mask, double cone) => fs.SpotLight(
+  fs.SpotLight _spotLight(
+    LampState s,
+    int mask,
+    double cone,
+    double softness,
+  ) => fs.SpotLight(
     color: linearColor(s.color).xyz,
     intensity: s.on && quality.realtimeLamps && _lightsOn
         ? 40.0 * s.brightness * style.lampGlow
         : 0,
     range: 7,
-    innerConeAngle: cone * 0.7,
+    // Wie `coneFactor` beim Baking: weicher Rand über [softness].
+    innerConeAngle: cone * (1 - softness.clamp(0.02, 1.0)),
     outerConeAngle: cone,
     channelMask: mask,
   );
@@ -1342,6 +1364,7 @@ class GpuScene {
     var pos = _lampWorld[m.id] ?? m.lightPosition;
     final axis = _lampAxis[m.id] ?? m.lightAxis;
     var cone = m.cone;
+    final softness = m.coneSoftness ?? kConeSoftness;
     var gain = 1.0;
     if (axis.z > 0.5) {
       // Nach oben (Uplight): Licht kommt erst von der Decke zurück, weich
@@ -1359,6 +1382,7 @@ class GpuScene {
       position: pos,
       axis: axis,
       cone: cone,
+      softness: softness,
       gain: gain,
       own: own,
       objects: occ.objects,
@@ -2292,14 +2316,22 @@ const int kBakedChannel = 0x40;
 /// Lichtkanal für alles außerhalb der Räume.
 const int kOutsideChannel = 0x80;
 
-/// Ein Bit (von sieben) je Raum, benachbarte Räume (gemeinsames Wandstück)
-/// verschieden. Gierige Färbung; Grundrisse sind planar, sieben reichen.
+/// Reichweite des Echtzeitlichts einer Lampe in Metern.
+const double kLampRange = 7;
+
+/// Ein Bit (von sechs) je Raum, benachbarte Räume (gemeinsames Wandstück)
+/// verschieden. Gierige Färbung.
 ///
-/// Mit [zones] (Raum → Zone, siehe `Scene.lightZones`) teilen sich die
-/// Räume einer Zone ein Bit: Licht geht durch offene Wände und Türen.
+/// Mit [zones] (Raum → Zone, siehe `Scene.openZones`) teilen sich die
+/// Räume einer Zone ein Bit: Licht geht durch offene Wände.
+///
+/// [reach] (Raum → Räume, die eine seiner Lampen erreicht): auch diese
+/// Räume bekommen ein anderes Bit, sonst leuchtete die Lampe ohne Schatten
+/// durch Wände auf Möbel und Wände eines nicht angrenzenden Raums.
 Map<String, int> roomChannels(
   List<SceneRoom> rooms, [
   Map<String, String>? zones,
+  Map<String, Set<String>> reach = const {},
 ]) {
   bool touches(SceneRoom a, SceneRoom b) {
     for (var i = 0; i < a.outline.length; i++) {
@@ -2324,7 +2356,12 @@ Map<String, int> roomChannels(
     for (final r in g) {
       for (final o in rooms) {
         final bit = out[o.id];
-        if (bit != null && !g.contains(o) && touches(r, o)) used |= bit;
+        if (bit == null || g.contains(o)) continue;
+        if ((reach[r.id]?.contains(o.id) ?? false) ||
+            (reach[o.id]?.contains(r.id) ?? false) ||
+            touches(r, o)) {
+          used |= bit;
+        }
       }
     }
     var bit = 1;
@@ -2350,6 +2387,45 @@ double _overlap(Offset a0, Offset a1, Offset b0, Offset b1) {
   final lo = math.max(0.0, math.min(t(b0), t(b1)));
   final hi = math.min(len, math.max(t(b0), t(b1)));
   return hi - lo;
+}
+
+/// Räume, die die Lampen eines Raums in Echtzeit erreichen könnten (näher
+/// als [kLampRange]), je Raum der Lampe.
+Map<String, Set<String>> lampReach(Scene scene) {
+  final out = <String, Set<String>>{};
+  for (final m in scene.markers) {
+    if (m.lamp == null) continue;
+    final home = scene.markerRoom[m.id];
+    if (home == null) continue;
+    final p = m.position.xy;
+    for (final r in scene.rooms) {
+      if (r.id == home) continue;
+      if (_distToOutline(p, r.outline) < kLampRange) {
+        (out[home] ??= {}).add(r.id);
+      }
+    }
+  }
+  return out;
+}
+
+/// Abstand von [p] zum Umriss [poly] (0 innerhalb).
+double _distToOutline(Offset p, List<Offset> poly) {
+  var inside = false;
+  var best = double.infinity;
+  for (var i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    final a = poly[j], b = poly[i];
+    if ((b.dy > p.dy) != (a.dy > p.dy) &&
+        p.dx < (a.dx - b.dx) * (p.dy - b.dy) / (a.dy - b.dy) + b.dx) {
+      inside = !inside;
+    }
+    final d = b - a;
+    final len2 = d.dx * d.dx + d.dy * d.dy;
+    final t = len2 == 0
+        ? 0.0
+        : (((p - a).dx * d.dx + (p - a).dy * d.dy) / len2).clamp(0.0, 1.0);
+    best = math.min(best, (p - (a + d * t)).distance);
+  }
+  return inside ? 0 : best;
 }
 
 class _Receiver {

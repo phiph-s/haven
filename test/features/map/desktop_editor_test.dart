@@ -233,6 +233,40 @@ void main() {
     expect(find.byKey(ValueKey('dsel-$id')), findsNothing);
   });
 
+  testWidgets('Geräte setzen: Lichtkegel, Streuung und Drehung', (
+    tester,
+  ) async {
+    final repo = _MemoryRepo(kFakeFloorPlan);
+    await _pump(tester, '/map/editor?mode=devices', repo: repo, size: _desk);
+    const id = 'light.lampe_decke_salon';
+    final marker = find.byWidgetPredicate(
+      (w) => w is MapMarker && w.entityId == id,
+    );
+    await tester.tap(marker.first);
+    await tester.pumpAndSettle();
+    // Deckenleuchte: Kegel und Streuung, rund (keine Drehung).
+    expect(find.byKey(const ValueKey('device-cone')), findsOneWidget);
+    expect(find.byKey(const ValueKey('device-spread')), findsOneWidget);
+    expect(find.byKey(const ValueKey('device-rotation')), findsNothing);
+    await tester.drag(
+      find.byKey(const ValueKey('device-cone')),
+      const Offset(-60, 0),
+    );
+    await tester.pumpAndSettle();
+    expect(repo.plan!.placementOf(id)!.cone, isNotNull);
+    // Lightbar (Standard: nach oben): drehbar, ohne Kegel.
+    await tester.tap(find.text('Lightbar'));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('device-rotation')), findsOneWidget);
+    expect(find.byKey(const ValueKey('device-cone')), findsNothing);
+    await tester.drag(
+      find.byKey(const ValueKey('device-rotation')),
+      const Offset(80, 0),
+    );
+    await tester.pumpAndSettle();
+    expect(repo.plan!.placementOf(id)!.rotation, greaterThan(0));
+  });
+
   testWidgets('Geräte setzen: Entf nimmt das gewählte Gerät von der Karte', (
     tester,
   ) async {
