@@ -80,6 +80,9 @@ class HaRepository extends BaseRepository {
   Set<String> _locked = const {};
   WeatherConfig _weather = const WeatherConfig();
   bool _prefsShared = false;
+
+  /// Revision der Prefs in HA (Feature `revisions`), siehe [_changePrefs].
+  int? _prefsRevision;
   bool _integrationMissing = false;
   Timer? _roomsDebounce;
   Future<void>? _roomsLoading;
@@ -255,6 +258,10 @@ class HaRepository extends BaseRepository {
   /// lehnen unbekannte Felder ab.
   bool get _v3 => _features.contains('data_events');
 
+  /// Revisionen und `base_revision` (siehe `sync/app_data.dart`).
+  @override
+  bool get appDataRevisions => _features.contains('revisions');
+
   @override
   Future<Map<String, List<StateChange>>> stateHistory(
     List<String> entityIds,
@@ -288,6 +295,7 @@ class HaRepository extends BaseRepository {
           data: {'plan': Map<String, dynamic>.from(plan)},
           updatedAt:
               parseStamp(r?['updated_at']) ?? parseStamp(plan['updatedAt']),
+          revision: parseRevision(r?['revision']),
         );
       case AppDataKind.widgets:
         final r = await client.send({'type': 'haven/widgets/get'}) as Map?;
@@ -300,6 +308,7 @@ class HaRepository extends BaseRepository {
             'layout': layout is Map ? Map<String, dynamic>.from(layout) : null,
           },
           updatedAt: parseStamp(r?['updated_at']),
+          revision: parseRevision(r?['revision']),
         );
       case AppDataKind.prefs:
         final r = await client.send({'type': 'haven/prefs/get'}) as Map?;
@@ -307,34 +316,47 @@ class HaRepository extends BaseRepository {
         return RemoteDoc(
           data: p is Map ? Map<String, dynamic>.from(p) : null,
           updatedAt: p is Map ? parseStamp(p['updatedAt']) : null,
+          revision: parseRevision(r?['revision']),
         );
     }
   }
 
   @override
-  Future<void> storeAppData(
+  Future<int?> storeAppData(
     AppDataKind kind,
     Map<String, dynamic> data,
-    int updatedAt,
-  ) async {
+    int updatedAt, {
+    int? baseRevision,
+  }) async {
+    final base = appDataRevisions && baseRevision != null
+        ? {'base_revision': baseRevision}
+        : const <String, dynamic>{};
+    final Object? r;
     switch (kind) {
       case AppDataKind.floorplan:
-        await client.send({
+        r = await client.send({
           'type': 'haven/floorplan/set',
           // Der Stempel steht auch im Dokument, das speichert jede Version.
           'plan': {...data['plan'] as Map, 'updatedAt': updatedAt},
           if (_v3) 'updated_at': updatedAt,
+          ...base,
         });
       case AppDataKind.widgets:
-        await client.send({
+        r = await client.send({
           'type': 'haven/widgets/set',
           'widgets': data['widgets'],
           if (_v3) 'layout': data['layout'],
           if (_v3) 'updated_at': updatedAt,
+          ...base,
         });
       case AppDataKind.prefs:
-        await client.send({'type': 'haven/prefs/set', 'prefs': data});
+        r = await client.send({
+          'type': 'haven/prefs/set',
+          'prefs': data,
+          ...base,
+        });
     }
+    return r is Map ? parseRevision(r['revision']) : null;
   }
 
   /// Ob die Integration das Layout (Reihenfolge der Räume) speichern kann.
@@ -344,6 +366,7 @@ class HaRepository extends BaseRepository {
     try {
       final res = await client.send({'type': 'haven/prefs/get'}) as Map?;
       final prefs = (res?['prefs'] as Map?) ?? const {};
+      _prefsRevision = parseRevision(res?['revision']);
       _excluded = {
         for (final id in (prefs['excluded_lights'] as List? ?? const [])) '$id',
       };
@@ -895,71 +918,78 @@ class HaRepository extends BaseRepository {
   bool get prefsShared => _prefsShared;
 
   @override
-  Future<void> setLightExcluded(String entityId, bool excluded) async {
-    final before = _excluded;
-    final next = {..._excluded};
-    excluded ? next.add(entityId) : next.remove(entityId);
-    _excluded = next;
+  Future<void> setLightExcluded(String entityId, bool excluded) =>
+      _changePrefs(() {
+        final next = {..._excluded};
+        excluded ? next.add(entityId) : next.remove(entityId);
+        _excluded = next;
+      }, local: () => _local.setExcludedLights(_excluded));
+
+  @override
+  Future<void> setWeatherConfig(WeatherConfig config) => _changePrefs(
+    () => _weather = config,
+    local: () => _local.setWeatherConfig(config.toJson()),
+  );
+
+  @override
+  Future<void> setLocked(Iterable<String> ids, bool locked) {
+    final list = [...ids];
+    return _changePrefs(() {
+      final next = {..._locked};
+      locked ? next.addAll(list) : next.removeAll(list);
+      _locked = next;
+    }, local: () => _local.setLockedIds(_locked));
+  }
+
+  /// Ändert die Prefs mit [apply] (sofort sichtbar) und speichert sie in HA,
+  /// ohne geteilte Prefs nur lokal ([local]).
+  ///
+  /// `haven/prefs/set` ersetzt das ganze Dokument. Damit ein Gerät mit
+  /// altem Stand nicht die Änderung eines anderen überschreibt, geht die
+  /// Revision mit (`base_revision`, Feature `revisions`). Lehnt HA mit
+  /// `conflict` ab, lädt die App die Prefs neu und wendet [apply] erneut an.
+  Future<void> _changePrefs(
+    void Function() apply, {
+    required Future<void> Function() local,
+  }) async {
+    final before = (_excluded, _locked, _weather);
+    apply();
     _pushNow();
     try {
-      if (_prefsShared) {
-        await _sendPrefs();
-      } else {
-        await _local.setExcludedLights(next);
+      if (!_prefsShared) return await local();
+      for (var attempt = 0; ; attempt++) {
+        try {
+          await _sendPrefs();
+          return;
+        } on HavenException catch (e) {
+          if (!isConflictError(e) || attempt >= 2) rethrow;
+          await _loadPrefs();
+          apply();
+          _pushNow();
+        }
       }
     } catch (e) {
-      _excluded = before;
+      _excluded = before.$1;
+      _locked = before.$2;
+      _weather = before.$3;
       _pushNow();
       rethrow;
     }
   }
 
   /// Ausnahmen und Sperren zusammen: `haven/prefs/set` ersetzt das Dokument.
-  Future<void> _sendPrefs() => client.send({
-    'type': 'haven/prefs/set',
-    'prefs': {
-      'excluded_lights': _excluded.toList()..sort(),
-      'locked': _locked.toList()..sort(),
-      if (!_weather.isEmpty) 'weather': _weather.toJson(),
-    },
-  });
-
-  @override
-  Future<void> setWeatherConfig(WeatherConfig config) async {
-    final before = _weather;
-    _weather = config;
-    _pushNow();
-    try {
-      if (_prefsShared) {
-        await _sendPrefs();
-      } else {
-        await _local.setWeatherConfig(config.toJson());
-      }
-    } catch (e) {
-      _weather = before;
-      _pushNow();
-      rethrow;
-    }
-  }
-
-  @override
-  Future<void> setLocked(Iterable<String> ids, bool locked) async {
-    final before = _locked;
-    final next = {..._locked};
-    locked ? next.addAll(ids) : next.removeAll(ids);
-    _locked = next;
-    _pushNow();
-    try {
-      if (_prefsShared) {
-        await _sendPrefs();
-      } else {
-        await _local.setLockedIds(next);
-      }
-    } catch (e) {
-      _locked = before;
-      _pushNow();
-      rethrow;
-    }
+  Future<void> _sendPrefs() async {
+    final res = await client.send({
+      'type': 'haven/prefs/set',
+      'prefs': {
+        'excluded_lights': _excluded.toList()..sort(),
+        'locked': _locked.toList()..sort(),
+        if (!_weather.isEmpty) 'weather': _weather.toJson(),
+      },
+      if (appDataRevisions && _prefsRevision != null)
+        'base_revision': _prefsRevision,
+    });
+    if (res is Map) _prefsRevision = parseRevision(res['revision']);
   }
 
   @override
@@ -1064,8 +1094,22 @@ class HaRepository extends BaseRepository {
   Stream<ZbMeasureResult> get zigbeeMeasureResults => _measureResults.stream;
 
   // ---- Bilder der Wohnung (haven/render/*) ---------------------------------
+  /// Zurück im Vordergrund: Verbindung prüfen. Steht sie noch, gleichen die
+  /// geteilten Dokumente trotzdem ab, im Hintergrund können Ereignisse
+  /// anderer Geräte gefehlt haben (Android hält die App an).
   @override
-  void nudgeConnection() => client.nudge();
+  void nudgeConnection() {
+    client.nudge();
+    if (client.isConnected && _status == ConnectionStatus.connected) {
+      emitAppData(AppDataKind.floorplan);
+      emitAppData(AppDataKind.widgets);
+      unawaited(
+        _loadPrefs().then((_) {
+          if (!disposed) _pushNow();
+        }),
+      );
+    }
+  }
 
   @override
   Future<RenderStatus?> renderStatus() async {

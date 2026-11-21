@@ -190,18 +190,33 @@ abstract class BaseRepository implements HavenRepository {
   Future<RemoteDoc> fetchAppData(AppDataKind kind) async =>
       _docs[kind] ?? RemoteDoc.empty;
 
+  /// Wie die Integration mit Feature `revisions`: Jedes Speichern erhöht die
+  /// Revision, ein veralteter [baseRevision] wird mit `conflict` abgelehnt.
   @override
-  Future<void> storeAppData(
+  Future<int?> storeAppData(
     AppDataKind kind,
     Map<String, dynamic> data,
-    int updatedAt,
-  ) async {
+    int updatedAt, {
+    int? baseRevision,
+  }) async {
+    final current = _docs[kind]?.revision ?? 0;
+    if (baseRevision != null && baseRevision != current) {
+      throw HavenException(
+        'Inzwischen auf einem anderen Gerät geändert.',
+        code: 'conflict',
+      );
+    }
     _docs[kind] = RemoteDoc(
       data: Map<String, dynamic>.from(jsonDecode(jsonEncode(data)) as Map),
       updatedAt: updatedAt,
+      revision: current + 1,
     );
     emitAppData(kind);
+    return current + 1;
   }
+
+  @override
+  bool get appDataRevisions => true;
 
   /// Ersetzt den Snapshot und benachrichtigt die Hörer.
   void publish(HavenSnapshot s) {
