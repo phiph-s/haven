@@ -23,6 +23,7 @@ const Map<String, (double, double)> kPreviewSizes = {
   'armchair': (0.9, 0.9),
   'coffee_table': (1.2, 0.6),
   'tv_board': (1.8, 0.45),
+  'sideboard': (1.8, 0.45),
   'rug': (2.0, 1.5),
   'plant': (0.5, 0.5),
   'shelf': (1.0, 0.4),

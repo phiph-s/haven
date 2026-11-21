@@ -258,6 +258,7 @@ h3.Scene sceneOfPlan(HavenFloorPlan plan) {
           d: f.h * m,
           rotation: f.rotation,
           sensor: f.sensor,
+          colors: f.colors,
         ),
     ],
     // Alle platzierten Geräte stehen als Modell in der Welt, Lampen
@@ -277,6 +278,8 @@ h3.Scene sceneOfPlan(HavenFloorPlan plan) {
           // halben im Bogenmaß.
           cone: p.cone == null ? null : p.cone! / 2 * math.pi / 180,
           coneSoftness: p.spread,
+          size: p.size,
+          colors: p.colors,
         ),
     ],
   );
@@ -332,10 +335,18 @@ String defaultDeviceModel(FloorKind kind, String entityId) => switch (kind) {
   FloorKind.presence => 'motion',
   FloorKind.remote => 'switch',
   FloorKind.contact => 'contact',
-  FloorKind.media => 'speaker',
+  FloorKind.media => _looksLikeTv(entityId) ? 'tv' : 'speaker',
   FloorKind.switchKind => 'plug',
   FloorKind.device => 'device',
 };
+
+/// Fernseher am Namen der Entity erkannt (`media_player.tv_salon`,
+/// `media_player.fernseher`, `…_android_tv`).
+bool _looksLikeTv(String entityId) {
+  final name = entityId.split('.').last.toLowerCase();
+  return RegExp(r'(^|_)(tv|fernseher|television)(_|$)').hasMatch(name) ||
+      name.contains('fernseher');
+}
 
 /// Bauformen, die für ein Gerät der Art [kind] in Frage kommen.
 List<h3.DeviceSpec> deviceModelsFor(FloorKind kind) => [

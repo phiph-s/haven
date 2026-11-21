@@ -9,6 +9,11 @@ final Map<String, FurnitureSpec> workModels = {
   // Gesamthöhe 1,15 m: Platte bei 0,75 m, Monitor ragt darüber hinaus.
   'desk': FurnitureSpec(
     height: 1.15,
+    zones: const [
+      ColorZone('top', 'Platte'),
+      ColorZone('legs', 'Beine'),
+      ColorZone('monitor', 'Monitor', Mat.dark),
+    ],
     build: (b, w, d, h) {
       final top = h * 0.65;
       const t = 0.035;
@@ -17,6 +22,7 @@ final Map<String, FurnitureSpec> workModels = {
       // Platte.
       b.box(-w / 2, -d / 2, top - t, w / 2, d / 2, top);
       // Vier Beine.
+      b.zone = 'legs';
       for (final sx in [-1, 1]) {
         for (final sy in [-1, 1]) {
           b.boxC(
@@ -30,11 +36,31 @@ final Map<String, FurnitureSpec> workModels = {
         }
       }
       // Monitor: eine dünne, senkrechte Platte auf flachem Fuß.
+      b.zone = 'monitor';
       final mw = w * 0.4, mh = math.min(h - top - 0.03, 0.32);
       final my = -d / 2 + d * 0.17;
       final mz = top + 0.05;
-      b.boxC(0, my, mw * 0.3, d * 0.08, top, mz);
-      b.boxC(0, my, mw, 0.025, mz, mz + mh);
+      b.boxC(0, my, mw * 0.3, d * 0.08, top, top + 0.012, mat: Mat.dark);
+      b.boxC(
+        0,
+        my - 0.01,
+        0.04,
+        0.02,
+        top + 0.012,
+        mz + mh * 0.5,
+        mat: Mat.dark,
+      );
+      b.boxC(0, my, mw, 0.025, mz, mz + mh, mat: Mat.dark);
+      b.zone = null;
+      b.boxC(
+        0,
+        my + 0.0135,
+        mw - 0.02,
+        0.002,
+        mz + 0.01,
+        mz + mh - 0.01,
+        mat: Mat.screen,
+      );
       // Bildschirmrand als Linien auf der Vorderseite (+y).
       final fy = my + 0.0125, e = 0.02;
       b.polyline([
@@ -51,6 +77,10 @@ final Map<String, FurnitureSpec> workModels = {
   // 2D: runder Sitz, Fünfstern-Fuß, Lehne an der Oberkante (y < 0).
   'office_chair': FurnitureSpec(
     height: 1.0,
+    zones: const [
+      ColorZone('cushions', 'Polster', Mat.soft),
+      ColorZone('frame', 'Gestell', Mat.dark),
+    ],
     build: (b, w, d, h) {
       final u = math.min(w, d);
       final seatTop = h * 0.46;
@@ -64,8 +94,10 @@ final Map<String, FurnitureSpec> workModels = {
         b.line(V3(0, cy, 0), V3(math.cos(a) * rb, cy + math.sin(a) * rb, 0));
       }
       // Eine Säule.
-      b.cylinder(0, cy, 0.03, 0, seatTop - seatT, segments: 8);
+      b.zone = 'frame';
+      b.cylinder(0, cy, 0.03, 0, seatTop - seatT, segments: 8, mat: Mat.dark);
       // Sitzscheibe.
+      b.zone = 'cushions';
       b.cylinder(
         0,
         cy,
@@ -77,7 +109,17 @@ final Map<String, FurnitureSpec> workModels = {
       );
       // Lehne: eine Platte an der Rückseite (y < 0), kurzer Steg zum Sitz.
       final bw = u * 0.64;
-      b.box(-0.02, -d / 2, seatTop - seatT, 0.02, cy - r + 0.02, seatTop);
+      b.zone = 'frame';
+      b.box(
+        -0.02,
+        -d / 2,
+        seatTop - seatT,
+        0.02,
+        cy - r + 0.02,
+        seatTop,
+        mat: Mat.dark,
+      );
+      b.zone = 'cushions';
       b.box(
         -bw / 2,
         -d / 2,
@@ -87,7 +129,16 @@ final Map<String, FurnitureSpec> workModels = {
         h,
         mat: Mat.soft,
       );
-      b.box(-0.02, -d / 2, seatTop, 0.02, -d / 2 + 0.06, seatTop + h * 0.1);
+      b.zone = 'frame';
+      b.box(
+        -0.02,
+        -d / 2,
+        seatTop,
+        0.02,
+        -d / 2 + 0.06,
+        seatTop + h * 0.1,
+        mat: Mat.dark,
+      );
     },
   ),
 };

@@ -26,9 +26,15 @@ void _near(Offset a, Offset b) {
 
 void main() {
   group('Bibliothek', () {
-    test('25 Elemente, eindeutige Kennungen, alle Gruppen', () {
-      expect(kFurnitureCatalog.length, 25);
-      expect(kFurnitureCatalog.map((t) => t.id).toSet().length, 25);
+    test('eindeutige Kennungen, alle Gruppen, alte Typen nicht angeboten', () {
+      final n = kFurnitureCatalog.length;
+      expect(n, greaterThanOrEqualTo(26));
+      expect(kFurnitureCatalog.map((t) => t.id).toSet().length, n);
+      // TV-Board (bis 0.9.26) bleibt lesbar, die Bibliothek bietet Sideboard
+      // und den Fernseher als Gerät an.
+      expect(furnitureType('tv_board'), isNotNull);
+      expect(kFurnitureLibrary.map((t) => t.id), isNot(contains('tv_board')));
+      expect(kFurnitureLibrary.map((t) => t.id), contains('sideboard'));
       for (final c in FurnitureCategory.values) {
         expect(kFurnitureCatalog.where((t) => t.category == c), isNotEmpty);
       }
@@ -52,6 +58,61 @@ void main() {
       }
       paintFurnitureShape(canvas, 'neu', const Size(40, 40), ink);
       rec.endRecording().dispose();
+    });
+  });
+
+  group('Farbzonen', () {
+    test('Farben je Zone: setzen, zurücksetzen, JSON-Rundreise', () {
+      final f = _sofa()
+          .withColor('cushions', const Color(0xFF7A8F6B))
+          .withColor('frame', const Color(0x803A3F47));
+      expect(f.colorOf('cushions'), const Color(0xFF7A8F6B));
+      // Deckkraft fällt weg.
+      expect(f.colorOf('frame'), const Color(0xFF3A3F47));
+      final j = f.toJson();
+      expect(j['colors'], {'cushions': '#7A8F6B', 'frame': '#3A3F47'});
+      final back = FloorFurniture.tryFromJson(jsonDecode(jsonEncode(j)));
+      expect(back, f);
+      expect(back!.withColor('frame', null).colors.keys, ['cushions']);
+      expect(f.withoutColors().toJson().containsKey('colors'), isFalse);
+    });
+
+    test('alte Pläne ohne Farben, kaputte Farben fallen weg', () {
+      final old = FloorFurniture.tryFromJson({
+        'id': 'a',
+        'kind': 'tv_board',
+        'x': 1,
+        'y': 1,
+        'w': 2,
+        'h': 1,
+      })!;
+      expect(old.colors, isEmpty);
+      final odd = FloorFurniture.tryFromJson({
+        ...old.toJson(),
+        'colors': {'body': 'rot', 'fronts': '#12345G', 'handles': '#A0B0C0'},
+      })!;
+      expect(odd.colors, {'handles': const Color(0xFFA0B0C0)});
+    });
+
+    test('Plan: Farbe eines Möbelstücks und eines Geräts', () {
+      final plan = HavenFloorPlan(
+        furniture: [_sofa()],
+        placements: const [
+          FloorPlacement(entityId: 'media_player.tv', x: 1, y: 1),
+        ],
+      );
+      final p2 = plan
+          .withFurnitureColor('s', 'frame', const Color(0xFF445566))
+          .withPlacementColor(
+            'media_player.tv',
+            'housing',
+            const Color(0xFFEEEEEE),
+          );
+      expect(p2.furnitureById('s')!.colorOf('frame'), const Color(0xFF445566));
+      final back = HavenFloorPlan.fromJson(jsonDecode(jsonEncode(p2.toJson())));
+      expect(back.placements.single.colors['housing'], const Color(0xFFEEEEEE));
+      expect(back.furniture.single, p2.furniture.single);
+      expect(plan.withFurnitureColor('gibt_es_nicht', 'x', null), plan);
     });
   });
 

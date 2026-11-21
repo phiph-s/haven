@@ -24,11 +24,32 @@ class FurnitureSpec {
     this.elevation = 0,
     this.wallMounted = false,
     this.facesRoom = false,
+    this.wallHung = false,
+    this.zones = const [kBodyZone],
     required this.build,
   });
 
   final double height;
   final double elevation;
+
+  /// Hängt an der Wand (Oberschrank, Spiegel, Waschbecken): Rückseite
+  /// (`-y`, Oberkante des 2D-Symbols) an der Wand, Unterkante auf
+  /// [elevation]. Anders als [wallMounted] sitzt es nicht *in* der Wand,
+  /// sondern ist ein normales Möbelstück im Raum, das ein Editor an Wände
+  /// rasten lassen kann.
+  final bool wallHung;
+
+  /// Einfärbbare Teile, der erste ist der Standard für Flächen ohne eigene
+  /// Zone. Leer: nicht einfärbbar (Tür, Fenster).
+  final List<ColorZone> zones;
+
+  /// Zone mit Kennung [id] oder `null`.
+  ColorZone? zone(String id) {
+    for (final z in zones) {
+      if (z.id == id) return z;
+    }
+    return null;
+  }
 
   /// Sitzt in der Wand (Tür, Fenster): gehört zum Raum auf der Seite `-y`
   /// (bzw. zum Raum, in den es ragt) und verschwindet mit einer
@@ -40,6 +61,9 @@ class FurnitureSpec {
   final bool facesRoom;
   final FurnitureBuild build;
 }
+
+/// Standardzone: der ganze Korpus.
+const ColorZone kBodyZone = ColorZone('body', 'Korpus');
 
 /// Unbekannte Kennung: schlichter Kasten mit Kreuz oben (wie in 2D).
 final FurnitureSpec fallbackFurniture = FurnitureSpec(
@@ -75,7 +99,8 @@ Model3 buildFurniture(
   bool? open,
 }) {
   final spec = furnitureSpec(kind);
-  final b = ModelBuilder(open: open);
+  final b = ModelBuilder(open: open)
+    ..zone = spec.zones.isEmpty ? null : spec.zones.first.id;
   spec.build(b, w, d, height ?? spec.height);
   return b.build();
 }

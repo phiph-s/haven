@@ -147,12 +147,19 @@ void main() {
         final m = buildFurniture(e.key, w, d);
         final h = e.value.height;
         expect(m.isEmpty, isFalse, reason: e.key);
-        // Nur die Körper: Hilfslinien (Aufgehwinkel) dürfen hinausragen.
-        for (final p in [for (final f in m.faces) ...f.points]) {
-          if (p.x.abs() > w / 2 + 1e-6 ||
-              p.y.abs() > d / 2 + 1e-6 ||
-              p.z < -1e-6 ||
-              p.z > h + 1e-6) {
+        // Nur die Körper: Hilfslinien (Aufgehwinkel) dürfen hinausragen,
+        // Armaturen (Metall) etwas über die Oberkante.
+        for (final f in m.faces) {
+          final top = h + (f.mat == Mat.metal ? 0.3 : 0) + 1e-6;
+          final p = f.points.firstWhere(
+            (p) =>
+                p.x.abs() > w / 2 + 1e-6 ||
+                p.y.abs() > d / 2 + 1e-6 ||
+                p.z < -1e-6 ||
+                p.z > top,
+            orElse: () => V3.zero,
+          );
+          if (p != V3.zero) {
             bad.add('${e.key} ${w}x$d: $p');
             break;
           }

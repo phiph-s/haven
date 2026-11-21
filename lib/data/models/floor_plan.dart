@@ -1,6 +1,6 @@
 import 'dart:convert';
 import 'dart:math' as math;
-import 'dart:ui' show Offset, Rect, Size;
+import 'dart:ui' show Color, Offset, Rect, Size;
 
 import 'package:flutter/foundation.dart';
 
@@ -334,6 +334,8 @@ class FloorPlacement {
     this.rotation,
     this.cone,
     this.spread,
+    this.size,
+    this.colors = const {},
   });
 
   static double? _num(Object? v) =>
@@ -353,6 +355,8 @@ class FloorPlacement {
     rotation: _num(j['rotation']),
     cone: _num(j['cone']),
     spread: _num(j['spread']),
+    size: _num(j['size']),
+    colors: colorsFromJson(j['colors']),
   );
 
   final String entityId;
@@ -382,6 +386,18 @@ class FloorPlacement {
   /// Streuung 0 … 1: weicher Anteil am Kegelrand, `null`: Standard.
   final double? spread;
 
+  /// Größe skalierbarer Bauformen (Fernseher: Bilddiagonale in Zoll, siehe
+  /// `DeviceSpec.sizing`), `null`: Standard.
+  final double? size;
+
+  /// Eigene Farben je Farbzone der Bauform (Fernseher: `housing`,
+  /// `screen`), JSON wie bei [FloorFurniture.colors].
+  final Map<String, Color> colors;
+
+  /// Mit Farbe [color] für Zone [zone] (`null`: zurück zum Standard).
+  FloorPlacement withColor(String zone, Color? color) =>
+      copyWith(colors: withZoneColor(colors, zone, color));
+
   FloorKind get resolvedKind => kind ?? FloorKind.ofEntity(entityId);
   GridPoint get cell => GridPoint(x, y);
 
@@ -400,6 +416,8 @@ class FloorPlacement {
     if (rotation != null) 'rotation': rotation!.roundToDouble(),
     if (cone != null) 'cone': cone!.roundToDouble(),
     if (spread != null) 'spread': (spread! * 100).roundToDouble() / 100,
+    if (size != null) 'size': (size! * 10).roundToDouble() / 10,
+    if (colors.isNotEmpty) 'colors': colorsToJson(colors),
   };
 
   FloorPlacement copyWith({
@@ -420,6 +438,9 @@ class FloorPlacement {
     bool clearCone = false,
     double? spread,
     bool clearSpread = false,
+    double? size,
+    bool clearSize = false,
+    Map<String, Color>? colors,
   }) => FloorPlacement(
     entityId: entityId ?? this.entityId,
     x: x ?? this.x,
@@ -432,6 +453,8 @@ class FloorPlacement {
     rotation: clearRotation ? null : (rotation ?? this.rotation),
     cone: clearCone ? null : (cone ?? this.cone),
     spread: clearSpread ? null : (spread ?? this.spread),
+    size: clearSize ? null : (size ?? this.size),
+    colors: colors ?? this.colors,
   );
 
   @override
@@ -447,7 +470,9 @@ class FloorPlacement {
       other.mount == mount &&
       other.rotation == rotation &&
       other.cone == cone &&
-      other.spread == spread;
+      other.spread == spread &&
+      other.size == size &&
+      sameZoneColors(other.colors, colors);
 
   @override
   int get hashCode => Object.hash(
@@ -462,6 +487,8 @@ class FloorPlacement {
     rotation,
     cone,
     spread,
+    size,
+    hashZoneColors(colors),
   );
 
   @override
@@ -811,6 +838,26 @@ class HavenFloorPlan {
     }
     return copyWith(furniture: l);
   }
+
+  /// Farbe [color] für Zone [zone] des Möbelstücks [id] (`null`: zurück
+  /// zum Standard). Unbekannte ID: unverändert.
+  HavenFloorPlan withFurnitureColor(String id, String zone, Color? color) {
+    final f = furnitureById(id);
+    return f == null ? this : withFurniture(f.withColor(zone, color));
+  }
+
+  /// Farbe [color] für Zone [zone] des Geräts [entityId] (Fernseher: Gehäuse,
+  /// Bildschirm). Nicht platziert: unverändert.
+  HavenFloorPlan withPlacementColor(
+    String entityId,
+    String zone,
+    Color? color,
+  ) => copyWith(
+    placements: [
+      for (final p in placements)
+        p.entityId == entityId ? p.withColor(zone, color) : p,
+    ],
+  );
 
   HavenFloorPlan withoutFurniture(String id) => copyWith(
     furniture: [

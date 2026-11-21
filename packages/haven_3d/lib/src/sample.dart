@@ -76,7 +76,7 @@ Scene sampleScene() {
       f('coffee_table', 2.2, 2.7, 1.2, 0.6),
       f('rug', 2.2, 2.7, 2.6, 1.8),
       f('armchair', 4.2, 2.6, 0.9, 0.9, 270),
-      f('tv_board', 2.2, 0.3, 1.8, 0.45),
+      f('sideboard', 2.2, 0.3, 1.8, 0.45),
       f('plant', 0.4, 0.4, 0.5, 0.5),
       f('shelf', 0.25, 2.2, 1.0, 0.4, 270),
       f('window', 2.2, 0.0, 1.6, 0.2),
@@ -170,6 +170,16 @@ Scene sampleScene() {
         at: const Offset(5.6, 9.7),
         kind: MarkerKind.light,
         lamp: const LampState(brightness: 0.8, color: Color(0xFF5DFF8A)),
+      ),
+      // Fernseher auf dem Sideboard (Oberkante 0,55 m).
+      SceneMarker(
+        id: 'fernseher',
+        model: 'tv',
+        mount: DeviceMount.stand,
+        at: const Offset(2.2, 0.32),
+        height: 0.55,
+        kind: MarkerKind.media,
+        size: 50,
       ),
       SceneMarker(
         id: 'lautsprecher',

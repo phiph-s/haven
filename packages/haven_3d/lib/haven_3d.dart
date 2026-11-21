@@ -18,6 +18,7 @@ export 'src/furniture/catalog.dart'
         FurnitureSpec,
         buildFurniture,
         fallbackFurniture,
+        kBodyZone,
         furnitureSpec,
         kFurnitureModels;
 export 'src/model.dart';

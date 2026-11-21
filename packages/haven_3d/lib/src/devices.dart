@@ -25,7 +25,10 @@ enum DeviceMount {
   wall('Wand'),
 
   /// Steht auf Boden oder Möbel und zeigt nach oben (Uplight).
-  up('Nach oben');
+  up('Nach oben'),
+
+  /// Aufrecht gebaute Bauform (Fernseher), steht auf Boden oder Möbel.
+  stand('Aufgestellt');
 
   const DeviceMount(this.label);
   final String label;
@@ -56,7 +59,32 @@ class DeviceSpec {
     this.mounts = const [],
     this.legacy = false,
     this.rotatable = false,
+    this.upright = false,
+    this.sizing,
+    this.sized,
+    this.zones = const [],
+    this.wallHeight,
   });
+
+  /// Aufrecht gebaut (nicht nach unten zeigend): Montagen drehen die Bauform
+  /// nicht, die Bauform baut sich je Montage selbst (siehe [sized]), z. B.
+  /// Fernseher mit Fuß oder flach an der Wand. An der Wand liegt die
+  /// Rückseite auf `y = 0`, die Front zeigt nach `-y`.
+  final bool upright;
+
+  /// Skalierbare Bauform: erlaubte Größen, `null`: feste Größe.
+  final DeviceSizing? sizing;
+
+  /// Baut die Bauform in Größe `size` (siehe [sizing]) für die Montage `m`;
+  /// ersetzt [build], wenn gesetzt.
+  final void Function(ModelBuilder b, double size, DeviceMount? m)? sized;
+
+  /// Einfärbbare Teile (siehe [ColorZone]), der erste ist der Standard.
+  final List<ColorZone> zones;
+
+  /// Höhe des Montagepunkts an der Wand, `null`: Standard (siehe
+  /// [heightFor]).
+  final double? wallHeight;
 
   final String id;
   final String label;
@@ -92,7 +120,7 @@ class DeviceSpec {
 
   /// Standardhöhe des Montagepunkts für die Montage [m].
   double heightFor(DeviceMount? m) => switch (mountOf(m)) {
-    DeviceMount.wall => isLamp ? 1.8 : 2.2,
+    DeviceMount.wall => wallHeight ?? (isLamp ? 1.8 : 2.2),
     DeviceMount.up => 0,
     _ => height,
   };
@@ -100,11 +128,13 @@ class DeviceSpec {
   /// Lokaler Punkt [v] der Bauform in der Montage [m] (die Bauform ist nach
   /// unten zeigend gebaut): Wand dreht `-z` nach `-y` (in den Raum), nach
   /// oben stellt sie auf den Kopf.
-  V3 orient(V3 v, DeviceMount? m) => switch (mountOf(m)) {
-    DeviceMount.wall => v.rotateX(-math.pi / 2),
-    DeviceMount.up => v.rotateX(math.pi),
-    _ => v,
-  };
+  V3 orient(V3 v, DeviceMount? m) => upright
+      ? v
+      : switch (mountOf(m)) {
+          DeviceMount.wall => v.rotateX(-math.pi / 2),
+          DeviceMount.up => v.rotateX(math.pi),
+          _ => v,
+        };
 
   /// Richtung des Lichts (lokal, vor dem Drehen zur Wand).
   V3 lightAxis(DeviceMount? m) => orient(const V3(0, 0, -1), m);
@@ -112,9 +142,15 @@ class DeviceSpec {
   /// Versatz der Lichtquelle zum Montagepunkt (lokal).
   V3 lightOffset(DeviceMount? m) => orient(V3(0, 0, lamp?.lightZ ?? 0), m);
 
-  Model3 model([DeviceMount? m]) {
-    final b = ModelBuilder();
-    build(b);
+  /// Modell in der Montage [m] und Größe [size] (nur bei [sizing]).
+  Model3 model([DeviceMount? m, double? size]) {
+    final b = ModelBuilder()..zone = zones.isEmpty ? null : zones.first.id;
+    final s = sized;
+    if (s != null) {
+      s(b, sizing?.clamp(size) ?? size ?? 1, mountOf(m));
+    } else {
+      build(b);
+    }
     return _oriented(b.build(), m);
   }
 
@@ -127,9 +163,111 @@ class DeviceSpec {
   }
 
   Model3 _oriented(Model3 model, DeviceMount? m) =>
-      mountOf(m) == null || mountOf(m) == DeviceMount.ceiling
+      upright || mountOf(m) == null || mountOf(m) == DeviceMount.ceiling
       ? model
       : model.rotated((v) => orient(v, m));
+}
+
+/// Größen einer skalierbaren Bauform: [min] bis [max] in Schritten von
+/// [step], Standard [standard], Einheit [unit] (z. B. `″` für Zoll).
+class DeviceSizing {
+  const DeviceSizing({
+    required this.min,
+    required this.max,
+    required this.standard,
+    this.step = 1,
+    this.unit = '',
+    this.label = 'Größe',
+  });
+  final double min;
+  final double max;
+  final double standard;
+  final double step;
+  final String unit;
+  final String label;
+
+  /// [v] im erlaubten Bereich, `null`: [standard].
+  double clamp(double? v) =>
+      v == null || !v.isFinite ? standard : v.clamp(min, max).toDouble();
+}
+
+/// Breite des Bildes eines 16:9-Fernsehers mit [inches] Zoll Diagonale.
+double tvWidthOf(double inches) => inches * 0.0254 * 16 / math.sqrt(337);
+
+/// Diagonale in Zoll eines 16:9-Fernsehers mit Bildbreite [width] Meter.
+double tvInchesOf(double width) => width / (0.0254 * 16 / math.sqrt(337));
+
+/// Farbzonen eines Fernsehers.
+const List<ColorZone> kTvZones = [
+  ColorZone('housing', 'Gehäuse', Mat.dark),
+  ColorZone('screen', 'Bildschirm', Mat.screen),
+];
+
+/// Flachbildfernseher mit Bildbreite [width] (Meter), unten mittig im
+/// Ursprung.
+///
+/// Mit [stand] steht er auf einem flachen Fuß um den Ursprung und zeigt wie
+/// Möbelfronten nach `+y`. Ohne hängt er flach an der Wand: Rückseite auf
+/// `y = 0`, Bild nach `-y` (wie alle Wandgeräte).
+void buildTv(ModelBuilder b, double width, {bool stand = true}) {
+  final w = width + 0.024; // schmaler Rahmen
+  final h = width * 9 / 16 + 0.024;
+  const t = 0.045; // Tiefe des Gehäuses
+  final z0 = stand ? 0.075 : 0.0;
+  // Lokal: Rückseite auf 0, Bild nach -y; aufgestellt gedreht nach +y und
+  // um die Mitte des Fußes.
+  double y(double v) => stand ? -(v + t / 2) : v;
+  b.inZone('housing', () {
+    b.roundBox(
+      -w / 2,
+      y(-t),
+      z0,
+      w / 2,
+      y(-0.014),
+      z0 + h,
+      0.01,
+      mat: Mat.dark,
+      segments: 2,
+    );
+    // Rückwand etwas schmaler (Elektronik).
+    b.box(
+      -w * 0.36,
+      y(-0.014),
+      z0 + h * 0.12,
+      w * 0.36,
+      y(0),
+      z0 + h * 0.78,
+      mat: Mat.dark,
+    );
+    if (stand) {
+      // Flacher Fuß unter der Mitte, kurzer Hals.
+      final fw = math.min(0.32 * w, 0.45);
+      b.roundBox(
+        -fw / 2,
+        -0.1,
+        0,
+        fw / 2,
+        0.1,
+        0.012,
+        0.03,
+        mat: Mat.dark,
+        segments: 2,
+      );
+      b.box(-0.03, -0.012, 0.012, 0.03, 0.012, z0 + 0.02, mat: Mat.dark);
+    }
+  });
+  b.inZone('screen', () {
+    // Bild als dünne Platte knapp vor dem Gehäuse.
+    b.box(
+      -width / 2,
+      y(-t - 0.003),
+      z0 + 0.012,
+      width / 2,
+      y(-t),
+      z0 + h - 0.012,
+      mat: Mat.screen,
+    );
+  });
 }
 
 /// Alle Bauformen. Lampen haben einen [LampProfile] (Lichtkegel).
@@ -323,6 +461,28 @@ final List<DeviceSpec> _devices = [
       b.box(-0.04, -0.01, -0.04, 0.04, 0, 0.04);
       b.box(-0.025, -0.06, -0.03, 0.025, -0.01, 0.03, mat: Mat.dark);
     },
+  ),
+  DeviceSpec(
+    'tv',
+    'Fernseher',
+    // Aufgestellt auf einem Board (Oberkante 0,5 m), an der Wand mit der
+    // Unterkante auf 0,95 m.
+    height: 0.5,
+    wallHeight: 0.95,
+    upright: true,
+    rotatable: true,
+    mounts: const [DeviceMount.stand, DeviceMount.wall],
+    sizing: const DeviceSizing(
+      min: 24,
+      max: 98,
+      standard: 55,
+      unit: '″',
+      label: 'Bilddiagonale',
+    ),
+    zones: kTvZones,
+    build: (b) => buildTv(b, tvWidthOf(55)),
+    sized: (b, inches, m) =>
+        buildTv(b, tvWidthOf(inches), stand: m != DeviceMount.wall),
   ),
   DeviceSpec(
     'speaker',

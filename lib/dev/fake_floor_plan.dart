@@ -112,7 +112,7 @@ final HavenFloorPlan kFakeFloorPlan = HavenFloorPlan(
     _f('rug', 'rug', 5, 6.6, w: 6, h: 4.4),
     _f('sofa', 'sofa', 5, 9.4, rot: 180),
     _f('table', 'coffee_table', 5, 6.4),
-    _f('tv', 'tv_board', 5, 0.55),
+    _f('tv', 'sideboard', 5, 0.55),
     _f('chair', 'armchair', 9.6, 6.6, rot: 270),
     _f('plant', 'plant', 11.3, 0.8),
     _f('shelf', 'shelf', 0.5, 4, rot: 270),

@@ -63,9 +63,16 @@ List<Edge3> featureEdges(
       // Senkrechte Kanten runder Seitenflächen (1 und 3) überspringen.
       if (f.face.smooth && (i == 1 || i == 3)) continue;
       // Richtung in der Ebene, von der Fläche weg.
+      // (Bei nicht konvexen Flächen zeigt die Mitte nicht verlässlich nach
+      // innen: die Seite nehmen, auf der die Fläche selbst nicht liegt.)
       var out = d.cross(f.n).normalized;
       final mid = V3.lerp(a, b, 0.5);
-      if (out.dot(f.centroid - mid) > 0) out = -out;
+      if (f.contains(mid + out * 0.004)) {
+        out = -out;
+      } else if (!f.contains(mid - out * 0.004) &&
+          out.dot(f.centroid - mid) > 0) {
+        out = -out;
+      }
 
       final k = math.max(1, (len / step).ceil());
       int? runStart;

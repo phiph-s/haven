@@ -39,6 +39,7 @@ class SceneStyle {
     this.shadowFill = 0.3,
     this.wallGlow = 0,
     this.skyMinAmbient = 0.42,
+    this.paintScale = 1,
   });
 
   /// Hell: fast weiße Möbel auf warmem Grau, wie die Haven-Karte am Tag.
@@ -109,6 +110,8 @@ class SceneStyle {
     shadowFill: 0.5,
     wallOpacity: 0.62,
     floorOpacity: 0.92,
+    // Eigene Möbelfarben passend zu den gedämpften Grundfarben.
+    paintScale: 0.84,
   );
 
   /// Kanten (nur echte Knicke und Ränder).
@@ -189,6 +192,11 @@ class SceneStyle {
   /// aus und die Form kommt allein aus der Schattierung.
   final bool edgesOnlyFromAbove;
 
+  /// Helligkeit eigener Farben ([paint]) im Verhältnis zur gewählten
+  /// Farbe: 1 im hellen Stil, darunter im dunklen (dessen Grundfarben auch
+  /// gedämpft sind).
+  final double paintScale;
+
   Color base(Mat m) => switch (m) {
     Mat.body => surface,
     Mat.soft => soft,
@@ -197,7 +205,24 @@ class SceneStyle {
     Mat.green => green,
     Mat.rug => Color.lerp(floor, soft, 0.6)!,
     Mat.wall => wall,
+    Mat.screen => Color.lerp(dark, const Color(0xFF1E2126), 0.62)!,
+    Mat.ceramic => Color.lerp(surface, const Color(0xFFFFFFFF), 0.5)!,
+    Mat.metal => Color.lerp(dark, surface, 0.5)!,
   };
+
+  /// Eigene Farbe [c] (Farbzone eines Möbelstücks) in diesem Stil.
+  Color paint(Color c) {
+    if (paintScale == 1) return c.withValues(alpha: 1);
+    return Color.from(
+      alpha: 1,
+      red: c.r * paintScale,
+      green: c.g * paintScale,
+      blue: c.b * paintScale,
+    );
+  }
+
+  /// Grundfarbe der Zone [mat] mit eigener Farbe [c] (oder ohne).
+  Color colorOf(Mat mat, Color? c) => c == null ? base(mat) : paint(c);
 
   SceneStyle copyWith({
     Color? ink,
@@ -218,6 +243,7 @@ class SceneStyle {
     double? shadowFill,
     double? wallGlow,
     double? skyMinAmbient,
+    double? paintScale,
   }) => SceneStyle(
     ink: ink ?? this.ink,
     surface: surface,
@@ -236,6 +262,7 @@ class SceneStyle {
     shadowFill: shadowFill ?? this.shadowFill,
     wallGlow: wallGlow ?? this.wallGlow,
     skyMinAmbient: skyMinAmbient ?? this.skyMinAmbient,
+    paintScale: paintScale ?? this.paintScale,
     wallOpacity: wallOpacity ?? this.wallOpacity,
     floorOpacity: floorOpacity ?? this.floorOpacity,
     cutaway: cutaway ?? this.cutaway,
@@ -266,6 +293,7 @@ class SceneStyle {
       other.shadowFill == shadowFill &&
       other.wallGlow == wallGlow &&
       other.skyMinAmbient == skyMinAmbient &&
+      other.paintScale == paintScale &&
       other.wallOpacity == wallOpacity &&
       other.floorOpacity == floorOpacity &&
       other.cutaway == cutaway &&
@@ -294,6 +322,7 @@ class SceneStyle {
     shadowFill,
     wallGlow,
     skyMinAmbient,
+    paintScale,
     wallOpacity,
     floorOpacity,
     cutaway,
