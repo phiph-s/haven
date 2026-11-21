@@ -1531,6 +1531,11 @@ class _FloorEditorScreenState extends ConsumerState<FloorEditorScreen> {
             onSelected: () => _assign(id),
           ),
           HavenMenuItem(
+            label: 'Bodenfarbe …',
+            icon: Icons.format_paint_outlined,
+            onSelected: () => _editFloorColor(id),
+          ),
+          HavenMenuItem(
             label: 'Raum löschen',
             icon: Icons.delete_outline_rounded,
             shortcut: 'Entf',
@@ -1656,6 +1661,57 @@ class _FloorEditorScreenState extends ConsumerState<FloorEditorScreen> {
     colors: f.colors,
     onChanged: (zone, c) => _setFurnitureColor(f.id, zone, c),
   );
+
+  /// Bodenfarbe eines Raums als Blatt: bleibt offen, jede Wahl gilt sofort
+  /// (Rückgängig wie jede Änderung).
+  Future<void> _editFloorColor(String roomId) async {
+    Haptics.tick();
+    await showZbSheet<void>(
+      context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setSheet) {
+          final hv = context.hv;
+          final room = _plan?.room(roomId);
+          if (room == null) return const SizedBox.shrink();
+          return Column(
+            key: ValueKey('floor-color-sheet$roomId'),
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Boden: ${room.name}',
+                style: HavenText.section.copyWith(color: hv.tx, fontSize: 20),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Gilt für die Karte und die Raumbilder. Das erste Feld ist '
+                'der Boden im Stil der Karte.',
+                style: HavenText.caption.copyWith(color: hv.tx2),
+              ),
+              const SizedBox(height: 14),
+              FloorColorPicker(
+                color: room.floorColor,
+                onChanged: (c) {
+                  final plan = _plan!;
+                  final cur = plan.room(roomId);
+                  if (cur == null) return;
+                  _commit(
+                    plan,
+                    plan.withRoom(
+                      c == null
+                          ? cur.copyWith(clearFloorColor: true)
+                          : cur.copyWith(floorColor: c),
+                    ),
+                  );
+                  setSheet(() {});
+                },
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
 
   /// Farben als Blatt (Handy, 3D-Werkzeugleiste, Rechtsklick): bleibt offen,
   /// die Szene dahinter färbt sich gleich mit.
@@ -2012,7 +2068,7 @@ class _FloorEditorScreenState extends ConsumerState<FloorEditorScreen> {
         if (c != null) _moveGhost(c);
       }
       final item = _ghost!.copyWith(rotation: _ghostRot);
-      final z = furnitureTop(item);
+      final z = grabHeight(item);
       final from = _floor3d(local, z: z);
       _ghostGrab = from == null ? null : (from: from, item: item, z: z);
       return true;
@@ -2032,7 +2088,7 @@ class _FloorEditorScreenState extends ConsumerState<FloorEditorScreen> {
     }
     final hit = _furnitureAt3d(local);
     if (hit == null) return false;
-    final z = furnitureTop(hit);
+    final z = grabHeight(hit);
     Haptics.tick();
     _fop = _FurnOp(
       _FurnOpKind.move,
@@ -3233,6 +3289,13 @@ class _FloorEditorScreenState extends ConsumerState<FloorEditorScreen> {
                   ),
                   const SizedBox(width: 4),
                   _ToolButton(
+                    key: const ValueKey('room-floor-color'),
+                    label: 'Boden',
+                    icon: Icons.format_paint_outlined,
+                    onTap: () => _editFloorColor(sel.id),
+                  ),
+                  const SizedBox(width: 4),
+                  _ToolButton(
                     label: 'Raum löschen',
                     icon: Icons.delete_outline_rounded,
                     destructive: true,
@@ -3601,6 +3664,7 @@ class _Progress extends StatelessWidget {
 
 class _ToolButton extends StatelessWidget {
   const _ToolButton({
+    super.key,
     required this.label,
     required this.icon,
     required this.onTap,
@@ -3778,9 +3842,8 @@ class DragLabel extends StatelessWidget {
         border: Border.all(color: hv.ln2),
         boxShadow: [
           BoxShadow(
-            color: const Color(
-              0xFF000000,
-            ).withValues(alpha: hv.isDark ? 0.5 : 0.16),
+            color: const Color(0xFF000000)
+                .withValues(alpha: hv.isDark ? 0.5 : 0.16),
             blurRadius: 18,
             offset: const Offset(0, 6),
           ),

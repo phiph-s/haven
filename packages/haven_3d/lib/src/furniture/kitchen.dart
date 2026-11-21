@@ -365,61 +365,87 @@ final Map<String, FurnitureSpec> kitchenModels = {
     height: 1.8,
     againstWall: true,
     zones: const [kBodyZone, kHandlesZone],
-    build: (b, w, d, h) {
-      final f = d / 2;
-      if (b.open == true) {
-        const wall = 0.04;
-        // Korpus ohne Front: Rückwand, Seiten, Boden, Decke.
-        b.box(-w / 2, -f, 0, w / 2, -f + wall, h);
-        b.box(-w / 2, -f, 0, -w / 2 + wall, f, h);
-        b.box(w / 2 - wall, -f, 0, w / 2, f, h);
-        b.box(-w / 2, -f, 0, w / 2, f, wall);
-        b.box(-w / 2, -f, h - wall, w / 2, f, h);
-        // Innen hell, mit zwei Böden.
-        b.zone = null;
-        b.box(
-          -w / 2 + wall,
-          -f + wall,
-          wall,
-          w / 2 - wall,
-          f - 0.01,
-          h - wall,
-          mat: Mat.soft,
-        );
-        for (final z in [h * 0.45, h * 0.7]) {
-          b.line(V3(-w / 2 + wall, f - 0.01, z), V3(w / 2 - wall, f - 0.01, z));
-        }
-        // Tür nach vorn aufgeklappt.
-        b.zone = kBodyZone.id;
-        b.box(-w / 2, f, 0.01, -w / 2 + 0.05, f + w - 0.02, h - 0.01);
-        return;
-      }
-      final f0 = f - 0.025; // Griffe vor der Front
-      b.roundBox(-w / 2, -d / 2, 0, w / 2, f0, h, 0.02, segments: 2);
-      // Fuge zwischen Gefrier- (unten) und Kühlteil, senkrechte Griffe.
-      final split = h * 0.32;
-      b.line(V3(-w / 2, f0, split), V3(w / 2, f0, split));
-      final hx = w / 2 - 0.07;
-      b.inZone(kHandlesZone.id, () {
-        b.box(
-          hx - 0.01,
-          f0,
-          split + 0.06,
-          hx + 0.01,
-          f,
-          split + 0.45,
-          mat: Mat.metal,
-        );
-        b.box(
-          hx - 0.01,
-          f0,
-          split - 0.3,
-          hx + 0.01,
-          f,
-          split - 0.06,
-          mat: Mat.metal,
-        );
-      });
-    },
+    build: (b, w, d, h) => _fridge(b, w, d, h, small: false),
+  ),
+  // Kleiner Kühlschrank (Tisch- oder Unterbaugerät): eine Tür, oben ein
+  // Gefrierfach hinter der Tür, ein Griff. Mit Türkontakt wie der große.
+  'fridge_small': FurnitureSpec(
+    height: 0.85,
+    againstWall: true,
+    zones: const [kBodyZone, kHandlesZone],
+    build: (b, w, d, h) => _fridge(b, w, d, h, small: true),
   ),
 };
+
+/// Kühlschrank: groß mit Gefrierteil unten und zwei Griffen, [small] mit
+/// einer Tür (Fuge oben fürs Gefrierfach) und einem Griff.
+void _fridge(
+  ModelBuilder b,
+  double w,
+  double d,
+  double h, {
+  required bool small,
+}) {
+  final f = d / 2;
+  if (b.open == true) {
+    const wall = 0.04;
+    // Korpus ohne Front: Rückwand, Seiten, Boden, Decke.
+    b.box(-w / 2, -f, 0, w / 2, -f + wall, h);
+    b.box(-w / 2, -f, 0, -w / 2 + wall, f, h);
+    b.box(w / 2 - wall, -f, 0, w / 2, f, h);
+    b.box(-w / 2, -f, 0, w / 2, f, wall);
+    b.box(-w / 2, -f, h - wall, w / 2, f, h);
+    // Innen hell, mit zwei Böden.
+    b.zone = null;
+    b.box(
+      -w / 2 + wall,
+      -f + wall,
+      wall,
+      w / 2 - wall,
+      f - 0.01,
+      h - wall,
+      mat: Mat.soft,
+    );
+    for (final z in [h * 0.45, h * 0.7]) {
+      b.line(V3(-w / 2 + wall, f - 0.01, z), V3(w / 2 - wall, f - 0.01, z));
+    }
+    // Tür nach vorn aufgeklappt.
+    b.zone = kBodyZone.id;
+    b.box(-w / 2, f, 0.01, -w / 2 + 0.05, f + w - 0.02, h - 0.01);
+    return;
+  }
+  final f0 = f - 0.025; // Griffe vor der Front
+  b.roundBox(-w / 2, -d / 2, 0, w / 2, f0, h, 0.02, segments: 2);
+  if (small) {
+    // Eine Tür, ein senkrechter Griff im oberen Drittel.
+    final hx = w / 2 - 0.05;
+    b.inZone(kHandlesZone.id, () {
+      b.box(hx - 0.01, f0, h * 0.5, hx + 0.01, f, h * 0.85, mat: Mat.metal);
+    });
+    return;
+  }
+  // Fuge zwischen Gefrier- (unten) und Kühlteil, senkrechte Griffe.
+  final split = h * 0.32;
+  b.line(V3(-w / 2, f0, split), V3(w / 2, f0, split));
+  final hx = w / 2 - 0.07;
+  b.inZone(kHandlesZone.id, () {
+    b.box(
+      hx - 0.01,
+      f0,
+      split + 0.06,
+      hx + 0.01,
+      f,
+      split + 0.45,
+      mat: Mat.metal,
+    );
+    b.box(
+      hx - 0.01,
+      f0,
+      split - 0.3,
+      hx + 0.01,
+      f,
+      split - 0.06,
+      mat: Mat.metal,
+    );
+  });
+}

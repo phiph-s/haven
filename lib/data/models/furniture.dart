@@ -135,6 +135,13 @@ const List<FurnitureType> kFurnitureCatalog = [
     1.2,
   ),
   FurnitureType('fridge', 'Kühlschrank', FurnitureCategory.kitchen, 1.2, 1.3),
+  FurnitureType(
+    'fridge_small',
+    'Kühlschrank klein',
+    FurnitureCategory.kitchen,
+    1.1,
+    1.2,
+  ),
   FurnitureType('waste_bin', 'Mülleimer', FurnitureCategory.kitchen, 0.8, 0.8),
   // Bad
   FurnitureType('bathtub', 'Badewanne', FurnitureCategory.bath, 3.4, 1.6),
@@ -368,7 +375,10 @@ class FloorFurniture {
   /// Tür, Fenster und Kühlschrank lassen sich mit einem Kontakt verknüpfen
   /// (die 3D-Karte zeigt sie dann offen oder zu).
   bool get canHaveSensor =>
-      kind == 'door' || kind == 'window' || kind == 'fridge';
+      kind == 'door' ||
+      kind == 'window' ||
+      kind == 'fridge' ||
+      kind == 'fridge_small';
 
   FurnitureType? get type => furnitureType(kind);
 

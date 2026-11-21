@@ -46,4 +46,25 @@ void main() {
     // Tür steht nach vorn etwa eine Breite heraus.
     expect(maxY(open), greaterThan(0.8));
   });
+
+  test('Kleiner Kühlschrank: niedrig, verknüpfbar, öffnet wie der große', () {
+    const small = FloorFurniture(
+      id: 'm',
+      kind: 'fridge_small',
+      x: 1,
+      y: 1,
+      w: 1.1,
+      h: 1.2,
+    );
+    expect(small.canHaveSensor, isTrue);
+    expect(small.type?.name, 'Kühlschrank klein');
+    final closed = h3.buildFurniture('fridge_small', 0.55, 0.6);
+    final open = h3.buildFurniture('fridge_small', 0.55, 0.6, open: true);
+    double maxZ(h3.Model3 m) =>
+        m.points.map((p) => p.z).reduce((a, b) => a > b ? a : b);
+    double maxY(h3.Model3 m) =>
+        m.points.map((p) => p.y).reduce((a, b) => a > b ? a : b);
+    expect(maxZ(closed), closeTo(0.85, 1e-9));
+    expect(maxY(open), greaterThan(0.7));
+  });
 }

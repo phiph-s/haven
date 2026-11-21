@@ -583,7 +583,7 @@ class GpuScene {
         _receiverNode(
           'floor:${r.id}',
           [floor],
-          [(s) => s.floor.withValues(alpha: s.floorOpacity)],
+          [(s) => (r.floorColor ?? s.floor).withValues(alpha: s.floorOpacity)],
         ),
       );
       _roomReceivers[r.id] = [firstReceiver];

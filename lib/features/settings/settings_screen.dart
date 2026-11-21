@@ -27,6 +27,7 @@ import 'settings_widgets.dart';
 import 'sync_section.dart';
 import '../room/widgets/light_control_list.dart';
 import 'weather_settings.dart';
+import '../../core/widgets/haven_logo.dart';
 
 /// Pfad des Grundriss-Editors. Der Karten-Agent legt die Route `editor` unter
 /// `/map` an. Solange sie fehlt, meldet der Eintrag das, statt ins Leere zu laufen.
@@ -424,21 +425,7 @@ class _AboutSheet extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Center(
-          child: Container(
-            width: 72,
-            height: 72,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [hv.acc, hv.acc2],
-              ),
-            ),
-            child: Icon(Icons.home_rounded, size: 34, color: hv.ai),
-          ),
-        ),
+        Center(child: const HavenLogo(size: 72)),
         const SizedBox(height: 16),
         Text(
           'Haven',

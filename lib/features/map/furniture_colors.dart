@@ -218,3 +218,80 @@ class _ZoneChip extends StatelessWidget {
     );
   }
 }
+
+/// Bodenfarben: Holz, Stein, Fliese, Teppich. Gedämpft wie die Möbel.
+const List<FurnitureColor> kFloorPalette = [
+  FurnitureColor('Eiche hell', Color(0xFFD9BC94)),
+  FurnitureColor('Eiche', Color(0xFFC49A6C)),
+  FurnitureColor('Kirsche', Color(0xFF9E6648)),
+  FurnitureColor('Nussbaum', Color(0xFF7B5B45)),
+  FurnitureColor('Kalkstein', Color(0xFFE3DCCF)),
+  FurnitureColor('Beton', Color(0xFFA8A6A1)),
+  FurnitureColor('Schiefer', Color(0xFF5A5E63)),
+  FurnitureColor('Terrakotta', Color(0xFFB86B4F)),
+  FurnitureColor('Sand', Color(0xFFC8B596)),
+  FurnitureColor('Salbei', Color(0xFF93A68A)),
+  FurnitureColor('Rauchblau', Color(0xFF61758A)),
+  FurnitureColor('Anthrazit', Color(0xFF3B3F45)),
+];
+
+/// Farbwahl für den Boden eines Raums: „Standard“ (Stil der Karte) und die
+/// [kFloorPalette]. [onChanged] bekommt `null` für Standard.
+class FloorColorPicker extends StatelessWidget {
+  const FloorColorPicker({
+    super.key,
+    required this.color,
+    required this.onChanged,
+  });
+
+  final Color? color;
+  final ValueChanged<Color?> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final hv = context.hv;
+    Widget swatch(Color c, String name, {required bool selected}) => Tooltip(
+      message: name,
+      child: Container(
+        width: 34,
+        height: 34,
+        decoration: BoxDecoration(
+          color: c,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color: selected ? hv.acc : hv.tx3.withValues(alpha: 0.35),
+            width: selected ? 2.5 : 1,
+          ),
+        ),
+      ),
+    );
+    final standard = h3.SceneStyle.light().floor;
+    return Wrap(
+      spacing: 6,
+      runSpacing: 6,
+      children: [
+        InkResponse(
+          key: const ValueKey('floor-color-standard'),
+          onTap: () {
+            Haptics.tap();
+            onChanged(null);
+          },
+          child: swatch(standard, 'Standard', selected: color == null),
+        ),
+        for (final p in kFloorPalette)
+          InkResponse(
+            key: ValueKey('floor-color-${p.name}'),
+            onTap: () {
+              Haptics.tap();
+              onChanged(p.color);
+            },
+            child: swatch(
+              p.color,
+              p.name,
+              selected: color?.toARGB32() == p.color.toARGB32(),
+            ),
+          ),
+      ],
+    );
+  }
+}

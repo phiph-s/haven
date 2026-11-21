@@ -160,11 +160,30 @@ FloorFurniture snapWindowToWall(
       .moveTo(Offset(_clean(c.dx), _clean(c.dy)));
 }
 
+/// Reichweite (Zellen), in der Fenster und Türen beim Ziehen in 3D an einer
+/// Wand bleiben: Der Finger liegt dort oft neben der Wand (das Fenster sitzt
+/// über dem Boden, die Wand verdeckt es halb), mit der Reichweite der 2D-
+/// Ansicht sprang es von der Wand und stand frei im oder vor dem Raum.
+const double kWallItemDragReach = 2.5;
+
 /// Wand-Regeln je Art: Türen und Fenster in die Wand, Schränke, Betten,
 /// Sofas und Co. mit dem Rücken an die Wand, alles andere bleibt.
-FloorFurniture snapToWalls(FloorFurniture f, Iterable<FloorRoom> rooms) {
-  if (f.kind == 'door') return snapDoorToWall(f, rooms);
-  if (f.kind == 'window') return snapWindowToWall(f, rooms);
+/// [wallReach]: Reichweite für Fenster und Türen (sonst ihre Standardwerte).
+FloorFurniture snapToWalls(
+  FloorFurniture f,
+  Iterable<FloorRoom> rooms, {
+  double? wallReach,
+}) {
+  if (f.kind == 'door') {
+    return wallReach == null
+        ? snapDoorToWall(f, rooms)
+        : snapDoorToWall(f, rooms, reach: wallReach);
+  }
+  if (f.kind == 'window') {
+    return wallReach == null
+        ? snapWindowToWall(f, rooms)
+        : snapWindowToWall(f, rooms, reach: wallReach);
+  }
   if (hugsWall(f.kind)) return snapBackToWall(f, rooms);
   return f;
 }
@@ -180,7 +199,7 @@ FloorFurniture placeFurnitureAt(
   var next = f.moveTo(clampToGrid(cell, plan.grid));
   if (!snap) return next;
   next = snapFurniture(next);
-  return snapToWalls(next, plan.rooms);
+  return snapToWalls(next, plan.rooms, wallReach: kWallItemDragReach);
 }
 
 /// Verschiebt [base] um [delta] Zellen wie `moveFurniture`, mit [snap]
@@ -192,7 +211,9 @@ FloorFurniture moveFurniture3d(
   bool snap = true,
 }) {
   final next = moveFurniture(base, delta, plan.grid, snap: snap);
-  return snap ? snapToWalls(next, plan.rooms) : next;
+  return snap
+      ? snapToWalls(next, plan.rooms, wallReach: kWallItemDragReach)
+      : next;
 }
 
 /// Ecken des Möbelstücks [f] als Quader in Metern (unten, dann oben), mit
@@ -211,6 +232,17 @@ List<h3.V3> furnitureBox(FloorFurniture f, double cellMeters) {
 /// dem Finger bleibt.
 double furnitureTop(FloorFurniture f) {
   final spec = h3.furnitureSpec(f.kind);
+  return spec.elevation + spec.height;
+}
+
+/// Höhe (Meter), auf der der Finger ein Möbelstück zieht: die Oberseite,
+/// bei Fenstern und Türen (in der Wand, oft halb verdeckt) die Mitte, damit
+/// sie unter dem Finger bleiben.
+double grabHeight(FloorFurniture f) {
+  final spec = h3.furnitureSpec(f.kind);
+  if (f.kind == 'window' || f.kind == 'door') {
+    return spec.elevation + spec.height / 2;
+  }
   return spec.elevation + spec.height;
 }
 
@@ -267,7 +299,9 @@ FloorFurniture? furnitureAt3d(
   FloorFurniture? best, rug;
   var bestT = double.infinity, rugT = double.infinity;
   for (final f in items) {
-    final t = rayIntoFurniture(ray, f, cellMeters);
+    // Fenster und Türen sind dünn (Wandstärke): etwas großzügiger treffen.
+    final thin = f.kind == 'window' || f.kind == 'door';
+    final t = rayIntoFurniture(ray, f, cellMeters, slop: thin ? 0.12 : 0.03);
     if (t == null) continue;
     if (f.kind == 'rug') {
       if (t < rugT) (rug, rugT) = (f, t);

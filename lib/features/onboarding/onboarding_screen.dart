@@ -1,13 +1,13 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:material_ui/material_ui.dart';
 
-import '../../core/light/color_math.dart';
 import '../../core/light/room_palette.dart';
 import '../../core/state/providers.dart';
 import '../../core/theme/tokens.dart';
 import '../../core/widgets/animated_palette.dart';
 import '../../core/widgets/haven_button.dart';
 import '../../core/widgets/haven_card.dart';
+import '../../core/widgets/haven_logo.dart';
 
 /// Erster Start: mit Home Assistant verbinden (Adresse und Token).
 class OnboardingScreen extends ConsumerStatefulWidget {
@@ -94,23 +94,12 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                       const SizedBox(height: 72),
                       Align(
                         alignment: Alignment.centerLeft,
-                        child: Container(
-                          width: 72,
-                          height: 72,
+                        child: DecoratedBox(
                           decoration: BoxDecoration(
                             borderRadius: BorderRadius.circular(HavenRadii.l),
-                            gradient: LinearGradient(
-                              begin: Alignment.topLeft,
-                              end: Alignment.bottomRight,
-                              colors: [palette.primary, palette.secondary],
-                            ),
                             boxShadow: hv.shadow,
                           ),
-                          child: Icon(
-                            Icons.home_rounded,
-                            size: 38,
-                            color: colorOf(onColorFor(rgbOf(palette.primary))),
-                          ),
+                          child: const HavenLogo(size: 72),
                         ),
                       ),
                       const SizedBox(height: 28),

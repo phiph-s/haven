@@ -2,6 +2,7 @@ import 'package:material_ui/material_ui.dart';
 
 import '../theme/tokens.dart';
 import 'hover.dart';
+import '../widgets/haven_logo.dart';
 
 /// Eintrag der Seitenleiste.
 @immutable
@@ -92,26 +93,7 @@ class _Brand extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final hv = context.hv;
-    final mark = Container(
-      width: 40,
-      height: 40,
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(HavenRadii.s),
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [hv.acc, hv.acc2],
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: hv.acc.withValues(alpha: 0.35),
-            blurRadius: 16,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Icon(Icons.home_rounded, color: hv.ai, size: 22),
-    );
+    const mark = HavenLogo(size: 40);
     if (!extended) return mark;
     return Row(
       children: [

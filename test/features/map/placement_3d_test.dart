@@ -180,6 +180,27 @@ void main() {
       expect(side.rotation % 180, closeTo(90, 1e-6));
     });
 
+    test('Fenster ziehen in 3D: bleibt an der Wand, auch neben dem Finger', () {
+      final win = snapWindowToWall(_f('window', 6, 2, w: 2.4, h: 0.4), [
+        _room,
+      ]);
+      // Finger 2 Zellen nach rechts und knapp 2 Zellen in den Raum (die Wand
+      // verdeckt das Fenster, der Punkt liegt neben ihm): Fenster gleitet
+      // auf der Wand mit, statt frei im Raum zu stehen.
+      final moved = moveFurniture3d(win, const Offset(2, 1.8), _plan);
+      expect(moved.center.dy, closeTo(2, 1e-6));
+      expect(moved.center.dx, closeTo(8, 0.25)); // Halbraster
+      expect(moved.rotation % 180, closeTo(0, 1e-6));
+      // Auch über die Außenseite hinaus gezogen (vor dem Raum).
+      final outside = moveFurniture3d(win, const Offset(-1, -1.6), _plan);
+      expect(outside.center.dy, closeTo(2, 1e-6));
+      // Weit weg (Raummitte): frei.
+      final far = moveFurniture3d(win, const Offset(0, 4), _plan);
+      expect(far.center.dy, greaterThan(4));
+      // Greifhöhe: Mitte des Fensters, nicht Oberkante.
+      expect(grabHeight(win), lessThan(furnitureTop(win)));
+    });
+
     test('placeFurnitureAt: Schrank an der Wand, Tür in die Wand', () {
       final wardrobe = placeFurnitureAt(
         _f('wardrobe', 0, 0, h: 1.2),

@@ -153,6 +153,7 @@ class FloorRoom {
     this.areaId,
     this.detached = false,
     this.open = const {},
+    this.floorColor,
   });
 
   /// Rechteck aus Zellen (wie in Version 1).
@@ -187,6 +188,10 @@ class FloorRoom {
       for (final i in (j['open'] as List?) ?? const [])
         if (i is int) i,
     },
+    floorColor: switch (j['floorColor']) {
+      final int v => Color(v),
+      _ => null,
+    },
   );
 
   final String id;
@@ -205,6 +210,9 @@ class FloorRoom {
   /// Offene Kanten (Kante i führt von Ecke i zur nächsten): Raumgrenze ohne
   /// Wand, z. B. zwischen Küche und Wohnbereich.
   final Set<int> open;
+
+  /// Eigene Bodenfarbe, `null`: Boden im Stil der Karte.
+  final Color? floorColor;
 
   /// Ist Kante [edge] offen?
   bool isOpen(int edge) => open.contains(edge);
@@ -248,6 +256,8 @@ class FloorRoom {
     bool clearArea = false,
     List<GridPoint>? points,
     Set<int>? open,
+    Color? floorColor,
+    bool clearFloorColor = false,
   }) => FloorRoom(
     id: id,
     name: name ?? this.name,
@@ -255,6 +265,7 @@ class FloorRoom {
     points: points ?? this.points,
     detached: detached,
     open: open ?? this.open,
+    floorColor: clearFloorColor ? null : (floorColor ?? this.floorColor),
   );
 
   Map<String, dynamic> toJson() => {
@@ -263,6 +274,7 @@ class FloorRoom {
     'areaId': areaId,
     'points': [for (final p in points) p.toJson()],
     if (open.isNotEmpty) 'open': [...open]..sort(),
+    if (floorColor != null) 'floorColor': floorColor!.toARGB32(),
   };
 
   @override
@@ -273,11 +285,18 @@ class FloorRoom {
       other.areaId == areaId &&
       other.detached == detached &&
       listEquals(other.points, points) &&
-      setEquals(other.open, open);
+      setEquals(other.open, open) &&
+      other.floorColor?.toARGB32() == floorColor?.toARGB32();
 
   @override
-  int get hashCode =>
-      Object.hash(id, name, areaId, Object.hashAll(points), open.length);
+  int get hashCode => Object.hash(
+    id,
+    name,
+    areaId,
+    Object.hashAll(points),
+    open.length,
+    floorColor?.toARGB32(),
+  );
 
   @override
   String toString() => 'FloorRoom($id, $points)';

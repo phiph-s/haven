@@ -253,6 +253,7 @@ h3.Scene sceneOfPlan(HavenFloorPlan plan) {
           openEdges: r.detached
               ? {for (var i = 0; i < r.points.length; i++) i}
               : r.open,
+          floorColor: r.floorColor,
         ),
     ],
     objects: [

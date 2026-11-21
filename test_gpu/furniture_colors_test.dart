@@ -1,4 +1,4 @@
-// Möbelfarben (Farbzonen) im Beispielgrundriss: hell und dunkel, Tag und
+// Möbel- und Bodenfarben im Beispielgrundriss: hell und dunkel, Tag und
 // Nacht mit Himmel, dazu ohne Himmel. Bilder nach build/gpu/colors_*.png
 // (oder in den Ordner aus HAVEN_COLORS_OUT).
 //   flutter test --enable-flutter-gpu --enable-impeller \
@@ -57,6 +57,12 @@ HavenFloorPlan coloredPlan() {
     ('stable', 'top', c('Nussbaum')),
   ]) {
     plan = plan.withFurnitureColor(id, zone, color);
+  }
+  // Böden: Holz, Stein, Fliese (Rest im Stil der Karte).
+  Color f(String name) => kFloorPalette.firstWhere((p) => p.name == name).color;
+  final floors = ['Eiche', 'Schiefer', 'Kalkstein', 'Nussbaum'];
+  for (var i = 0; i < plan.rooms.length && i < floors.length; i++) {
+    plan = plan.withRoom(plan.rooms[i].copyWith(floorColor: f(floors[i])));
   }
   return plan.copyWith(
     placements: [

@@ -496,6 +496,11 @@ void paintFurnitureShape(
         final y = 0.3 * h + i * 0.15 * h;
         seg(0.66 * w, y, 0.92 * w, y);
       }
+    case 'fridge_small':
+      // Von oben: Korpus, Tür vorn (+y), Griff rechts.
+      box(all, 0.06 * u);
+      seg(0, 0.88 * h, w, 0.88 * h, line);
+      seg(0.84 * w, 0.88 * h, 0.84 * w, h);
     case 'fridge':
       box(all, 0.06 * u);
       seg(0, 0.88 * h, w, 0.88 * h, line);
@@ -725,6 +730,7 @@ const _bodyTinted = {
   'shelf',
   'bookcase',
   'fridge',
+  'fridge_small',
   'dresser',
 };
 

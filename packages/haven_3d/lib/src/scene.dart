@@ -35,6 +35,7 @@ class SceneRoom {
     this.wallHeight = kDefaultWallHeight,
     this.label,
     this.openEdges = const {},
+    this.floorColor,
   }) : outline = List.unmodifiable(outline);
 
   final String id;
@@ -49,6 +50,9 @@ class SceneRoom {
   /// Offene Kanten des Umrisses (Kante i von Ecke i zur nächsten): dort ist
   /// eine Raumgrenze, aber keine Wand.
   final Set<int> openEdges;
+
+  /// Eigene Bodenfarbe, `null`: [SceneStyle.floor].
+  final Color? floorColor;
 
   /// Kante des Umrisses, zu der das Stück [a]–[b] gehört (z. B. ein Stück des
   /// abgerundeten, eingerückten Umrisses): die nächste, möglichst parallele.
