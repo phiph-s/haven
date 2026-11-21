@@ -212,6 +212,57 @@ V3 _newell(List<V3> p) {
   return V3(x, y, z).normalized;
 }
 
+/// Schließt die Kerben an Knicken eines Linienzugs: Die Linien sind Bänder
+/// ohne Kappen, an einem Knick bleibt außen ein Keil offen (bei Rundungen
+/// wie feine Zacken). Jedes Stück, das an einem Ende genau ein anderes
+/// trifft, wird dort um `halfWidth · tan(Knick/2)` verlängert (höchstens
+/// [halfWidth]): die Bänder überlappen gerade so weit, dass der Keil zu ist.
+List<Edge3> closeJoints(List<Edge3> edges, double halfWidth) {
+  if (edges.length < 2 || halfWidth <= 0) return edges;
+  String key(V3 p) =>
+      '${(p.x * 2e3).round()},${(p.y * 2e3).round()},${(p.z * 2e3).round()}';
+  final at = <String, List<(int, bool)>>{};
+  for (var i = 0; i < edges.length; i++) {
+    at.putIfAbsent(key(edges[i].a), () => []).add((i, true));
+    at.putIfAbsent(key(edges[i].b), () => []).add((i, false));
+  }
+  final out = <Edge3>[];
+  for (var i = 0; i < edges.length; i++) {
+    final e = edges[i];
+    final len = e.length;
+    if (len < 1e-6) {
+      out.add(e);
+      continue;
+    }
+    final dir = (e.b - e.a) * (1 / len);
+    double grow(V3 p, bool start) {
+      final others = at[key(p)]!;
+      if (others.length != 2) return 0;
+      final (j, jStart) = others.firstWhere(
+        (o) => o.$1 != i,
+        orElse: () => (i, start),
+      );
+      if (j == i) return 0;
+      final o = edges[j];
+      final ol = o.length;
+      if (ol < 1e-6) return 0;
+      // Richtung vom Knick weg, für beide Stücke.
+      final mine = start ? dir : -dir;
+      final theirs = (jStart ? o.b - o.a : o.a - o.b) * (1 / ol);
+      final cos = mine.dot(theirs).clamp(-1.0, 1.0);
+      // Gerade weiter (cos ≈ -1): kein Keil.
+      final turn = math.pi - math.acos(cos);
+      if (turn < 0.02) return 0;
+      return math.min(halfWidth, halfWidth * math.tan(turn / 2));
+    }
+
+    final ga = math.min(grow(e.a, true), len / 2);
+    final gb = math.min(grow(e.b, false), len / 2);
+    out.add(Edge3(e.a - dir * ga, e.b + dir * gb));
+  }
+  return out;
+}
+
 /// Vereinigt Stücke auf derselben Geraden zu möglichst langen Kanten.
 List<Edge3> _mergeCollinear(List<Edge3> pieces) {
   final groups = <String, List<(double, double, V3, V3)>>{};

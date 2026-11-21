@@ -115,6 +115,7 @@ final HavenFloorPlan kFakeFloorPlan = HavenFloorPlan(
     _f('tv', 'sideboard', 5, 0.55),
     _f('chair', 'armchair', 9.6, 6.6, rot: 270),
     _f('plant', 'plant', 11.3, 0.8),
+    _f('stable', 'side_table', 2.1, 9.9),
     _f('shelf', 'shelf', 0.5, 4, rot: 270),
     _f('dining', 'dining_table', 12.4, 9.6, w: 3.4, h: 3.2),
     _f('win1', 'window', 0.2, 6.6, rot: 90),
@@ -123,10 +124,13 @@ final HavenFloorPlan kFakeFloorPlan = HavenFloorPlan(
     _f('counter', 'kitchen_counter', 14.5, 0.6, w: 5),
     _f('sink', 'sink', 13.4, 0.6),
     _f('stove', 'stove', 15.9, 0.6),
+    _f('wcab1', 'wall_cabinet', 13.4, 0.35, w: 2.4),
+    _f('wcab2', 'wall_cabinet', 16.2, 0.35),
     _f('fridge', 'fridge', 19.35, 5.6, rot: 90),
     // Diele
     _f('wardrobe2', 'wardrobe', 19.4, 10.6, rot: 90, w: 4.4),
     _f('door1', 'door', 17.9, 14.1),
+    _f('coats', 'coat_rack', 16.4, 7.4),
     // Ruheraum
     _f('bed', 'bed_double', 2.1, 17, rot: 270),
     _f('ns1', 'nightstand', 0.45, 14.6, rot: 270),
@@ -139,6 +143,8 @@ final HavenFloorPlan kFakeFloorPlan = HavenFloorPlan(
     _f('tub', 'bathtub', 17.8, 21.15),
     _f('wc', 'toilet', 19.3, 18.4, rot: 90),
     _f('basin', 'washbasin', 15.6, 15.5),
+    _f('mirror', 'mirror', 15.6, 15.15),
+    _f('washer', 'washing_machine', 17.4, 15.6),
     _f('shower', 'shower', 13, 16),
   ],
 );

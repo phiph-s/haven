@@ -3,6 +3,7 @@ import 'dart:ui' show Offset;
 
 import '../model.dart';
 import 'catalog.dart';
+import 'parts.dart';
 
 typedef _B = ModelBuilder;
 
@@ -42,6 +43,7 @@ void _faucet(_B b, double x, double y, double z, {double reach = 0.12}) {
 final Map<String, FurnitureSpec> bathModels = {
   // 2D: Wanne mit Innenrand, Abfluss links. Armatur an der Abflussseite.
   'bathtub': FurnitureSpec(
+    againstWall: true,
     height: 0.56,
     zones: const [_ceramic, _tap],
     build: (b, w, d, h) {
@@ -96,6 +98,7 @@ final Map<String, FurnitureSpec> bathModels = {
   // 2D: Tasse mit Kreuz (Diagonalen) und Abfluss in der Mitte. Glaswände an
   // den offenen Seiten (+y, +x), Brause an der Wand (-y).
   'shower': FurnitureSpec(
+    againstWall: true,
     height: 2.0,
     zones: const [ColorZone('tray', 'Duschtasse', Mat.ceramic), _tap],
     build: (b, w, d, h) {
@@ -170,6 +173,7 @@ final Map<String, FurnitureSpec> bathModels = {
   // 2D: Spülkasten am oberen Rand (Wand, -y), Becken mit Sitz davor, Deckel
   // hochgeklappt am Spülkasten.
   'toilet': FurnitureSpec(
+    againstWall: true,
     height: 0.8,
     zones: const [_ceramic, ColorZone('seat', 'Sitz und Deckel', Mat.ceramic)],
     build: (b, w, d, h) {
@@ -299,6 +303,70 @@ final Map<String, FurnitureSpec> bathModels = {
       final rd = math.min(w, d) * 0.035;
       b.ellipseLines(0, back / 2 + 0.02, rd, rd, math.max(0.03, h - 0.13));
       _faucet(b, 0, -d / 2 + back / 2 + 0.005, h, reach: 0.11);
+    },
+  ),
+  // Waschmaschine (Front +y): Gehäuse, Bedienleiste, Bullauge.
+  'washing_machine': FurnitureSpec(
+    height: 0.85,
+    againstWall: true,
+    zones: const [
+      ColorZone('body', 'Gehäuse', Mat.ceramic),
+      ColorZone('door', 'Tür', Mat.metal),
+    ],
+    build: washer,
+  ),
+  // Spiegel: hängt an der Wand (Unterkante 1,1 m), Rahmen mit Glas davor.
+  'mirror': FurnitureSpec(
+    height: 0.8,
+    elevation: 1.1,
+    wallHung: true,
+    zones: const [ColorZone('frame', 'Rahmen')],
+    build: (b, w, d, h) {
+      final y0 = -d / 2;
+      const t = 0.025, f = 0.03;
+      b.roundBox(-w / 2, y0, 0, w / 2, y0 + t, h, 0.03, segments: 2);
+      b.zone = null;
+      b.box(
+        -w / 2 + f,
+        y0 + t,
+        f,
+        w / 2 - f,
+        y0 + t + 0.004,
+        h - f,
+        mat: Mat.metal,
+      );
+      b.panel([
+        V3(-w / 2 + f, y0 + t + 0.006, f),
+        V3(w / 2 - f, y0 + t + 0.006, f),
+        V3(w / 2 - f, y0 + t + 0.006, h - f),
+        V3(-w / 2 + f, y0 + t + 0.006, h - f),
+      ], mat: Mat.glass);
+    },
+  ),
+  // Spiegelschrank über dem Waschbecken (Unterkante 1,15 m): zwei Türen
+  // mit Spiegelfront.
+  'mirror_cabinet': FurnitureSpec(
+    height: 0.7,
+    elevation: 1.15,
+    wallHung: true,
+    zones: const [kBodyZone, kFrontsZone],
+    build: (b, w, d, h) {
+      final n = w > 0.5 ? 2 : 1;
+      b.shifted(
+        const V3(0, -0.002, 0),
+        () => cabinet(b, w, d - 0.004, 0, h, cols: n, grip: Grip.none),
+      );
+      b.zone = null;
+      const g = 0.025;
+      for (var i = 0; i < n; i++) {
+        final x0 = -w / 2 + w * i / n + g, x1 = -w / 2 + w * (i + 1) / n - g;
+        b.panel([
+          V3(x0, d / 2 - 0.0005, g),
+          V3(x1, d / 2 - 0.0005, g),
+          V3(x1, d / 2 - 0.0005, h - g),
+          V3(x0, d / 2 - 0.0005, h - g),
+        ], mat: Mat.glass);
+      }
     },
   ),
 };

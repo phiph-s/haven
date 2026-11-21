@@ -48,6 +48,13 @@ HavenFloorPlan coloredPlan() {
     ('ochair', 'cushions', c('Senf')),
     ('wc', 'seat', c('Anthrazit')),
     ('door1', 'leaf', c('Salbei')),
+    ('wcab1', 'fronts', c('Salbei')),
+    ('wcab2', 'fronts', c('Salbei')),
+    ('coats', 'body', c('Eiche')),
+    ('coats', 'cushion', c('Olive')),
+    ('coats', 'coats', c('Nachtblau')),
+    ('mirror', 'frame', c('Anthrazit')),
+    ('stable', 'top', c('Nussbaum')),
   ]) {
     plan = plan.withFurnitureColor(id, zone, color);
   }
@@ -178,7 +185,7 @@ Future<void> shot(
     final b = key.currentContext!.findRenderObject() as RenderRepaintBoundary;
     final img = await b.toImage(pixelRatio: 1);
     final png = await img.toByteData(format: ui.ImageByteFormat.png);
-    File('$_out/$name.png')
+    File('$_out/flat_$name.png')
       ..createSync(recursive: true)
       ..writeAsBytesSync(png!.buffer.asUint8List());
   });

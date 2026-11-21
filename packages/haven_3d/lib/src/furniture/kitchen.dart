@@ -3,19 +3,18 @@ import 'dart:ui' show Offset;
 
 import '../model.dart';
 import 'catalog.dart';
+import 'parts.dart';
 
 typedef _B = ModelBuilder;
-
-const _fronts = ColorZone('fronts', 'Fronten');
-const _worktop = ColorZone('worktop', 'Arbeitsplatte');
-const _handles = ColorZone('handles', 'Griffe', Mat.metal);
 
 /// Dicke der Arbeitsplatte.
 const double _top = 0.035;
 
+const _base3 = [kBodyZone, kFrontsZone, kWorktopZone, kHandlesZone];
+
 /// Unterschrank der Küche (Front +y): Sockel, Korpus, [doors] Fronten mit
-/// Griffleisten, Arbeitsplatte bis [h] ([worktop] `false`: ohne Platte,
-/// z. B. wenn ein Becken sie bildet).
+/// Griffleisten (oder Schubladen [rows]), Arbeitsplatte bis [h] über die
+/// ganze Tiefe ([worktop] `false`: ohne, z. B. wenn ein Becken sie bildet).
 void _base(
   _B b,
   double w,
@@ -23,40 +22,21 @@ void _base(
   double h, {
   required int doors,
   bool worktop = true,
-  bool drawers = false,
+  List<double> rows = const [0, 1],
 }) {
-  const plinth = 0.1;
-  final y1 = d / 2 - 0.04; // Korpusfront unter der überstehenden Platte
-  b.box(-w / 2, -d / 2, 0, w / 2, y1 - 0.05, plinth);
-  b.box(-w / 2, -d / 2, plinth, w / 2, y1, h - _top);
-  const gap = 0.004;
-  for (var i = 0; i < doors; i++) {
-    final x0 = -w / 2 + w * i / doors + gap / 2;
-    final x1 = -w / 2 + w * (i + 1) / doors - gap / 2;
-    // Schubladen: drei Fronten übereinander, sonst eine Tür.
-    final rows = drawers ? [0.0, 0.45, 0.72, 1.0] : [0.0, 1.0];
-    for (var r = 0; r + 1 < rows.length; r++) {
-      final z0 = plinth + 0.004 + (h - _top - plinth - 0.01) * rows[r];
-      final z1 = plinth + (h - _top - plinth - 0.01) * rows[r + 1] - 0.002;
-      b.inZone(_fronts.id, () {
-        b.box(x0, y1, z0, x1, y1 + 0.018, z1);
-      });
-      b.inZone(_handles.id, () {
-        final cx = (x0 + x1) / 2, hw = math.min(0.1, (x1 - x0) * 0.3);
-        b.box(
-          cx - hw,
-          y1 + 0.018,
-          z1 - 0.045,
-          cx + hw,
-          y1 + 0.034,
-          z1 - 0.033,
-          mat: Mat.metal,
-        );
-      });
-    }
-  }
+  cabinet(
+    b,
+    w,
+    d,
+    0,
+    h - _top,
+    cols: doors,
+    rows: rows,
+    plinth: 0.1,
+    topPlate: false,
+  );
   if (worktop) {
-    b.inZone(_worktop.id, () {
+    b.inZone(kWorktopZone.id, () {
       b.box(-w / 2, -d / 2, h - _top, w / 2, d / 2, h);
     });
   }
@@ -138,65 +118,112 @@ final Map<String, FurnitureSpec> kitchenModels = {
     zones: const [
       ColorZone('top', 'Tischplatte'),
       ColorZone('legs', 'Tischbeine'),
-      ColorZone('chairs', 'Stühle'),
+      ColorZone('frame', 'Stuhlgestell'),
+      ColorZone('seat', 'Sitze'),
     ],
     build: (b, w, d, h) {
-      const topZ = 0.75, plate = 0.04;
-      final tx0 = -w * 0.3, tx1 = w * 0.3, ty0 = -d * 0.26, ty1 = d * 0.26;
-      // Tischplatte und vier Beine.
-      b.box(tx0, ty0, topZ - plate, tx1, ty1, topZ);
-      const l = 0.06, o = 0.05;
+      const topZ = 0.75, plate = 0.035;
+      final tw = w * 0.6, td = d * 0.52;
+      b.roundBox(
+        -tw / 2,
+        -td / 2,
+        topZ - plate,
+        tw / 2,
+        td / 2,
+        topZ,
+        0.03,
+        segments: 2,
+      );
       b.inZone('legs', () {
-        for (final x in [tx0 + o, tx1 - o - l]) {
-          for (final y in [ty0 + o, ty1 - o - l]) {
-            b.box(x, y, 0, x + l, y + l, topZ - plate);
-          }
-        }
+        tableLegs(b, tw, td, topZ - plate, leg: 0.05, inset: 0.06);
+        // Zarge unter der Platte.
+        const m = 0.08;
+        b.box(
+          -tw / 2 + m,
+          -td / 2 + m,
+          topZ - plate - 0.07,
+          tw / 2 - m,
+          td / 2 - m,
+          topZ - plate,
+        );
       });
-      // Stühle: Sitzblock mit dünner Lehne außen.
+      // Stühle, Lehne außen.
       final c = math.min(0.18 * d, 0.13 * w).clamp(0.0, 0.46).toDouble();
-      void chair(double cx, double cy, double nx, double ny) {
-        // (nx, ny) zeigt vom Tisch weg; dort steht die Lehne.
-        b.boxC(cx, cy, c, c, 0, 0.46);
-        final bx = cx + nx * (c / 2 - 0.015), by = cy + ny * (c / 2 - 0.015);
-        if (nx == 0) {
-          b.box(bx - c / 2, by - 0.015, 0.46, bx + c / 2, by + 0.015, 0.88);
-        } else {
-          b.box(bx - 0.015, by - c / 2, 0.46, bx + 0.015, by + c / 2, 0.88);
-        }
-      }
-
-      // Zu kleiner Platz (Randstreifen 0,24·d): keine Stühle.
       if (c < 0.2) return;
-      b.zone = 'chairs';
-      final n = ((tx1 - tx0) / (1.7 * c)).floor().clamp(1, 4);
+      final n = (tw / (1.7 * c)).floor().clamp(1, 4);
       for (var i = 0; i < n; i++) {
-        final x = tx0 + (tx1 - tx0) * (i + 0.5) / n;
-        chair(x, ty0 - c * 0.55, 0, -1);
-        chair(x, ty1 + c * 0.55, 0, 1);
+        final x = -tw / 2 + tw * (i + 0.5) / n;
+        diningChair(b, x, -td / 2 - c * 0.45, c, c, turn: 0);
+        diningChair(b, x, td / 2 + c * 0.45, c, c, turn: math.pi);
       }
-      if (ty1 - ty0 > 1.6 * c) {
-        chair(tx0 - c * 0.55, 0, -1, 0);
-        chair(tx1 + c * 0.55, 0, 1, 0);
+      if (td > 1.6 * c) {
+        diningChair(b, -tw / 2 - c * 0.45, 0, c, c, turn: -math.pi / 2);
+        diningChair(b, tw / 2 + c * 0.45, 0, c, c, turn: math.pi / 2);
       }
     },
+  ),
+  // Einzelner Stuhl, Lehne oben (-y) wie in 2D.
+  'dining_chair': FurnitureSpec(
+    height: 0.86,
+    zones: const [kFrameZone, kSeatZone],
+    build: (b, w, d, h) =>
+        diningChair(b, 0, 0, w, d, seatZ: h * 0.53, backZ: h),
   ),
   // 2D: Rahmen, Türfugen im oberen Streifen der Unterkante (Front = +y).
   'kitchen_counter': FurnitureSpec(
     height: 0.9,
-    zones: const [kBodyZone, _fronts, _worktop, _handles],
+    againstWall: true,
+    zones: _base3,
     build: (b, w, d, h) =>
         _base(b, w, d, h, doors: math.max(1, (w / 0.6).round())),
+  ),
+  // Oberschrank: hängt an der Wand (Unterkante 1,45 m), Griffe unten.
+  'wall_cabinet': FurnitureSpec(
+    height: 0.7,
+    elevation: 1.45,
+    wallHung: true,
+    zones: const [kBodyZone, kFrontsZone, kHandlesZone],
+    build: (b, w, d, h) => cabinet(
+      b,
+      w,
+      d,
+      0,
+      h,
+      cols: math.max(1, (w / 0.5).round()),
+      grip: Grip.low,
+    ),
+  ),
+  // Arbeitsplatte allein (über Geräten oder Unterschränken), Oberkante
+  // 0,9 m.
+  'worktop': FurnitureSpec(
+    height: 0.04,
+    elevation: 0.86,
+    againstWall: true,
+    zones: const [kWorktopZone],
+    build: (b, w, d, h) => b.box(-w / 2, -d / 2, 0, w / 2, d / 2, h),
   ),
   // 2D: vier Kochstellen (Ring + innerer Ring) im Raster 30/70 %.
   'stove': FurnitureSpec(
     height: 0.9,
-    zones: const [kBodyZone, _fronts, _worktop, _handles],
+    againstWall: true,
+    zones: _base3,
     build: (b, w, d, h) {
-      // Platte knapp tiefer, das Kochfeld liegt bündig darauf.
-      _base(b, w, d, h - 0.006, doors: 1, drawers: true);
-      // Kochfeld: dunkle Glasplatte, Ringe als Linien.
+      // Platte knapp tiefer, das Kochfeld liegt bündig darauf. Unten eine
+      // Schublade, darüber der Backofen mit Fenster.
+      _base(b, w, d, h - 0.006, doors: 1, rows: const [0, 0.22, 1]);
       b.zone = null;
+      final yf = d / 2 - frontDepth(Grip.bar) + 0.018;
+      final z0 = 0.1 + (h - _top - 0.1) * 0.22 + 0.06;
+      b.box(
+        -w / 2 + 0.07,
+        yf,
+        z0,
+        w / 2 - 0.07,
+        yf + 0.003,
+        h - _top - 0.12,
+        mat: Mat.screen,
+      );
+      // Kochfeld: dunkle Glasplatte, Ringe als Linien.
       final m = math.min(0.04, 0.07 * math.min(w, d));
       b.box(
         -w / 2 + m,
@@ -217,23 +244,38 @@ final Map<String, FurnitureSpec> kitchenModels = {
       }
     },
   ),
+  // Geschirrspüler unter der Arbeitsplatte: eine Front, Leiste oben.
+  'dishwasher': FurnitureSpec(
+    height: 0.9,
+    againstWall: true,
+    zones: _base3,
+    build: (b, w, d, h) {
+      _base(b, w, d, h, doors: 1);
+      b.zone = null;
+      final yf = d / 2 - frontDepth(Grip.bar) + 0.018;
+      b.box(
+        -w / 2 + 0.01,
+        yf,
+        h - _top - 0.075,
+        w / 2 - 0.01,
+        yf + 0.003,
+        h - _top - 0.012,
+        mat: Mat.dark,
+      );
+    },
+  ),
   // 2D: Becken links (8-58 % x 20-88 %), Hahn oben an der Rückseite,
   // Abtropfrillen rechts. Das Becken ist in die Arbeitsplatte eingelassen.
   'sink': FurnitureSpec(
     height: 0.9,
-    zones: const [
-      kBodyZone,
-      _fronts,
-      _worktop,
-      _handles,
-      ColorZone('tap', 'Armatur', Mat.metal),
-    ],
+    againstWall: true,
+    zones: const [..._base3, ColorZone('tap', 'Armatur', Mat.metal)],
     build: (b, w, d, h) {
       _base(b, w, d, h, doors: math.max(1, (w / 0.5).round()), worktop: false);
       final bx0 = -w / 2 + 0.08 * w, bx1 = -w / 2 + 0.58 * w;
       final by0 = -d / 2 + 0.2 * d, by1 = -d / 2 + 0.88 * d;
       final cx = (bx0 + bx1) / 2, cy = (by0 + by1) / 2;
-      b.inZone(_worktop.id, () {
+      b.inZone(kWorktopZone.id, () {
         _sinkTop(
           b,
           -w / 2,
@@ -247,6 +289,7 @@ final Map<String, FurnitureSpec> kitchenModels = {
           h,
         );
       });
+      b.zone = null;
       b.ellipseLines(cx, cy, 0.03, 0.03, h - 0.16, segments: 10);
       // Abtropfrillen rechts.
       for (var i = 0; i < 4; i++) {
@@ -269,12 +312,59 @@ final Map<String, FurnitureSpec> kitchenModels = {
       });
     },
   ),
+  // Mülleimer mit Tretdeckel: Eimer, flacher Deckel, Pedal vorn.
+  'waste_bin': FurnitureSpec(
+    height: 0.65,
+    zones: const [
+      ColorZone('body', 'Eimer', Mat.metal),
+      ColorZone('lid', 'Deckel', Mat.dark),
+    ],
+    build: (b, w, d, h) {
+      final rx = w / 2 - 0.01, ry = d / 2 - 0.035;
+      b.ellipsoid(
+        0,
+        -0.025,
+        rx,
+        ry,
+        0,
+        h - 0.04,
+        bottomScale: 0.9,
+        segments: 18,
+        mat: Mat.metal,
+      );
+      b.inZone('lid', () {
+        b.ellipsoid(
+          0,
+          -0.025,
+          rx + 0.005,
+          ry + 0.005,
+          h - 0.04,
+          h - 0.02,
+          segments: 18,
+          mat: Mat.dark,
+        );
+        b.ellipsoid(
+          0,
+          -0.025,
+          rx * 0.8,
+          ry * 0.8,
+          h - 0.02,
+          h,
+          bottomScale: 1.2,
+          segments: 18,
+          mat: Mat.dark,
+        );
+        b.box(-0.05, ry - 0.04, 0.01, 0.05, d / 2, 0.035, mat: Mat.dark);
+      });
+    },
+  ),
   // 2D: Rahmen, Gefrierfach-Linie nahe der Front (+y), zwei Griffe.
   // Mit Türkontakt offen (`b.open`): Tür an der Angel links 90° aufgeklappt,
   // innen ein helles Fach.
   'fridge': FurnitureSpec(
     height: 1.8,
-    zones: const [kBodyZone, _handles],
+    againstWall: true,
+    zones: const [kBodyZone, kHandlesZone],
     build: (b, w, d, h) {
       final f = d / 2;
       if (b.open == true) {
@@ -310,7 +400,7 @@ final Map<String, FurnitureSpec> kitchenModels = {
       final split = h * 0.32;
       b.line(V3(-w / 2, f0, split), V3(w / 2, f0, split));
       final hx = w / 2 - 0.07;
-      b.inZone(_handles.id, () {
+      b.inZone(kHandlesZone.id, () {
         b.box(
           hx - 0.01,
           f0,

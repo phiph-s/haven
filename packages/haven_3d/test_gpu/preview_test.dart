@@ -40,6 +40,18 @@ const Map<String, (double, double)> kPreviewSizes = {
   'office_chair': (0.6, 0.6),
   'door': (0.9, 0.9),
   'window': (1.2, 0.2),
+  'dresser': (1.0, 0.5),
+  'side_table': (0.5, 0.5),
+  'bookcase': (0.8, 0.35),
+  'dining_chair': (0.45, 0.5),
+  'wall_cabinet': (0.8, 0.35),
+  'worktop': (1.6, 0.62),
+  'dishwasher': (0.6, 0.6),
+  'waste_bin': (0.4, 0.4),
+  'washing_machine': (0.6, 0.6),
+  'mirror': (0.6, 0.15),
+  'mirror_cabinet': (0.7, 0.2),
+  'coat_rack': (1.0, 0.4),
 };
 
 Future<void> preview(WidgetTester tester, String kind) async {

@@ -256,16 +256,27 @@ class ModelBuilder {
   int _solids = 0;
 
   V3 _shift = V3.zero;
+  double _turn = 0;
+
+  V3 _at(V3 p) => (_turn == 0 ? p : p.rotateZ(_turn)) + _shift;
+  V3 _dir(V3 n) => _turn == 0 ? n : n.rotateZ(_turn);
 
   List<V3> _shifted(List<V3> p) =>
-      _shift == V3.zero ? p : [for (final q in p) q + _shift];
+      _shift == V3.zero && _turn == 0 ? p : [for (final q in p) _at(q)];
 
   /// [build] um [by] verschoben (z. B. ein Fernseher auf einem Board).
-  void shifted(V3 by, void Function() build) {
-    final prev = _shift;
-    _shift = prev + by;
+  void shifted(V3 by, void Function() build) => placed(by, 0, build);
+
+  /// [build] um [turn] (Bogenmaß, Uhrzeigersinn auf dem Plan) um den
+  /// Ursprung gedreht und dann nach [at] verschoben (z. B. Stühle um einen
+  /// Tisch). Verschachtelbar.
+  void placed(V3 at, double turn, void Function() build) {
+    final ps = _shift, pt = _turn;
+    _shift = _at(at);
+    _turn = pt + turn;
     build();
-    _shift = prev;
+    _shift = ps;
+    _turn = pt;
   }
 
   /// Hohlkörper (Becken, Wanne, WC): Außenumriss [outer] von [z0] bis
@@ -358,7 +369,7 @@ class ModelBuilder {
     _faces.add(
       Face3(
         List.unmodifiable(_shifted(points)),
-        normal.normalized,
+        _dir(normal).normalized,
         mat: mat,
         smooth: smooth,
         solid: solid,
@@ -373,7 +384,7 @@ class ModelBuilder {
     _faces.add(
       Face3(
         List.unmodifiable(_shifted(points)),
-        _newell(points),
+        _dir(_newell(points)),
         mat: mat,
         twoSided: true,
         zone: zone,
@@ -487,7 +498,7 @@ class ModelBuilder {
   /// (Kissen und Deckenkante auf dem Bett, Fugen, Kochfeld). Wie alle
   /// Linien blenden sie beim Kippen aus (siehe `SceneStyle.edgesOnlyFromAbove`).
   void line(V3 a, V3 b, {Mat mat = Mat.body}) =>
-      _lines.add(Line3(a + _shift, b + _shift, mat: mat));
+      _lines.add(Line3(_at(a), _at(b), mat: mat));
 
   /// Linienzug, mit [closed] geschlossen.
   void polyline(List<V3> pts, {bool closed = false, Mat mat = Mat.body}) {
@@ -589,6 +600,53 @@ class ModelBuilder {
     mat: mat,
     smooth: true,
   );
+
+  /// Weicher, runder Körper (Ellipsoid) um ([cx], [cy], [cz]) mit Halbachsen
+  /// [rx], [ry], [rz]: [rings] Breitenkreise, [segments] Stücke je Kreis.
+  /// Unter dem Knickwinkel geteilt, also ohne Kanten (nur weich schattiert),
+  /// z. B. Blätterkrone einer Pflanze.
+  void blob(
+    double cx,
+    double cy,
+    double cz,
+    double rx,
+    double ry,
+    double rz, {
+    int segments = 12,
+    int rings = 6,
+    Mat mat = Mat.body,
+  }) {
+    final id = _solids++;
+    V3 at(int k, int i) {
+      final t = math.pi * k / rings;
+      final a = 2 * math.pi * i / segments;
+      return V3(
+        cx + rx * math.sin(t) * math.cos(a),
+        cy + ry * math.sin(t) * math.sin(a),
+        cz + rz * math.cos(t),
+      );
+    }
+
+    for (var k = 0; k < rings; k++) {
+      for (var i = 0; i < segments; i++) {
+        final j = (i + 1) % segments;
+        // Unten (k + 1) zuerst wie bei [loft]: Kanten 1 und 3 senkrecht.
+        final q = [at(k + 1, i), at(k + 1, j), at(k, j), at(k, i)];
+        final pts = k == 0
+            ? [q[0], q[1], q[2]]
+            : k == rings - 1
+            ? [q[0], q[2], q[3]]
+            : q;
+        final m = pts.fold(V3.zero, (s, p) => s + p) * (1 / pts.length);
+        final n = V3(
+          (m.x - cx) / (rx * rx),
+          (m.y - cy) / (ry * ry),
+          (m.z - cz) / (rz * rz),
+        );
+        _face(pts, n, mat: mat, smooth: true, solid: id);
+      }
+    }
+  }
 
   /// Abgerundetes Rechteck als Polygon (gegen den Uhrzeigersinn in x/y).
   static List<Offset> roundedRect(

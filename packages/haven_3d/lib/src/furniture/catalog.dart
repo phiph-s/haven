@@ -25,9 +25,10 @@ class FurnitureSpec {
     this.wallMounted = false,
     this.facesRoom = false,
     this.wallHung = false,
+    bool againstWall = false,
     this.zones = const [kBodyZone],
     required this.build,
-  });
+  }) : _againstWall = againstWall; // ignore: prefer_initializing_formals
 
   final double height;
   final double elevation;
@@ -38,6 +39,13 @@ class FurnitureSpec {
   /// sondern ist ein normales Möbelstück im Raum, das ein Editor an Wände
   /// rasten lassen kann.
   final bool wallHung;
+
+  final bool _againstWall;
+
+  /// Steht oder hängt mit der Rückseite (`-y`) an einer Wand (Bett, Schrank,
+  /// Küchenzeile, alles mit [wallHung]): ein Editor rückt es beim Platzieren
+  /// an die nächste Wand.
+  bool get againstWall => _againstWall || wallHung;
 
   /// Einfärbbare Teile, der erste ist der Standard für Flächen ohne eigene
   /// Zone. Leer: nicht einfärbbar (Tür, Fenster).

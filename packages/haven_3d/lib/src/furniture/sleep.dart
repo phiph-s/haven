@@ -2,12 +2,11 @@ import 'dart:math' as math;
 
 import '../model.dart';
 import 'catalog.dart';
+import 'parts.dart';
 
 const _frame = ColorZone('frame', 'Bettgestell');
 const _bedding = ColorZone('bedding', 'Bettdecke', Mat.soft);
 const _pillows = ColorZone('pillows', 'Kissen', Mat.soft);
-const _fronts = ColorZone('fronts', 'Fronten');
-const _handles = ColorZone('handles', 'Griffe', Mat.metal);
 
 /// Gemeinsamer Bettaufbau: Gestell mit Kopfteil, Matratze, Kissen und eine
 /// Decke über dem unteren Teil (ihre Kante ist die Falte). Kopfende oben
@@ -77,73 +76,167 @@ final Map<String, FurnitureSpec> sleepModels = {
   // Doppelbett: Kopfteil 0,9 m, Liegefläche bei ca. 0,52 m.
   'bed_double': FurnitureSpec(
     height: 0.9,
+    againstWall: true,
     zones: const [_frame, _bedding, _pillows],
     build: (b, w, d, h) => _bed(b, w, d, h, dbl: true),
   ),
   // Einzelbett: ein breites Kissen.
   'bed_single': FurnitureSpec(
     height: 0.85,
+    againstWall: true,
     zones: const [_frame, _bedding, _pillows],
     build: (b, w, d, h) => _bed(b, w, d, h, dbl: false),
   ),
-  // Ein Korpus; Schubladenfuge und Griffe vorn (+y), Kreis auf der Platte.
+  // Zwei Schubladen mit Knöpfen, überstehende Platte; 2D: Kreis (Lampe).
   'nightstand': FurnitureSpec(
     height: 0.5,
-    zones: const [kBodyZone, _handles],
+    againstWall: true,
+    zones: const [kBodyZone, kFrontsZone, kKnobsZone],
     build: (b, w, d, h) {
-      final hw = w / 2, hd = d / 2;
-      b.box(-hw, -hd, 0, hw, hd - 0.016, h);
-      final mid = h * 0.5;
-      b.line(V3(-hw, hd - 0.016, mid), V3(hw, hd - 0.016, mid));
-      b.inZone(_handles.id, () {
-        for (final z in [h * 0.25, h * 0.75]) {
-          b.box(
-            -w * 0.12,
-            hd - 0.016,
-            z - 0.006,
-            w * 0.12,
-            hd,
-            z + 0.006,
-            mat: Mat.metal,
-          );
-        }
-      });
+      cabinet(
+        b,
+        w,
+        d,
+        0,
+        h,
+        rows: const [0, 0.5, 1],
+        grip: Grip.knob,
+        legs: 0.08,
+        overhang: true,
+      );
+      b.zone = null;
       b.ellipseLines(0, 0, 0.24 * math.min(w, d), 0.24 * math.min(w, d), h);
     },
   ),
-  // Ein Korpus; Türfugen vorn (+y), Griffstriche und Kleiderstange oben.
+  // Kommode: drei Schubladenreihen (bei Breite zwei Spalten), Knöpfe.
+  'dresser': FurnitureSpec(
+    height: 0.85,
+    againstWall: true,
+    zones: const [kBodyZone, kFrontsZone, kKnobsZone],
+    build: (b, w, d, h) => cabinet(
+      b,
+      w,
+      d,
+      0,
+      h,
+      cols: w > 0.8 ? 2 : 1,
+      rows: const [0, 0.36, 0.68, 1],
+      grip: Grip.knob,
+      plinth: 0.06,
+      overhang: true,
+    ),
+  ),
+  // Kleiderschrank: Sockel, Türen etwa alle 50 cm mit Stangengriffen,
+  // Kleiderstange als Linie oben (wie im 2D-Symbol).
   'wardrobe': FurnitureSpec(
     height: 2.0,
-    zones: const [kBodyZone, _fronts, _handles],
+    againstWall: true,
+    zones: const [kBodyZone, kFrontsZone, kHandlesZone],
     build: (b, w, d, h) {
-      final hw = w / 2, hd = d / 2;
-      const f = 0.036; // Fronten und Griffe vor dem Korpus
-      b.box(-hw, -hd, 0, hw, hd - f, h - 0.002);
-      final n = math.max(2, (w / math.max(d, 1)).round());
-      // Türen als flache Fronten, Griffe senkrecht neben jeder Fuge.
+      final n = math.max(2, (w / 0.5).round());
+      cabinet(b, w, d, 0, h - 0.002, cols: n, grip: Grip.pole, plinth: 0.07);
+      b.line(
+        V3(-w / 2 + 0.06 * w, -d / 2 + 0.45 * d, h - 0.002),
+        V3(w / 2 - 0.06 * w, -d / 2 + 0.45 * d, h - 0.002),
+      );
+    },
+  ),
+  // Garderobe: Wandpaneel mit Hutablage und Haken, zwei Jacken, darunter
+  // eine Bank mit Sitzkissen.
+  'coat_rack': FurnitureSpec(
+    height: 1.85,
+    againstWall: true,
+    zones: const [
+      ColorZone('body', 'Paneel und Bank'),
+      ColorZone('cushion', 'Sitzkissen', Mat.soft),
+      ColorZone('coats', 'Jacken', Mat.soft),
+      ColorZone('hooks', 'Haken', Mat.metal),
+    ],
+    build: (b, w, d, h) {
+      final y0 = -d / 2;
+      // Paneel und Hutablage.
+      b.roundBox(
+        -w / 2,
+        y0,
+        0.95,
+        w / 2,
+        y0 + 0.022,
+        h - 0.06,
+        0.02,
+        segments: 2,
+      );
+      b.box(-w / 2, y0, h - 0.03, w / 2, y0 + math.min(0.28, d * 0.75), h);
+      b.box(-w / 2 + 0.02, y0, h - 0.06, -w / 2 + 0.04, y0 + 0.2, h - 0.03);
+      b.box(w / 2 - 0.04, y0, h - 0.06, w / 2 - 0.02, y0 + 0.2, h - 0.03);
+      // Bank über die ganze Tiefe.
+      const seat = 0.45;
+      b.box(-w / 2, y0, seat - 0.03, w / 2, d / 2, seat);
+      for (final sx in [-1.0, 1.0]) {
+        b.box(
+          sx * (w / 2 - 0.01) - 0.01,
+          y0,
+          0,
+          sx * (w / 2 - 0.01) + 0.01,
+          d / 2,
+          seat - 0.03,
+        );
+      }
+      b.box(-w / 2 + 0.02, y0 + 0.02, 0.08, w / 2 - 0.02, d / 2 - 0.02, 0.1);
+      b.inZone('cushion', () {
+        b.roundBox(
+          -w / 2 + 0.02,
+          y0 + 0.02,
+          seat,
+          w / 2 - 0.02,
+          d / 2 - 0.02,
+          seat + 0.05,
+          0.04,
+          mat: Mat.soft,
+          segments: 2,
+        );
+      });
+      // Haken, an zwei davon Jacken.
+      final n = math.max(2, (w / 0.22).round());
       for (var i = 0; i < n; i++) {
-        final x0 = -hw + w * i / n + 0.003, x1 = -hw + w * (i + 1) / n - 0.003;
-        b.inZone(_fronts.id, () {
-          b.box(x0, hd - f, 0.06, x1, hd - 0.018, h - 0.03);
-        });
-        b.inZone(_handles.id, () {
-          final x = i.isEven ? x1 - 0.05 : x0 + 0.05;
+        final x = -w / 2 + w * (i + 0.5) / n;
+        b.inZone('hooks', () {
           b.box(
-            x - 0.008,
-            hd - 0.018,
-            h * 0.42,
-            x + 0.008,
-            hd,
-            h * 0.58,
+            x - 0.01,
+            y0 + 0.022,
+            1.52,
+            x + 0.01,
+            y0 + 0.08,
+            1.54,
             mat: Mat.metal,
           );
         });
+        final cw = math.min(0.17, math.min(x + w / 2, w / 2 - x) - 0.01);
+        if ((i == 0 || i == n - 2) && cw > 0.06) {
+          b.inZone('coats', () {
+            b.loft(
+              ModelBuilder.roundedRect(
+                x - cw,
+                y0 + 0.03,
+                x + cw,
+                y0 + 0.17,
+                0.05,
+                segments: 2,
+              ),
+              0.98,
+              ModelBuilder.roundedRect(
+                x - cw * 0.6,
+                y0 + 0.04,
+                x + cw * 0.6,
+                y0 + 0.12,
+                0.04,
+                segments: 2,
+              ),
+              1.52,
+              mat: Mat.soft,
+            );
+          });
+        }
       }
-      // Kleiderstange wie im 2D-Symbol.
-      b.line(
-        V3(-hw + 0.06 * w, -hd + 0.45 * d, h),
-        V3(hw - 0.06 * w, -hd + 0.45 * d, h),
-      );
     },
   ),
 };

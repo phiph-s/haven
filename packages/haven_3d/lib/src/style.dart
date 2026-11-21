@@ -2,6 +2,7 @@ import 'dart:math' as math;
 import 'dart:ui';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/painting.dart' show HSLColor;
 
 import 'model.dart';
 
@@ -211,13 +212,26 @@ class SceneStyle {
   };
 
   /// Eigene Farbe [c] (Farbzone eines Möbelstücks) in diesem Stil.
+  ///
+  /// Dunkle Farben (Anthrazit, Petrol, Nussbaum) werden etwas aufgehellt:
+  /// auf den Schattenseiten würden sie sonst fast schwarz und schwer. Der
+  /// Farbton bleibt (HSL-Helligkeit), helle Farben bleiben unverändert.
   Color paint(Color c) {
-    if (paintScale == 1) return c.withValues(alpha: 1);
+    var out = c.withValues(alpha: 1);
+    final l = out.computeLuminance();
+    if (l < 0.3) {
+      final hsl = HSLColor.fromColor(out);
+      final t = 0.16 * (1 - l / 0.3);
+      out = hsl
+          .withLightness(hsl.lightness + t * (1 - hsl.lightness))
+          .toColor();
+    }
+    if (paintScale == 1) return out;
     return Color.from(
       alpha: 1,
-      red: c.r * paintScale,
-      green: c.g * paintScale,
-      blue: c.b * paintScale,
+      red: out.r * paintScale,
+      green: out.g * paintScale,
+      blue: out.b * paintScale,
     );
   }
 

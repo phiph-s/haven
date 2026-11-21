@@ -855,9 +855,14 @@ class GpuScene {
       'edges',
       edges,
       wall ? lines.structureEdge : lines.edge,
+      joined: true,
     );
-    final accent = _edgesNode('edges-selected', edges, _mat.accentEdge)
-      ..visible = false;
+    final accent = _edgesNode(
+      'edges-selected',
+      edges,
+      _mat.accentEdge,
+      joined: true,
+    )..visible = false;
     node.add(normal);
     node.add(accent);
     // Detaillinien (Kissen, Fugen, Türaufschlag): leiser als Kanten.
@@ -1783,7 +1788,12 @@ class GpuScene {
     List<Edge3> edges,
     fs.Material material, {
     bool outline = false,
+    bool joined = false,
   }) {
+    // Knicke ohne Kerben (die Bänder haben keine Kappen). Nur für deckende
+    // Kanten: bei durchscheinenden Linien (Details) wären die Überlappungen
+    // als dunkle Punkte zu sehen.
+    if (joined) edges = closeJoints(edges, style.edgeWorldWidth / 2);
     final pos = Float32List(edges.length * 6);
     for (var i = 0; i < edges.length; i++) {
       final a = toFs(edges[i].a), b = toFs(edges[i].b);

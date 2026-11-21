@@ -10,6 +10,7 @@ enum FurnitureCategory {
   kitchen('Essen und Küche'),
   bath('Bad'),
   work('Arbeiten'),
+  hall('Flur'),
   structure('Bau');
 
   const FurnitureCategory(this.label);
@@ -52,13 +53,14 @@ class FurnitureType {
   final bool legacy;
 }
 
-/// Die Bibliothek (25 Elemente). Größen in Zellen nach üblichen Maßen.
+/// Die Bibliothek. Größen in Zellen nach üblichen Maßen.
 const List<FurnitureType> kFurnitureCatalog = [
   // Schlafen
   FurnitureType('bed_double', 'Doppelbett', FurnitureCategory.sleep, 3.6, 4.2),
   FurnitureType('bed_single', 'Einzelbett', FurnitureCategory.sleep, 2, 4.2),
   FurnitureType('nightstand', 'Nachttisch', FurnitureCategory.sleep, 1, 0.9),
   FurnitureType('wardrobe', 'Kleiderschrank', FurnitureCategory.sleep, 4, 1.2),
+  FurnitureType('dresser', 'Kommode', FurnitureCategory.sleep, 2, 1),
   // Wohnen
   FurnitureType('sofa', 'Sofa', FurnitureCategory.living, 4.4, 1.8),
   FurnitureType('sofa_corner', 'Ecksofa', FurnitureCategory.living, 5, 4),
@@ -70,6 +72,7 @@ const List<FurnitureType> kFurnitureCatalog = [
     2.4,
     1.2,
   ),
+  FurnitureType('side_table', 'Beistelltisch', FurnitureCategory.living, 1, 1),
   FurnitureType('sideboard', 'Sideboard', FurnitureCategory.living, 3.6, 0.9),
   // Bis 0.9.26: Board mit Fernseher in einem. Heute Sideboard plus
   // Fernseher als Gerät; alte Pläne zeigen weiter beides.
@@ -84,6 +87,7 @@ const List<FurnitureType> kFurnitureCatalog = [
   FurnitureType('rug', 'Teppich', FurnitureCategory.living, 4, 3, layer: 0),
   FurnitureType('plant', 'Pflanze', FurnitureCategory.living, 1, 1),
   FurnitureType('shelf', 'Regal', FurnitureCategory.living, 2, 0.8),
+  FurnitureType('bookcase', 'Bücherregal', FurnitureCategory.living, 1.6, 0.7),
   // Essen und Küche
   FurnitureType(
     'dining_table',
@@ -93,15 +97,45 @@ const List<FurnitureType> kFurnitureCatalog = [
     3,
   ),
   FurnitureType(
+    'dining_chair',
+    'Esszimmerstuhl',
+    FurnitureCategory.kitchen,
+    0.9,
+    1,
+  ),
+  FurnitureType(
     'kitchen_counter',
     'Küchenzeile',
     FurnitureCategory.kitchen,
     6,
     1.2,
   ),
+  FurnitureType(
+    'wall_cabinet',
+    'Oberschrank',
+    FurnitureCategory.kitchen,
+    1.6,
+    0.7,
+    wallHung: true,
+  ),
+  FurnitureType(
+    'worktop',
+    'Arbeitsplatte',
+    FurnitureCategory.kitchen,
+    3.2,
+    1.25,
+  ),
   FurnitureType('stove', 'Herd', FurnitureCategory.kitchen, 1.2, 1.2),
   FurnitureType('sink', 'Spüle', FurnitureCategory.kitchen, 1.6, 1.2),
+  FurnitureType(
+    'dishwasher',
+    'Spülmaschine',
+    FurnitureCategory.kitchen,
+    1.2,
+    1.2,
+  ),
   FurnitureType('fridge', 'Kühlschrank', FurnitureCategory.kitchen, 1.2, 1.3),
+  FurnitureType('waste_bin', 'Mülleimer', FurnitureCategory.kitchen, 0.8, 0.8),
   // Bad
   FurnitureType('bathtub', 'Badewanne', FurnitureCategory.bath, 3.4, 1.6),
   FurnitureType('shower', 'Dusche', FurnitureCategory.bath, 1.8, 1.8),
@@ -114,9 +148,34 @@ const List<FurnitureType> kFurnitureCatalog = [
     1,
     wallHung: true,
   ),
+  FurnitureType(
+    'mirror',
+    'Spiegel',
+    FurnitureCategory.bath,
+    1.2,
+    0.3,
+    wallHung: true,
+  ),
+  FurnitureType(
+    'mirror_cabinet',
+    'Spiegelschrank',
+    FurnitureCategory.bath,
+    1.4,
+    0.4,
+    wallHung: true,
+  ),
+  FurnitureType(
+    'washing_machine',
+    'Waschmaschine',
+    FurnitureCategory.bath,
+    1.2,
+    1.2,
+  ),
   // Arbeiten
   FurnitureType('desk', 'Schreibtisch', FurnitureCategory.work, 3, 1.4),
   FurnitureType('office_chair', 'Bürostuhl', FurnitureCategory.work, 1.2, 1.2),
+  // Flur
+  FurnitureType('coat_rack', 'Garderobe', FurnitureCategory.hall, 2, 0.8),
   // Bau
   FurnitureType('door', 'Tür', FurnitureCategory.structure, 1.8, 1.8, layer: 2),
   FurnitureType(

@@ -128,6 +128,18 @@ void paintFurnitureShape(
     return Paint()..color = c.withValues(alpha: ink.tint);
   }
 
+  /// Linie in der Farbe der Zone [zone] (kräftig), sonst [base].
+  Paint zoneStroke(String zone, [Paint? base]) {
+    final c = colors[zone];
+    final b0 = base ?? detail;
+    if (c == null) return b0;
+    return Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = b0.strokeWidth * 1.3
+      ..strokeCap = StrokeCap.round
+      ..color = Color.lerp(c, ink.line, 0.25)!;
+  }
+
   void box(
     Rect r,
     double radius, {
@@ -247,6 +259,54 @@ void paintFurnitureShape(
         final y = d + (h - d) * i / (ny + 1);
         seg(b, y, d, y);
       }
+    case 'side_table':
+      oval(all.deflate(0.02 * u), zone: 'top');
+      canvas.drawCircle(all.center, 0.08 * u, detail);
+    case 'dresser':
+      box(all, 0.04 * u);
+      seg(0, 0.9 * h, w, 0.9 * h);
+      final n = w > 1.6 * h ? 2 : 1;
+      for (var i = 1; i < n; i++) {
+        seg(w * i / n, 0.9 * h, w * i / n, h);
+      }
+      for (var i = 0; i < n; i++) {
+        canvas.drawCircle(
+          Offset(w * (i + 0.5) / n, 0.95 * h),
+          0.035 * u,
+          zoneStroke('handles', line),
+        );
+      }
+    case 'coat_rack':
+      // Bank über die ganze Fläche, Paneel an der Wand mit Haken, Jacken.
+      box(all, 0.04 * u, zone: 'body');
+      box(
+        Rect.fromLTRB(0.03 * w, 0.06 * h, 0.97 * w, 0.94 * h),
+        0.06 * u,
+        filled: false,
+        stroke: detail,
+        zone: 'cushion',
+      );
+      seg(0, 0.06 * h, w, 0.06 * h, line);
+      final n = math.max(2, (w / math.max(0.55 * h, 1)).round());
+      for (var i = 0; i < n; i++) {
+        canvas.drawCircle(
+          Offset(w * (i + 0.5) / n, 0.12 * h),
+          0.03 * u,
+          zoneStroke('hooks'),
+        );
+      }
+      for (final i in {0, n - 2}) {
+        oval(
+          Rect.fromCenter(
+            center: Offset(w * (i + 0.5) / n, 0.28 * h),
+            width: 0.7 * w / n,
+            height: 0.36 * h,
+          ),
+          stroke: detail,
+          zone: 'coats',
+          filled: false,
+        );
+      }
     case 'coffee_table':
       box(all, 0.2 * u, zone: 'top');
       box(all.deflate(0.14 * u), 0.12 * u, filled: false, stroke: detail);
@@ -302,54 +362,105 @@ void paintFurnitureShape(
         }
       }
     case 'plant':
+      // Runder Busch von oben (wie in 3D): äußere Krone als Wolke, innen
+      // eine kleinere Kuppe.
       final c = all.center;
-      final r = 0.5 * u;
-      final leafFill = zf('plant') ?? fill;
-      // Zwei Kränze: außen lang, innen kürzer und versetzt.
-      for (final (n, len, turn) in [(6, 1.0, 0.0), (5, 0.68, 0.6)]) {
-        for (var i = 0; i < n; i++) {
-          final a = turn + i * 2 * math.pi / n;
-          final dir = Offset(math.cos(a), math.sin(a));
-          final tip = c + dir * (r * len);
-          final side = Offset(-dir.dy, dir.dx) * (0.15 * u * len);
-          final mid = c + dir * (r * len * 0.5);
-          final leaf = Path()
-            ..moveTo(c.dx, c.dy)
-            ..quadraticBezierTo(
-              (mid + side).dx,
-              (mid + side).dy,
-              tip.dx,
-              tip.dy,
-            )
-            ..quadraticBezierTo((mid - side).dx, (mid - side).dy, c.dx, c.dy);
-          canvas.drawPath(leaf, leafFill);
-          canvas.drawPath(leaf, detail);
+      final crown = _cloud(c, 0.48 * u, 7);
+      canvas.drawPath(crown, zf('plant') ?? fill);
+      canvas.drawPath(crown, line);
+      canvas.drawPath(
+        _cloud(c + Offset(0.06 * u, -0.05 * u), 0.24 * u, 5),
+        detail,
+      );
+    case 'shelf' || 'bookcase':
+      // Offenes Regal von oben: Seiten, Rückwand hinten (oben im Symbol).
+      box(all, 0.03 * u);
+      seg(0, 0.1 * h, w, 0.1 * h, zoneStroke('back'));
+      final t = math.min(0.04 * w, 0.12 * h);
+      seg(t, 0.1 * h, t, h);
+      seg(w - t, 0.1 * h, w - t, h);
+      if (kind == 'bookcase') {
+        // Bücherreihen als Streifen.
+        for (final (a, e) in const [(0.06, 0.36), (0.4, 0.62), (0.7, 0.92)]) {
+          box(
+            Rect.fromLTRB(a * w, 0.2 * h, e * w, 0.82 * h),
+            0.02 * u,
+            filled: false,
+            stroke: detail,
+            zone: 'books',
+          );
         }
       }
-      final pot = Rect.fromCircle(center: c, radius: 0.3 * u);
-      oval(pot, zone: 'pot', filled: false);
-    case 'shelf':
-      box(all, 0.04 * u);
-      final n = math.max(2, (w / math.max(h * 1.1, 1)).round());
-      for (var i = 1; i < n; i++) {
-        seg(w * i / n, 0, w * i / n, h);
-      }
-      seg(0, 0.5 * h, w, 0.5 * h);
     case 'dining_table':
       final t = Rect.fromLTRB(0.2 * w, 0.24 * h, 0.8 * w, 0.76 * h);
       final c = math.min(0.18 * h, 0.13 * w);
       final n = (t.width / (1.7 * c)).floor().clamp(1, 4);
-      void chair(Rect r) => box(r, 0.25 * c, zone: 'chairs');
+      // Stuhl mit Lehne außen ([out]: Richtung vom Tisch weg).
+      void chair(Rect r, Offset out) {
+        box(r, 0.2 * c, zone: 'seat');
+        final back =
+            r.center + Offset(out.dx * r.width, out.dy * r.height) * 0.42;
+        final along = Offset(out.dy.abs(), out.dx.abs()) * (0.42 * c);
+        canvas.drawLine(back - along, back + along, zoneStroke('frame', line));
+      }
+
       for (var i = 0; i < n; i++) {
         final x = t.left + t.width * (i + 0.5) / n - c / 2;
-        chair(Rect.fromLTWH(x, t.top - c * 1.05, c, c));
-        chair(Rect.fromLTWH(x, t.bottom + c * 0.05, c, c));
+        chair(Rect.fromLTWH(x, t.top - c * 1.05, c, c), const Offset(0, -1));
+        chair(Rect.fromLTWH(x, t.bottom + c * 0.05, c, c), const Offset(0, 1));
       }
       if (t.height > 1.6 * c) {
-        chair(Rect.fromLTWH(t.left - c * 1.05, t.center.dy - c / 2, c, c));
-        chair(Rect.fromLTWH(t.right + c * 0.05, t.center.dy - c / 2, c, c));
+        chair(
+          Rect.fromLTWH(t.left - c * 1.05, t.center.dy - c / 2, c, c),
+          const Offset(-1, 0),
+        );
+        chair(
+          Rect.fromLTWH(t.right + c * 0.05, t.center.dy - c / 2, c, c),
+          const Offset(1, 0),
+        );
       }
-      box(t, 0.08 * u, zone: 'top');
+      box(t, 0.06 * u, zone: 'top');
+    case 'dining_chair':
+      box(
+        Rect.fromLTRB(0.04 * w, 0.12 * h, 0.96 * w, h),
+        0.14 * u,
+        zone: 'seat',
+      );
+      box(
+        Rect.fromLTRB(0.04 * w, 0, 0.96 * w, 0.1 * h),
+        0.04 * u,
+        zone: 'frame',
+      );
+    case 'wall_cabinet' || 'mirror_cabinet':
+      // Hängt an der Wand: gestrichelt wie in Bauplänen, Türfugen vorn.
+      final rr = RRect.fromRectAndRadius(all, Radius.circular(0.04 * u));
+      canvas.drawRRect(rr, zf('body')!);
+      _dashed(canvas, Path()..addRRect(rr), line, 0.12 * u + 2);
+      final n = kind == 'mirror_cabinet'
+          ? (w > 3 * h ? 2 : 1)
+          : math.max(1, (w / math.max(h * 1.4, 1)).round());
+      seg(0, 0.82 * h, w, 0.82 * h);
+      for (var i = 1; i < n; i++) {
+        seg(w * i / n, 0.82 * h, w * i / n, h);
+      }
+    case 'worktop':
+      box(all, 0.02 * u, zone: 'worktop');
+      seg(0, 0.9 * h, w, 0.9 * h);
+    case 'dishwasher':
+      box(all, 0.02 * u, zone: 'worktop');
+      seg(0, 0.86 * h, w, 0.86 * h);
+      // Körbe als Raster angedeutet.
+      final inner = Rect.fromLTRB(0.14 * w, 0.14 * h, 0.86 * w, 0.74 * h);
+      box(inner, 0.04 * u, filled: false, stroke: detail);
+      for (var i = 1; i < 3; i++) {
+        final x = inner.left + inner.width * i / 3;
+        seg(x, inner.top, x, inner.bottom);
+      }
+    case 'waste_bin':
+      final bin = Rect.fromLTRB(0.04 * w, 0, 0.96 * w, 0.86 * h);
+      oval(bin, zone: 'body');
+      oval(bin.deflate(0.1 * u), stroke: detail, zone: 'lid', filled: false);
+      box(Rect.fromLTRB(0.38 * w, 0.84 * h, 0.62 * w, h), 0.03 * u);
     case 'kitchen_counter':
       box(all, 0.02 * u, zone: 'worktop');
       final n = math.max(1, (w / math.max(h, 1)).round());
@@ -416,26 +527,59 @@ void paintFurnitureShape(
       // Brausekopf an der Wand.
       canvas.drawCircle(Offset(w / 2, 0.3 * h), 0.12 * u, detail);
     case 'toilet':
-      // Spülkasten an der Wand, Deckel hochgeklappt davor, Becken mit Sitz.
-      final tank = Rect.fromLTWH(0.04 * w, 0, 0.92 * w, 0.28 * h);
+      // Spülkasten an der Wand, Deckel hochgeklappt davor, Becken als Ei
+      // (vorn schmaler) mit Sitz und Öffnung, wie in 3D.
+      final tankD = 0.28 * h;
+      final tank = Rect.fromLTWH(0.04 * w, 0, 0.92 * w, tankD);
       box(tank, 0.1 * u, zone: 'ceramic');
-      final bowl = Rect.fromLTRB(0.03 * w, 0.27 * h, 0.97 * w, h);
-      oval(bowl, zone: 'seat');
-      oval(
-        Rect.fromLTRB(0.2 * w, 0.4 * h, 0.8 * w, 0.92 * h),
+      box(
+        Rect.fromLTWH(0.08 * w, tankD, 0.84 * w, 0.05 * h),
+        0.02 * u,
         stroke: detail,
-        filled: false,
+        zone: 'seat',
       );
-      seg(0.08 * w, 0.31 * h, 0.92 * w, 0.31 * h);
+      final cy = tankD + (h - tankD) / 2;
+      final ry = (h - tankD) / 2;
+      final seat = _egg(Offset(w / 2, cy), 0.48 * w, ry * 0.98);
+      canvas.drawPath(seat, zf('seat')!);
+      canvas.drawPath(seat, line);
+      canvas.drawPath(
+        _egg(Offset(w / 2, cy + 0.015 * h), 0.32 * w, ry * 0.68),
+        detail,
+      );
       canvas.drawCircle(tank.center, 0.06 * u, detail);
+
+    case 'mirror':
+      // Schmaler Rahmen an der Wand (oben), Glas als Linie davor.
+      final bar = Rect.fromLTWH(0, 0, w, math.max(2.0, 0.3 * h));
+      box(bar, 0.03 * u, zone: 'frame');
+      seg(0.06 * w, bar.bottom + 0.12 * h, 0.94 * w, bar.bottom + 0.12 * h);
+    case 'washing_machine':
+      box(all, 0.06 * u, zone: 'body');
+      seg(0, 0.9 * h, w, 0.9 * h);
+      canvas.drawCircle(all.center, 0.3 * u, zoneStroke('door', line));
+      canvas.drawCircle(all.center, 0.2 * u, detail);
     case 'washbasin':
-      box(all, 0.28 * u, zone: 'ceramic');
-      final bowl = Rect.fromLTRB(0.1 * w, 0.27 * h, 0.9 * w, 0.92 * h);
-      box(bowl, 0.3 * u, filled: false, stroke: line);
-      canvas.drawCircle(bowl.center, 0.04 * u, detail);
-      // Armatur hinten, Auslauf zum Becken.
-      canvas.drawCircle(Offset(0.5 * w, 0.13 * h), 0.05 * u, line);
-      seg(0.5 * w, 0.13 * h, 0.5 * w, 0.36 * h, line);
+      // Weiches Becken (Superellipse) mit Mulde, Armatur hinten.
+      final outer = _squircle(all.center, w / 2, h / 2, 4.5);
+      canvas.drawPath(outer, zf('ceramic')!);
+      canvas.drawPath(outer, line);
+      final back = 0.22 * h;
+      final bowl = _squircle(
+        Offset(w / 2, h / 2 + back / 2),
+        w / 2 - 0.1 * w,
+        h / 2 - back / 2 - 0.09 * h,
+        3,
+      );
+      canvas.drawPath(bowl, line);
+      canvas.drawCircle(
+        Offset(w / 2, h / 2 + back / 2 + 0.03 * h),
+        0.04 * u,
+        detail,
+      );
+      final tap = zoneStroke('tap', line);
+      canvas.drawCircle(Offset(0.5 * w, back / 2 + 0.01 * h), 0.05 * u, tap);
+      seg(0.5 * w, back / 2, 0.5 * w, back + 0.18 * h, tap);
     case 'desk':
       box(all, 0.04 * u, zone: 'top');
       box(
@@ -516,6 +660,62 @@ void paintFurnitureShape(
   }
 }
 
+/// Wolke aus [n] Bögen um [c] mit Radius [r] (Busch von oben).
+Path _cloud(Offset c, double r, int n) {
+  final path = Path();
+  for (var i = 0; i <= n; i++) {
+    final a = 2 * math.pi * i / n - math.pi / 2;
+    final p = c + Offset(math.cos(a), math.sin(a)) * r;
+    if (i == 0) {
+      path.moveTo(p.dx, p.dy);
+    } else {
+      final m = 2 * math.pi * (i - 0.5) / n - math.pi / 2;
+      final q = c + Offset(math.cos(m), math.sin(m)) * (r * 1.22);
+      path.quadraticBezierTo(q.dx, q.dy, p.dx, p.dy);
+    }
+  }
+  return path..close();
+}
+
+/// Ei-Form um [c] (Halbachsen [rx], [ry]), zur Unterseite (+y) schmaler:
+/// Becken des WCs wie im 3D-Modell.
+Path _egg(Offset c, double rx, double ry) {
+  const n = 40;
+  final path = Path();
+  for (var i = 0; i < n; i++) {
+    final a = 2 * math.pi * i / n;
+    final y = math.sin(a);
+    final x = math.cos(a) * (1 - 0.18 * y.clamp(0.0, 1.0));
+    final p = c + Offset(x * rx, y * ry);
+    i == 0 ? path.moveTo(p.dx, p.dy) : path.lineTo(p.dx, p.dy);
+  }
+  return path..close();
+}
+
+/// Superellipse um [c] (Exponent [e]: 2 Ellipse, größer eckiger).
+Path _squircle(Offset c, double rx, double ry, double e) {
+  const n = 48;
+  double f(double v) => v.sign * math.pow(v.abs(), 2 / e).toDouble();
+  final path = Path();
+  for (var i = 0; i < n; i++) {
+    final a = 2 * math.pi * i / n;
+    final p = c + Offset(rx * f(math.cos(a)), ry * f(math.sin(a)));
+    i == 0 ? path.moveTo(p.dx, p.dy) : path.lineTo(p.dx, p.dy);
+  }
+  return path..close();
+}
+
+/// [path] gestrichelt mit Strichlänge [dash].
+void _dashed(Canvas canvas, Path path, Paint paint, double dash) {
+  for (final m in path.computeMetrics()) {
+    var d = 0.0;
+    while (d < m.length) {
+      canvas.drawPath(m.extractPath(d, math.min(d + dash, m.length)), paint);
+      d += dash * 1.8;
+    }
+  }
+}
+
 /// Formen, deren Korpus (Zone `body`) von oben die ganze Fläche ist.
 const _bodyTinted = {
   'nightstand',
@@ -523,7 +723,9 @@ const _bodyTinted = {
   'sideboard',
   'tv_board',
   'shelf',
+  'bookcase',
   'fridge',
+  'dresser',
 };
 
 /// Vorschaubild eines Typs (Bibliothek): passt die Form mit Rand ein, das

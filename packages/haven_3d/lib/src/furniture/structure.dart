@@ -32,10 +32,44 @@ final Map<String, FurnitureSpec> structureModels = {
           wall - 0.005,
           h - post,
         );
+        // Drücker zur Raumseite, gegenüber der Angel.
+        b.zone = null;
+        final hx = x0 + r - post - 0.07;
+        b.box(
+          hx - 0.07,
+          wall - post - 0.055,
+          1.03,
+          hx + 0.01,
+          wall - post - 0.04,
+          1.05,
+          mat: Mat.metal,
+        );
+        b.box(
+          hx - 0.005,
+          wall - post - 0.055,
+          1.02,
+          hx + 0.01,
+          wall - post,
+          1.06,
+          mat: Mat.metal,
+        );
         return;
       }
       // Türblatt, offen: dünne Platte entlang der Angelseite.
       b.box(x0, wall - r, 0.01, x0 + 0.035, wall - post, h - post);
+      // Drücker am freien Ende, zur offenen Seite.
+      b.zone = null;
+      final hy = wall - r + 0.07;
+      b.box(
+        x0 + 0.035,
+        hy - 0.005,
+        1.02,
+        x0 + 0.05,
+        hy + 0.01,
+        1.06,
+        mat: Mat.metal,
+      );
+      b.box(x0 + 0.04, hy, 1.03, x0 + 0.06, hy + 0.08, 1.05, mat: Mat.metal);
       // Aufschlag als Bogen auf dem Boden.
       const n = 10;
       b.polyline([

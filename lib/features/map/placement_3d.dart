@@ -10,28 +10,17 @@ import 'furniture_ops.dart';
 // Treffertest der Möbel. Alles reine Rechnung (Zellen, wo nicht anders
 // angegeben), damit Editor und Tests dieselben Regeln nutzen.
 
-/// Möbel, die mit der Rückseite (lokal `-y`) an die Wand rücken.
-const Set<String> kWallHuggers = {
-  'bed_double',
-  'bed_single',
-  'nightstand',
-  'wardrobe',
-  'sofa',
-  'tv_board',
-  'shelf',
-  'kitchen_counter',
-  'stove',
-  'sink',
-  'fridge',
-  'bathtub',
-  'shower',
-  'toilet',
-  'washbasin',
-  'desk',
+/// Möbel, die mit der Rückseite (lokal `-y`) an die Wand rücken: aus dem
+/// 3D-Katalog (`FurnitureSpec.againstWall`, dazu alles, was an der Wand
+/// hängt, z. B. Oberschrank und Spiegel; deren Höhe kommt aus
+/// `FurnitureSpec.elevation`).
+final Set<String> kWallHuggers = {
+  for (final e in h3.kFurnitureModels.entries)
+    if (e.value.againstWall) e.key,
 };
 
 /// Rückt [kind] mit der Rückseite an die Wand?
-bool hugsWall(String kind) => kWallHuggers.contains(kind);
+bool hugsWall(String kind) => h3.furnitureSpec(kind).againstWall;
 
 /// Wie nah (Zellen, Rückseite bis Wand) ein Möbelstück an eine Wand kommen
 /// muss, damit es einrastet (etwa 60 cm).
