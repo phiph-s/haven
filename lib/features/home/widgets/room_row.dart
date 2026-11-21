@@ -18,6 +18,7 @@ import '../../../core/widgets/animated_palette.dart';
 import '../../../core/widgets/haptics.dart';
 import '../../../core/widgets/press_scale.dart';
 import '../../../data/models/haven_automation.dart';
+import '../../../data/models/lamp_calibration.dart';
 import '../../../data/models/room.dart';
 import '../../../data/models/widget_config.dart';
 import '../../zigbee/widgets/zb_common.dart' show showZbSheet;
@@ -61,12 +62,13 @@ Map<String, h3.LampState> scenePreview(RoomView view, RoomScene s) {
       out[l.entityId] = h3.LampState.off;
       continue;
     }
+    final cal = l.calibration;
     final rgb = s.kelvin != null
-        ? kelvinToRgb(s.kelvin!)
+        ? kelvinToRgb(cal.mapKelvin(s.kelvin!))
         : s.colors[i % s.colors.length];
     i++;
     out[l.entityId] = h3.LampState(
-      brightness: (s.brightness / 100).clamp(0.05, 1.0),
+      brightness: cal.mapLevel(s.brightness / 100).clamp(0.05, maxShownLevel),
       color: colorOf(rgb),
     );
   }

@@ -11,6 +11,7 @@ import '../../features/map/map_routes.dart';
 import '../../features/map/map_screen.dart';
 import '../../features/onboarding/onboarding_screen.dart';
 import '../../features/room/room_screen.dart';
+import '../../features/settings/lamp_calibration_screen.dart';
 import '../../features/settings/settings_screen.dart';
 import '../../features/shell/app_shell.dart';
 import '../../features/updates/updates_screen.dart';
@@ -36,6 +37,13 @@ abstract final class Routes {
   static const automations = '/automations';
   static const settings = '/settings';
   static const updates = '/settings/updates';
+  static const lampCalibration = '/settings/lamps';
+
+  /// Kalibrierung eines Lampentyps ([LampModel.key] als Abfrage).
+  static String lampType(String key) => Uri(
+    path: '/settings/lamps/type',
+    queryParameters: {'key': key},
+  ).toString();
 
   /// Raum als Sheet über der aktuellen Seite. Unter Zuhause eingehängt,
   /// damit ein Deep Link Zuhause dahinter hat. `/room/<id>` leitet um.
@@ -235,6 +243,24 @@ GoRouter buildRouter(Ref ref, {String? initialLocation}) {
             parentNavigatorKey: rootNavigatorKey,
             pageBuilder: (context, state) =>
                 _slidePage(state, const UpdatesScreen()),
+          ),
+          GoRoute(
+            path: 'lamps',
+            parentNavigatorKey: rootNavigatorKey,
+            pageBuilder: (context, state) =>
+                _slidePage(state, const LampCalibrationScreen()),
+            routes: [
+              GoRoute(
+                path: 'type',
+                parentNavigatorKey: rootNavigatorKey,
+                pageBuilder: (context, state) => _slidePage(
+                  state,
+                  LampTypeCalibrationScreen(
+                    modelKey: state.uri.queryParameters['key'] ?? '',
+                  ),
+                ),
+              ),
+            ],
           ),
         ],
       ),

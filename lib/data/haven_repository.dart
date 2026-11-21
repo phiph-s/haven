@@ -3,6 +3,7 @@ import 'automations_api.dart';
 import 'heating_api.dart';
 import 'render_api.dart';
 import 'models/floor_plan.dart';
+import 'models/lamp_calibration.dart';
 import 'models/scene_check.dart';
 import 'models/snapshot.dart';
 import 'models/state_history.dart';
@@ -112,6 +113,11 @@ abstract class HavenRepository
   /// Woher die Karte das Wetter nimmt (siehe [WeatherConfig]). Wie die
   /// Ausnahmen über `haven/prefs` für alle Geräte geteilt.
   Future<void> setWeatherConfig(WeatherConfig config);
+
+  /// Anzeige-Korrektur je Lampentyp (Einstellungen › Lampen kalibrieren).
+  /// Wie die Ausnahmen über `haven/prefs` (Schlüssel `lamp_calibration`)
+  /// für alle Geräte geteilt, ohne Integration lokal.
+  Future<void> setLampCalibration(LampCalibrations calibration);
 
   /// Lädt Zustände und Räume neu (Ziehen zum Aktualisieren).
   Future<void> refresh();

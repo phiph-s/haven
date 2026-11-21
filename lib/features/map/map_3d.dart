@@ -11,6 +11,7 @@ import '../../core/theme/tokens.dart';
 import '../../core/widgets/haptics.dart';
 import '../../data/models/floor_plan.dart';
 import '../../data/models/lamp.dart';
+import '../../data/models/lamp_calibration.dart';
 import '../../data/models/snapshot.dart';
 import 'floor_geometry.dart';
 import 'floor_plan_store.dart';
@@ -449,12 +450,13 @@ Map<String, h3.DeviceTint> sensorTintsOf(
   };
 }
 
-/// Lichtzustand einer Lampe für die Szene.
+/// Lichtzustand einer Lampe für die Szene, mit der Kalibrierung ihres Typs
+/// (Weißton und Helligkeit, wie sie wirklich wirkt).
 h3.LampState lampStateOf(Lamp l) {
   if (!l.on || !l.available) return h3.LampState.off;
-  final (r, g, b) = l.color;
+  final (r, g, b) = l.displayColor;
   return h3.LampState(
-    brightness: (l.brightness / 100).clamp(0.05, 1.0),
+    brightness: l.displayLevel.clamp(0.05, maxShownLevel),
     color: Color.fromARGB(255, r, g, b),
   );
 }

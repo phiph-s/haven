@@ -25,7 +25,7 @@ class LampRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final hv = context.hv;
-    final ui = colorOf(uiColor(lamp.color, dark: hv.isDark));
+    final ui = colorOf(uiColor(lamp.displayColor, dark: hv.isDark));
     final fg = lamp.on ? colorOf(onColorFor(rgbOf(ui))) : hv.tx3;
     final sub = !lamp.available
         ? 'nicht erreichbar'

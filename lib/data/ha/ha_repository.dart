@@ -14,6 +14,7 @@ import '../models/haven_automation.dart';
 import '../models/room_heating.dart';
 import '../models/scene_check.dart';
 import '../models/lamp.dart';
+import '../models/lamp_calibration.dart';
 import '../models/light_groups.dart';
 import '../models/room.dart';
 import '../models/snapshot.dart';
@@ -79,6 +80,13 @@ class HaRepository extends BaseRepository {
   Set<String> _excluded = const {};
   Set<String> _locked = const {};
   WeatherConfig _weather = const WeatherConfig();
+  LampCalibrations _calibration = LampCalibrations.empty;
+
+  /// Schlüssel in `haven/prefs`, die diese App nicht kennt (neuere Fassung
+  /// auf einem anderen Gerät): bleiben beim Speichern erhalten.
+  Map<String, dynamic> _prefsExtra = const {};
+  Map<String, LampModel> _lampModels = const {};
+  List<ZbDevice> _zbLamps = const [];
   bool _prefsShared = false;
   bool _integrationMissing = false;
   Timer? _roomsDebounce;
@@ -351,6 +359,11 @@ class HaRepository extends BaseRepository {
         for (final id in (prefs['locked'] as List? ?? const [])) '$id',
       };
       _weather = WeatherConfig.fromJson(prefs['weather']);
+      _calibration = LampCalibrations.fromJson(prefs['lamp_calibration']);
+      _prefsExtra = {
+        for (final e in prefs.entries)
+          if (!_knownPrefs.contains(e.key)) '${e.key}': e.value,
+      };
       _prefsShared = true;
     } on HavenException catch (e) {
       // Integration 0.1.0 kennt den Befehl nicht: lokal weiter.
@@ -359,8 +372,16 @@ class HaRepository extends BaseRepository {
       _excluded = {..._local.excludedLights};
       _locked = {..._local.lockedIds};
       _weather = WeatherConfig.fromJson(_local.weatherConfig);
+      _calibration = LampCalibrations.fromJson(_local.lampCalibration);
     }
   }
+
+  static const _knownPrefs = {
+    'excluded_lights',
+    'locked',
+    'weather',
+    'lamp_calibration',
+  };
 
   Future<void> _loadRooms() async {
     Map<String, dynamic>? roomsRes;
@@ -393,6 +414,27 @@ class HaRepository extends BaseRepository {
             sceneCommands: _features.contains('scenes'),
           );
     _devices = roomsRes == null ? const [] : devicesFromHaven(roomsRes);
+    _lampModels = lampModelsOf(devices: _devices, zigbee: _zbLamps);
+    if (roomsRes != null) unawaited(_loadZigbeeLampModels());
+  }
+
+  /// Zigbee-Modelle der Lampen (genauer als das HA-Register). Läuft im
+  /// Hintergrund, ohne Zigbee2MQTT bleibt es beim HA-Register.
+  Future<void> _loadZigbeeLampModels() async {
+    try {
+      final all = await _zb.devices();
+      if (disposed) return;
+      _zbLamps = [
+        for (final d in all)
+          if (d.haEntities.any((id) => id.startsWith('light.'))) d,
+      ];
+      final next = lampModelsOf(devices: _devices, zigbee: _zbLamps);
+      if (mapEquals(next, _lampModels)) return;
+      _lampModels = next;
+      _pushNow();
+    } catch (e) {
+      debugPrint('Lampenmodelle aus Zigbee2MQTT: $e');
+    }
   }
 
   /// Ohne Integration: ein Raum mit allen Lichtern, damit die App benutzbar bleibt.
@@ -581,6 +623,8 @@ class HaRepository extends BaseRepository {
         locked: Set.unmodifiable(_locked),
         weather: _weather,
         devices: _devices,
+        lampModels: Map.unmodifiable(_lampModels),
+        lampCalibration: _calibration,
       ),
     );
   }
@@ -918,11 +962,31 @@ class HaRepository extends BaseRepository {
   Future<void> _sendPrefs() => client.send({
     'type': 'haven/prefs/set',
     'prefs': {
+      ..._prefsExtra,
       'excluded_lights': _excluded.toList()..sort(),
       'locked': _locked.toList()..sort(),
       if (!_weather.isEmpty) 'weather': _weather.toJson(),
+      if (!_calibration.isEmpty) 'lamp_calibration': _calibration.toJson(),
     },
   });
+
+  @override
+  Future<void> setLampCalibration(LampCalibrations calibration) async {
+    final before = _calibration;
+    _calibration = calibration;
+    _pushNow();
+    try {
+      if (_prefsShared) {
+        await _sendPrefs();
+      } else {
+        await _local.setLampCalibration(calibration.toJson());
+      }
+    } catch (e) {
+      _calibration = before;
+      _pushNow();
+      rethrow;
+    }
+  }
 
   @override
   Future<void> setWeatherConfig(WeatherConfig config) async {

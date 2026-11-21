@@ -254,7 +254,9 @@ class _LightMainState extends ConsumerState<_LightMain> {
         builder: (context) {
           final hv = context.hv;
           return _MainCard(
-            glow: lamp.on ? colorOf(uiColor(lamp.color, dark: dark)) : null,
+            glow: lamp.on
+                ? colorOf(uiColor(lamp.displayColor, dark: dark))
+                : null,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [

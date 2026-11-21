@@ -11,7 +11,7 @@ import '../../core/state/providers.dart';
 import '../../core/theme/tokens.dart';
 import '../../core/widgets/haptics.dart';
 import '../../core/widgets/press_scale.dart';
-import '../../data/models/lamp.dart';
+import '../../data/models/lamp_calibration.dart';
 import '../../data/models/room_heating.dart';
 import '../../data/models/snapshot.dart' show ConnectionStatus;
 import '../../data/render_api.dart';
@@ -213,11 +213,14 @@ class _RoomRenderViewState extends ConsumerState<RoomRenderView>
       final e = snap.entity(id);
       final shown = widget.preview?[id];
       if (e == null && shown == null) continue;
-      var s = shown ?? lampStateOf(Lamp.fromEntity(e!));
+      var s = shown ?? lampStateOf(snap.lamp(id)!);
       final dim = widget.dimPercent;
       if (dim != null && img.lampRooms[id] == img.viewRoom) {
         s = h3.LampState(
-          brightness: (dim / 100).clamp(0.05, 1.0),
+          brightness: snap
+              .calibrationFor(id)
+              .mapLevel(dim / 100)
+              .clamp(0.05, maxShownLevel),
           color: s.on ? s.color : const Color(0xFFFFC98A),
         );
       }

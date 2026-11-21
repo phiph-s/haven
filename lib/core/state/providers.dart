@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../data/ha/ha_repository.dart';
 import '../../data/haven_repository.dart';
 import '../../data/models/entity_state.dart';
+import '../../data/models/lamp.dart';
 import '../../data/models/snapshot.dart';
 import '../../data/models/room.dart';
 import '../../data/models/widget_config.dart';
@@ -135,6 +136,11 @@ final houseViewProvider = Provider<HouseView>((ref) {
 /// Eine einzelne Entity, z. B. für Widgets.
 final entityProvider = Provider.family<EntityState?, String>(
   (ref, id) => ref.watch(snapshotProvider.select((s) => s.entities[id])),
+);
+
+/// Lampe mit der Kalibrierung ihres Typs (baut nur bei Änderungen neu).
+final lampProvider = Provider.family<Lamp?, String>(
+  (ref, id) => ref.watch(snapshotProvider.select((s) => s.lamp(id))),
 );
 
 // ---- Einstellungen ----------------------------------------------------

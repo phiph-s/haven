@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:haven/data/ha/ha_client.dart';
 import 'package:haven/data/ha/ha_repository.dart';
 import 'package:haven/data/light_targets.dart';
+import 'package:haven/data/models/lamp_calibration.dart';
 import 'package:haven/data/models/light_groups.dart';
 import 'package:haven/data/models/room.dart';
 import 'package:haven/data/storage/settings_store.dart';
@@ -287,6 +288,86 @@ void main() {
         isEmpty,
       );
       expect(repo.snapshot.lampsOf(room(repo, 'salon')), hasLength(6));
+      await repo.dispose();
+    });
+  });
+
+  group('Live-Fixtures: Lampen kalibrieren', () {
+    test(
+      'Modelle aus Zigbee2MQTT, Korrektur in prefs, Fremdes bleibt',
+      () async {
+        final live = LiveHa()
+          ..prefs = {
+            'excluded_lights': <String>[],
+            'zukunft': {'von': 'neuerer App'},
+            'lamp_calibration': {
+              'Tuya|TS0505B_hs': {
+                'white': [
+                  [2700, 3600],
+                ],
+              },
+            },
+          };
+        final (repo, _) = await start(ha: live);
+        await until(() => repo.snapshot.lampModels.length >= 10);
+        final s = repo.snapshot;
+        expect(s.lampModels['light.lampe_decke_salon']!.key, 'Tuya|TS0505B_hs');
+        expect(
+          s.lampModels['light.kochbereich_arbeitslicht_1']!.model,
+          'YSR-MINI-01_dimmer',
+        );
+        expect(s.calibrationFor('light.lampe_waschraum').mapKelvin(2700), 3600);
+        expect(s.calibrationFor('light.tischlampe_salon').isIdentity, isTrue);
+
+        await repo.setLampCalibration(
+          s.lampCalibration.withModel(
+            'YSRSAI|YSR-MINI-01_dimmer',
+            const LampCalibration(gain: 0.7),
+          ),
+        );
+        final set = live.received.lastWhere(
+          (m) => m['type'] == 'haven/prefs/set',
+        );
+        final prefs = set['prefs'] as Map;
+        expect(prefs['zukunft'], {'von': 'neuerer App'});
+        expect(prefs['lamp_calibration'], {
+          'Tuya|TS0505B_hs': {
+            'white': [
+              [2700, 3600],
+            ],
+          },
+          'YSRSAI|YSR-MINI-01_dimmer': {'gain': 0.7},
+        });
+        expect(
+          repo.snapshot
+              .lamp('light.kochbereich_arbeitslicht_2')!
+              .calibration
+              .gain,
+          0.7,
+        );
+        await repo.dispose();
+      },
+    );
+
+    test('ohne prefs in HA: lokal gespeichert', () async {
+      final local = MemoryPrefs();
+      final (repo, live) = await start(
+        ha: LiveHa(prefsSupported: false),
+        local: local,
+      );
+      await repo.setLampCalibration(
+        const LampCalibrations().withModel(
+          'Tuya|TS0505B_hs',
+          const LampCalibration(gamma: 1.5),
+        ),
+      );
+      expect(local.lampCalibration, {
+        'Tuya|TS0505B_hs': {'gamma': 1.5},
+      });
+      expect(
+        live.received.where((m) => m['type'] == 'haven/prefs/set'),
+        isEmpty,
+      );
       await repo.dispose();
     });
   });

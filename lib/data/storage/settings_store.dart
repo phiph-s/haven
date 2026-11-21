@@ -20,6 +20,11 @@ abstract class LocalPrefs {
   /// Wetterquellen der Karte (JSON wie in `haven/prefs`).
   Map<String, dynamic> get weatherConfig;
   Future<void> setWeatherConfig(Map<String, dynamic> j);
+
+  /// Lampen-Kalibrierung je Typ (JSON wie `lamp_calibration` in
+  /// `haven/prefs`).
+  Map<String, dynamic> get lampCalibration;
+  Future<void> setLampCalibration(Map<String, dynamic> j);
 }
 
 /// Nur im Speicher (Tests).
@@ -41,6 +46,12 @@ class MemoryPrefs implements LocalPrefs {
   @override
   Future<void> setWeatherConfig(Map<String, dynamic> j) async =>
       _weather = {...j};
+  Map<String, dynamic> _lampCalibration = {};
+  @override
+  Map<String, dynamic> get lampCalibration => _lampCalibration;
+  @override
+  Future<void> setLampCalibration(Map<String, dynamic> j) async =>
+      _lampCalibration = {...j};
 }
 
 /// Lokale Einstellungen (SharedPreferences). Der Token liegt nicht hier,
@@ -56,6 +67,7 @@ class SettingsStore implements LocalPrefs {
   static const _kExcluded = 'excluded_lights';
   static const _kLocked = 'locked_devices';
   static const _kWeather = 'weather_config';
+  static const _kLampCalibration = 'lamp_calibration';
   static const _kMapSky = 'map_sky';
   static const _kUpdateChecked = 'update_last_check';
   static const _kUpdateDismissed = 'update_dismissed';
@@ -92,6 +104,12 @@ class SettingsStore implements LocalPrefs {
   @override
   Future<void> setWeatherConfig(Map<String, dynamic> j) =>
       _p.setString(_kWeather, jsonEncode(j));
+
+  @override
+  Map<String, dynamic> get lampCalibration => _json(_kLampCalibration);
+  @override
+  Future<void> setLampCalibration(Map<String, dynamic> j) =>
+      _p.setString(_kLampCalibration, jsonEncode(j));
 
   /// Himmel der Karte: live oder eigene Werte (JSON, nur dieses Gerät).
   Map<String, dynamic> get mapSky => _json(_kMapSky);
