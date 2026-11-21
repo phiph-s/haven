@@ -29,11 +29,12 @@ enum SceneQuality {
   const SceneQuality(this.label);
   final String label;
 
-  /// Größte Pixeldichte des Renderziels (null: wie das Gerät).
+  /// Größte Pixeldichte des Renderziels. Über 2,0 (Handys mit 3) sieht man
+  /// mit MSAA kaum einen Unterschied, die GPU-Arbeit wächst aber quadratisch.
   double? get maxPixelRatio => switch (this) {
     low => 1.0,
     medium || draft || draftLit => 1.5,
-    high => null,
+    high => 2.0,
   };
 
   /// MSAA statt FXAA.

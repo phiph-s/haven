@@ -240,7 +240,10 @@ class GpuScene {
         acc.geometry(),
         fs.PhysicallyBasedMaterial()..alphaMode = fs.AlphaMode.opaque,
       )
-      ..shadowCastingMode = fs.ShadowCastingMode.shadowsOnly;
+      ..shadowCastingMode = fs.ShadowCastingMode.shadowsOnly
+      // Statisch: Schatten bleiben zwischengespeichert (die Engine rechnet
+      // neu, wenn sich Lage oder Sichtbarkeit ändert).
+      ..shadowStatic = true;
     scene.add(node);
     return node;
   }
@@ -270,7 +273,8 @@ class GpuScene {
               acc.geometry(),
               fs.PhysicallyBasedMaterial()..alphaMode = fs.AlphaMode.opaque,
             )
-      ..shadowCastingMode = fs.ShadowCastingMode.shadowsOnly;
+      ..shadowCastingMode = fs.ShadowCastingMode.shadowsOnly
+      ..shadowStatic = true;
     _roomNodes[r.id]?.add(node);
     return node;
   }
@@ -793,6 +797,9 @@ class GpuScene {
     final spans = rooms.length > 1;
     final parent = roomId == null || spans ? null : _roomNodes[roomId];
     final node = fs.Node(name: 'object:${o.id}')
+      // Statischer Schatten, außer Türen, Fenster und Co. mit Sensor (die
+      // wechseln das Modell).
+      ..shadowStatic = o.sensor == null
       ..lightChannelMask = spans
           ? rooms.fold<int>(0, (m, r) => m | _maskOf(r))
           : _maskOf(roomId);
@@ -1831,7 +1838,7 @@ class GpuScene {
         shadowSoftness: l.softness,
         shadowMaxDistance: kCameraDistance + 20,
         shadowCascadeCount: 1,
-        shadowMapResolution: 2048,
+        shadowMapResolution: 1024, // 2048: kaum schärfer, 4× Füllarbeit
         shadowCasterFaces: fs.ShadowCasterFaces.both,
         shadowFilter: fs.DirectionalShadowFilter.fixedPcf,
       );
