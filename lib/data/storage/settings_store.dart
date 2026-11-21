@@ -45,7 +45,7 @@ class MemoryPrefs implements LocalPrefs {
 
 /// Lokale Einstellungen (SharedPreferences). Der Token liegt nicht hier,
 /// sondern im [TokenStore].
-class SettingsStore implements LocalPrefs {
+class SettingsStore implements LocalPrefs, SyncStateStore {
   SettingsStore(this._p);
   final SharedPreferences _p;
 
@@ -237,30 +237,118 @@ class SettingsStore implements LocalPrefs {
 
   // ---- Abgleich mit HA (sync/app_data.dart) ------------------------------
 
-  /// Stempel (ms) der lokalen Fassung eines geteilten Dokuments.
+  @override
   int? syncStamp(String kind) => _p.getInt('sync_${kind}_at');
 
-  /// Lokal geändert, aber noch nicht in HA gespeichert.
+  @override
   bool syncDirty(String kind) => _p.getBool('sync_${kind}_dirty') ?? false;
 
-  /// Server-Stand (`updated_at`), auf dem die lokale Fassung beruht: zuletzt
-  /// übernommen oder erfolgreich gespeichert. `null`: nie abgeglichen.
+  @override
   int? syncBase(String kind) => _p.getInt('sync_${kind}_base');
 
-  /// [base] nur setzen, wenn angegeben, sonst bleibt der bisherige Stand.
+  @override
+  int? syncRevision(String kind) => _p.getInt('sync_${kind}_rev');
+
+  @override
+  Map<String, dynamic>? syncBaseDoc(String kind) {
+    final s = _p.getString('sync_${kind}_doc');
+    if (s == null) return null;
+    try {
+      return Map<String, dynamic>.from(jsonDecode(s) as Map);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  @override
   Future<void> setSync(
     String kind, {
     int? stamp,
     required bool dirty,
     int? base,
+    int? revision,
+    Map<String, dynamic>? baseDoc,
   }) async {
     if (base != null) await _p.setInt('sync_${kind}_base', base);
+    if (revision != null) await _p.setInt('sync_${kind}_rev', revision);
+    if (baseDoc != null) {
+      await _p.setString('sync_${kind}_doc', jsonEncode(baseDoc));
+    }
     if (stamp == null) {
       await _p.remove('sync_${kind}_at');
     } else {
       await _p.setInt('sync_${kind}_at', stamp);
     }
     await _p.setBool('sync_${kind}_dirty', dirty);
+  }
+}
+
+/// Stand des Abgleichs je geteiltem Dokument (`sync/doc_sync.dart`).
+abstract class SyncStateStore {
+  /// Stempel (ms) der lokalen Fassung eines geteilten Dokuments.
+  int? syncStamp(String kind);
+
+  /// Lokal geändert, aber noch nicht in HA gespeichert.
+  bool syncDirty(String kind);
+
+  /// Server-Stand (`updated_at`), auf dem die lokale Fassung beruht: zuletzt
+  /// übernommen oder erfolgreich gespeichert. `null`: nie abgeglichen.
+  int? syncBase(String kind);
+
+  /// Server-Revision, auf der die lokale Fassung beruht (Integration mit
+  /// `revisions`). `null`: nie mit Revision abgeglichen.
+  int? syncRevision(String kind);
+
+  /// Das Dokument dieses Server-Stands, Grundlage fürs Zusammenführen.
+  Map<String, dynamic>? syncBaseDoc(String kind);
+
+  /// [base], [revision] und [baseDoc] nur setzen, wenn angegeben, sonst
+  /// bleibt der bisherige Stand.
+  Future<void> setSync(
+    String kind, {
+    int? stamp,
+    required bool dirty,
+    int? base,
+    int? revision,
+    Map<String, dynamic>? baseDoc,
+  });
+}
+
+/// Für Tests (mehrere simulierte Geräte): nur im Speicher.
+class MemorySyncState implements SyncStateStore {
+  final _stamp = <String, int>{};
+  final _dirty = <String, bool>{};
+  final _base = <String, int>{};
+  final _rev = <String, int>{};
+  final _doc = <String, String>{};
+
+  @override
+  int? syncStamp(String kind) => _stamp[kind];
+  @override
+  bool syncDirty(String kind) => _dirty[kind] ?? false;
+  @override
+  int? syncBase(String kind) => _base[kind];
+  @override
+  int? syncRevision(String kind) => _rev[kind];
+  @override
+  Map<String, dynamic>? syncBaseDoc(String kind) => _doc[kind] == null
+      ? null
+      : Map<String, dynamic>.from(jsonDecode(_doc[kind]!) as Map);
+
+  @override
+  Future<void> setSync(
+    String kind, {
+    int? stamp,
+    required bool dirty,
+    int? base,
+    int? revision,
+    Map<String, dynamic>? baseDoc,
+  }) async {
+    if (base != null) _base[kind] = base;
+    if (revision != null) _rev[kind] = revision;
+    if (baseDoc != null) _doc[kind] = jsonEncode(baseDoc);
+    stamp == null ? _stamp.remove(kind) : _stamp[kind] = stamp;
+    _dirty[kind] = dirty;
   }
 }
 

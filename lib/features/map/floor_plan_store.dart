@@ -141,6 +141,23 @@ class FloorPlanNotifier extends AsyncNotifier<HavenFloorPlan?> {
   }
 }
 
+/// Legt die Änderungen von [local] gegenüber [base] auf [remote] (z. B. hält
+/// der Editor einen eigenen Stand, während ein anderes Gerät speichert).
+/// Ist das Ergebnis ungültig (überlappende Räume), gilt [remote].
+HavenFloorPlan rebasePlan(
+  HavenFloorPlan base,
+  HavenFloorPlan local,
+  HavenFloorPlan remote,
+) {
+  try {
+    final merged = mergeDocs(base.toJson(), local.toJson(), remote.toJson());
+    final plan = HavenFloorPlan.fromJson(merged.doc);
+    return plan.isValid ? plan : remote;
+  } catch (_) {
+    return remote;
+  }
+}
+
 final floorPlanProvider =
     AsyncNotifierProvider<FloorPlanNotifier, HavenFloorPlan?>(
       FloorPlanNotifier.new,

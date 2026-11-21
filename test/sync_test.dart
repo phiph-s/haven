@@ -28,14 +28,20 @@ class _CountingRepo extends FakeRepository {
   String? failWith;
 
   @override
-  Future<void> storeAppData(
+  Future<int?> storeAppData(
     AppDataKind kind,
     Map<String, dynamic> data,
-    int updatedAt,
-  ) async {
+    int updatedAt, {
+    int? baseRevision,
+  }) async {
     if (failWith != null) throw HavenException('nein', code: failWith);
     stores.add((kind, data, updatedAt));
-    await super.storeAppData(kind, data, updatedAt);
+    return super.storeAppData(
+      kind,
+      data,
+      updatedAt,
+      baseRevision: baseRevision,
+    );
   }
 }
 

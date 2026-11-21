@@ -135,11 +135,21 @@ abstract class HavenRepository
 
   /// Speichert ein Dokument mit Zeitstempel [updatedAt] (ms). Wirft
   /// [HavenException], ohne Admin-Rechte mit `unauthorized`.
-  Future<void> storeAppData(
+  ///
+  /// [baseRevision]: Revision, auf der [data] beruht. Hat inzwischen ein
+  /// anderes Gerät gespeichert, lehnt die Integration mit `conflict` ab
+  /// (nur mit [appDataRevisions], sonst wird ohne Prüfung gespeichert).
+  /// Gibt die neue Revision zurück, `null` ohne Revisionen.
+  Future<int?> storeAppData(
     AppDataKind kind,
     Map<String, dynamic> data,
-    int updatedAt,
-  );
+    int updatedAt, {
+    int? baseRevision,
+  });
+
+  /// Die Integration vergibt Revisionen und prüft `base_revision` (Feature
+  /// `revisions`). Ohne prüft `DocSync` vor dem Speichern selbst.
+  bool get appDataRevisions;
 
   /// Ein Dokument hat sich geändert (Ereignis `haven_data_updated`, auch
   /// das eigene Speichern), außerdem nach jedem Verbinden für alle Arten.

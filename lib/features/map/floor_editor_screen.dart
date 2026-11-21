@@ -21,6 +21,7 @@ import '../../core/widgets/haven_card.dart';
 import '../../core/widgets/press_scale.dart';
 import '../../core/widgets/segmented.dart';
 import '../../data/models/floor_plan.dart';
+import '../../data/sync/app_data.dart' show sameDoc;
 import '../zigbee/widgets/device_icon.dart';
 import '../zigbee/widgets/zb_common.dart' show showZbSheet;
 import '../zigbee/zigbee_providers.dart';
@@ -162,6 +163,13 @@ class FloorEditorScreen extends ConsumerStatefulWidget {
 
 class _FloorEditorScreenState extends ConsumerState<FloorEditorScreen> {
   HavenFloorPlan? _plan;
+
+  /// Stand des [floorPlanProvider], auf dem [_plan] beruht. Der Editor hält
+  /// eine eigene Fassung (Gesten ändern sie live). Kommt ein neuer Stand von
+  /// einem anderen Gerät, wird sie darauf gelegt ([_onPlanChanged]). Sonst
+  /// schriebe die nächste Änderung hier den alten Stand zurück und machte die
+  /// Änderungen des anderen Geräts rückgängig.
+  HavenFloorPlan? _seen;
   final List<HavenFloorPlan> _undo = [];
   late _Mode _mode = widget.startInFurniture
       ? _Mode.furniture
@@ -230,6 +238,31 @@ class _FloorEditorScreenState extends ConsumerState<FloorEditorScreen> {
   bool _zigbeeOpen = true;
   bool _otherOpen = false;
   bool _migrated = false;
+
+  @override
+  void initState() {
+    super.initState();
+    ref.listenManual(
+      floorPlanProvider,
+      (_, next) => _onPlanChanged(next.value),
+    );
+  }
+
+  void _onPlanChanged(HavenFloorPlan? remote) {
+    final local = _plan, seen = _seen;
+    if (remote == null || local == null || !mounted) return;
+    _seen = remote;
+    // Das eigene Speichern kommt hier zurück.
+    if (seen == null || sameDoc(remote.toJson(), local.toJson())) return;
+    setState(() {
+      _plan = rebasePlan(seen, local, remote);
+      for (var i = 0; i < _undo.length; i++) {
+        _undo[i] = rebasePlan(seen, _undo[i], remote);
+      }
+      if (_sel != null && _plan!.room(_sel!) == null) _sel = null;
+      if (_fsel != null && _plan!.furnitureById(_fsel!) == null) _fsel = null;
+    });
+  }
 
   @override
   void dispose() {
@@ -2659,6 +2692,7 @@ class _FloorEditorScreenState extends ConsumerState<FloorEditorScreen> {
         return Scaffold(backgroundColor: hv.bg, body: const SizedBox.shrink());
       }
       _plan = async.value ?? const HavenFloorPlan();
+      _seen = async.value;
       if (widget.startSelected != null &&
           _plan!.room(widget.startSelected!) != null) {
         _sel = widget.startSelected;
