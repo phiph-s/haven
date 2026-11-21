@@ -60,14 +60,33 @@ List<h3.LayerView> mapLayerViews(HavenFloorPlan plan) => [
 /// Render-Schlüssel: ändert sich mit Plan, Perspektiven und Format. HA merkt
 /// ihn sich mit den Bildern, so sieht jedes Gerät, ob sie aktuell sind.
 String mapRenderKey(HavenFloorPlan plan, List<h3.LayerView> views) {
-  final text = jsonEncode({
-    'format': h3.kLayerFormat,
-    'look': h3.kLayerLook,
-    'plan': plan.toJson(),
-    'views': [for (final v in views) v.toJson()],
-  });
+  final text = jsonEncode(
+    canonicalJson({
+      'format': h3.kLayerFormat,
+      'look': h3.kLayerLook,
+      'plan': plan.toJson(),
+      'views': [for (final v in views) v.toJson()],
+    }),
+  );
   return '${h3.kLayerFormat}-${_fnv(utf8.encode(text))}';
 }
+
+/// [value] so, dass `jsonEncode` nativ und im Web denselben Text liefert:
+/// Ganzzahlige Kommazahlen werden zu ganzen Zahlen (im Web schreibt
+/// `jsonEncode(4.0)` „4“, nativ „4.0“; sonst hielte das Web-Panel die
+/// Bilder vom Handy für veraltet und umgekehrt).
+Object? canonicalJson(Object? value) => switch (value) {
+  final double d
+      when d.isFinite &&
+          d == d.truncateToDouble() &&
+          d.abs() < 9007199254740992 =>
+    d.toInt(),
+  final Map<dynamic, dynamic> m => {
+    for (final e in m.entries) '${e.key}': canonicalJson(e.value),
+  },
+  final List<dynamic> l => [for (final x in l) canonicalJson(x)],
+  _ => value,
+};
 
 /// Zwei FNV-1a-Hashes (32 Bit, im Web wie nativ gleich gerechnet).
 String _fnv(List<int> bytes) {

@@ -45,6 +45,30 @@ void main() {
       expect(mapRenderKey(plan, views.take(2).toList()), isNot(key));
       expect(key, matches(RegExp(r'^[0-9a-f-]+$')));
     });
+
+    test('Schlüssel gleich in Web und nativ (ganze Kommazahlen)', () {
+      // Im Web (JavaScript) schreibt jsonEncode 4.0 als „4“: dieselben Daten
+      // mit ganzen Zahlen statt Kommazahlen müssen denselben Text ergeben.
+      Object? asWeb(Object? v) => switch (v) {
+        final double d when d == d.truncateToDouble() => d.toInt(),
+        final Map<dynamic, dynamic> m => {
+          for (final e in m.entries) e.key: asWeb(e.value),
+        },
+        final List<dynamic> l => [for (final x in l) asWeb(x)],
+        _ => v,
+      };
+      final plan = kFakeFloorPlan.toJson();
+      expect(jsonEncode(plan), isNot(jsonEncode(asWeb(plan))));
+      expect(
+        jsonEncode(canonicalJson(plan)),
+        jsonEncode(canonicalJson(asWeb(plan))),
+      );
+      expect(canonicalJson({'a': 1.5, 'b': 2.0, 'c': -0.0}), {
+        'a': 1.5,
+        'b': 2,
+        'c': 0,
+      });
+    });
   });
 
   group('Upload in Stücken', () {
