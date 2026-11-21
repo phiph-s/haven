@@ -3,6 +3,7 @@ import 'package:flutter/widgets.dart' show Scrollable, ValueKey;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:haven/app.dart';
+import 'package:haven/core/panel/panel_host.dart';
 import 'package:haven/core/state/providers.dart';
 import 'package:haven/dev/fake_repository.dart';
 import 'package:haven/data/storage/settings_store.dart';
@@ -195,5 +196,43 @@ void main() {
       findsOneWidget,
     );
     expect(find.text('Außentemperatur', skipOffstage: false), findsNothing);
+  });
+
+  testWidgets('Eigenständige Web-App: Abmelden geht über die Seite', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(412 * 2.625, 915 * 2.625);
+    tester.view.devicePixelRatio = 2.625;
+    addTearDown(tester.view.reset);
+    SharedPreferences.setMockInitialValues({});
+    final store = SettingsStore(await SharedPreferences.getInstance());
+    final host = StaticPanelHost(const PanelState(standalone: true));
+    late FakeRepository repo;
+    await tester.runAsync(() async {
+      repo = FakeRepository(simulate: false, localPrefs: store);
+      await repo.start();
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            settingsStoreProvider.overrideWithValue(store),
+            tokenStoreProvider.overrideWithValue(MemoryTokenStore()),
+            initialSessionProvider.overrideWithValue(
+              Session(SessionMode.fake, repo),
+            ),
+            panelHostProvider.overrideWithValue(host),
+          ],
+          child: const HavenApp(initialLocation: '/settings'),
+        ),
+      );
+    });
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('install-web-app')), findsNothing);
+    final logout = find.byKey(const ValueKey('web-app-logout'));
+    await tester.ensureVisible(logout);
+    await tester.tap(logout);
+    await tester.pumpAndSettle();
+    expect(host.logouts, 1);
+    expect(PanelState.fromMap(const {'standalone': true}).standalone, isTrue);
+    expect(PanelState.fromMap(const {'standalone': 'ja'}).standalone, isFalse);
   });
 }

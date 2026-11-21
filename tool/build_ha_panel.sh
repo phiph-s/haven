@@ -71,6 +71,7 @@ test -f "$W/assets/packages/flutter_scene/flutter_scene_generated/manifest.json"
   { echo "Shader von flutter_scene fehlen im Build." >&2; exit 1; }
 
 test -f "$W/haven-panel.js" || { echo "haven-panel.js fehlt im Build (web/)." >&2; exit 1; }
+test -f "$W/haven-app.js" || { echo "haven-app.js fehlt im Build (web/)." >&2; exit 1; }
 
 mkdir -p "$OUT"
 # Alten Stand ersetzen, aber nur Dateien dieses Builds behalten.

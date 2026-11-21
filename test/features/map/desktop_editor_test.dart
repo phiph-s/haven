@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -300,6 +301,40 @@ void main() {
       await tester.pumpAndSettle();
     }
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('Geräte setzen: Mausklick mit Zittern wählt, Ziehen verschiebt', (
+    tester,
+  ) async {
+    final repo = _MemoryRepo(kFakeFloorPlan);
+    await _pump(tester, '/map/editor?mode=devices', repo: repo, size: _desk);
+    final marker = find.byType(MapMarker).first;
+    final id = tester.widget<MapMarker>(marker).entityId;
+    final at = tester.getCenter(marker);
+    // Ein echter Klick: drücken, ein paar Bilder, 2 px gewackelt, loslassen.
+    final m = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    await m.addPointer(location: at);
+    await m.down(at);
+    await tester.pump(const Duration(milliseconds: 40));
+    await m.moveTo(at + const Offset(2, 1));
+    await tester.pump(const Duration(milliseconds: 40));
+    await m.up();
+    await tester.pumpAndSettle();
+    expect(find.byKey(ValueKey('dsel-$id')), findsOneWidget, reason: 'gewählt');
+    // Danach direkt ziehen (gewählt, ein Versuch).
+    final before = repo.plan!.placementOf(id)!;
+    final start = tester.getCenter(marker);
+    final mid = tester.getCenter(find.byType(h3.Scene3DView));
+    final step = (mid - start) / 24;
+    await m.down(start);
+    await tester.pump(const Duration(milliseconds: 30));
+    for (var i = 1; i <= 12; i++) {
+      await m.moveTo(start + step * i.toDouble());
+      await tester.pump(const Duration(milliseconds: 16));
+    }
+    await m.up();
+    await tester.pumpAndSettle();
+    expect(repo.plan!.placementOf(id)!.cell, isNot(before.cell));
   });
 
   for (final size in [_desk, _phone]) {

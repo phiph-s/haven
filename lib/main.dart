@@ -66,7 +66,11 @@ Future<void> main() async {
         appVersionProvider.overrideWithValue(await _appVersion()),
         if (panel != null) ...[
           panelHostProvider.overrideWithValue(panel),
-          themeModeProvider.overrideWith(() => PanelThemeModeController(panel)),
+          // Eigenständig wählt man das Theme in Haven, im Panel gilt HA.
+          if (!panel.state.standalone)
+            themeModeProvider.overrideWith(
+              () => PanelThemeModeController(panel),
+            ),
         ],
         // Entwicklungsdaten: erfundene Releases, kein Netz zu GitHub.
         if (kHavenFake && session.mode == SessionMode.fake) ...[

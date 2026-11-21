@@ -20,6 +20,7 @@ class PanelState {
     this.version,
     this.narrow = false,
     this.language,
+    this.standalone = false,
   });
 
   /// Liest das JS-Objekt `window.__havenPanel` (als Map). Unbrauchbares wird
@@ -32,6 +33,7 @@ class PanelState {
 
     final dark = m['darkMode'];
     final narrow = m['narrow'];
+    final standalone = m['standalone'];
     return PanelState(
       token: str('token'),
       darkMode: dark is bool ? dark : null,
@@ -39,6 +41,7 @@ class PanelState {
       version: str('version'),
       narrow: narrow is bool && narrow,
       language: str('language'),
+      standalone: standalone is bool && standalone,
     );
   }
 
@@ -59,6 +62,11 @@ class PanelState {
   final bool narrow;
   final String? language;
 
+  /// Eigenständig als installierte Web-App (`/haven_app/`, `haven-app.js`)
+  /// statt in der Seitenleiste von HA: eigene Anmeldung bei HA, kein Menü
+  /// von HA, das Theme wählt man in Haven.
+  final bool standalone;
+
   /// Theme aus HA: dunkel, hell oder dem System folgen.
   ThemeMode get themeMode => switch (darkMode) {
     true => ThemeMode.dark,
@@ -74,11 +82,19 @@ class PanelState {
       other.origin == origin &&
       other.version == version &&
       other.narrow == narrow &&
-      other.language == language;
+      other.language == language &&
+      other.standalone == standalone;
 
   @override
-  int get hashCode =>
-      Object.hash(token, darkMode, origin, version, narrow, language);
+  int get hashCode => Object.hash(
+    token,
+    darkMode,
+    origin,
+    version,
+    narrow,
+    language,
+    standalone,
+  );
 }
 
 /// Verbindung zum Panel-Modul in Home Assistant (nur Web, nur im Panel).
@@ -96,6 +112,9 @@ abstract class PanelHost {
 
   /// Öffnet die Seitenleiste von HA (Schmalansicht, `hass-toggle-menu`).
   void toggleMenu();
+
+  /// Nur eigenständig: Anmeldung bei HA widerrufen und zum Login von HA.
+  void logout();
 }
 
 /// Panel-Host der laufenden Seite oder `null` (App, normales Web, Tests).
@@ -164,6 +183,11 @@ class StaticPanelHost implements PanelHost {
 
   @override
   void toggleMenu() => menuToggles++;
+
+  int logouts = 0;
+
+  @override
+  void logout() => logouts++;
 
   void emit(PanelState s) {
     _state = s;

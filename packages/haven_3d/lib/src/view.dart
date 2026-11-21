@@ -1186,7 +1186,8 @@ class _Scene3DViewState extends State<Scene3DView>
         });
         final own = widget.gestures != SceneGestures.none;
         final scales = own || widget.grab != null;
-        final view = Listener(
+        _markerSpots = widget.interactiveMarkers ? proj.markers : const {};
+        final listener = Listener(
           onPointerSignal: own || widget.onScroll != null ? _onScroll : null,
           onPointerDown: (e) {
             _buttons = e.buttons;
@@ -1196,14 +1197,6 @@ class _Scene3DViewState extends State<Scene3DView>
           onPointerCancel: (_) => _downCount = math.max(0, _downCount - 1),
           child: GestureDetector(
             behavior: HitTestBehavior.opaque,
-            onScaleStart: scales ? _onScaleStart : null,
-            onScaleUpdate: scales ? _onScaleUpdate : null,
-            onScaleEnd: scales
-                ? (_) {
-                    _startCam = null;
-                    _endGrab();
-                  }
-                : null,
             onTapUp: widget.onTap == null && widget.onTapAt == null
                 ? null
                 : (d) {
@@ -1273,6 +1266,27 @@ class _Scene3DViewState extends State<Scene3DView>
             ),
           ),
         );
+        // Drehen, Schieben, Zoomen und Greifen. Nicht auf bedienbaren Geräten:
+        // Die Kamera gewinnt mit der Maus schon ab 2 px und nähme dem Gerät
+        // sonst Klick und Ziehen weg.
+        final view = RawGestureDetector(
+          behavior: HitTestBehavior.opaque,
+          gestures: {
+            if (scales)
+              _SceneScaleRecognizer:
+                  GestureRecognizerFactoryWithHandlers<_SceneScaleRecognizer>(
+                    () => _SceneScaleRecognizer(_allowsCamera),
+                    (r) => r
+                      ..onStart = _onScaleStart
+                      ..onUpdate = _onScaleUpdate
+                      ..onEnd = (_) {
+                        _startCam = null;
+                        _endGrab();
+                      },
+                  ),
+          },
+          child: listener,
+        );
         // Bis die Szene ihre ersten Bilder hat, liegt [placeholder] darüber
         // (bedienbar), dann blendet die 3D-Ansicht samt Geräten über.
         final ph = widget.placeholder;
@@ -1310,6 +1324,22 @@ class _Scene3DViewState extends State<Scene3DView>
         );
       },
     );
+  }
+
+  /// Lage der bedienbaren Geräte im letzten Bild (lokal).
+  Map<String, Offset> _markerSpots = const {};
+
+  /// `false`, wenn der Zeiger auf einem bedienbaren Gerät landet.
+  bool _allowsCamera(PointerDownEvent e) {
+    if (_markerSpots.isEmpty || widget.markerBuilder == null) return true;
+    final box = context.findRenderObject();
+    if (box is! RenderBox || !box.hasSize) return true;
+    final local = box.globalToLocal(e.position);
+    final r = widget.markerHitRadius;
+    for (final at in _markerSpots.values) {
+      if ((at - local).distance <= r) return false;
+    }
+    return true;
   }
 
   /// Sichtbar ist die Szene erst nach ein paar gezeichneten Bildern: der
@@ -1453,4 +1483,14 @@ class _Stats extends StatelessWidget {
       ),
     ),
   );
+}
+
+/// Kamera-Geste, die Zeiger auf Geräten auslässt.
+class _SceneScaleRecognizer extends ScaleGestureRecognizer {
+  _SceneScaleRecognizer(this._allow);
+  final bool Function(PointerDownEvent) _allow;
+
+  @override
+  bool isPointerAllowed(PointerDownEvent event) =>
+      _allow(event) && super.isPointerAllowed(event);
 }

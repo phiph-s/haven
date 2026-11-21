@@ -92,6 +92,7 @@ class FloorPlanNotifier extends AsyncNotifier<HavenFloorPlan?> {
           _local = plan;
           await cache.save(plan);
           state = AsyncData(plan);
+          Future.microtask(_linkAreas);
           return true;
         },
         onError: (m) => ref.read(syncNoticeProvider.notifier).show(m),
@@ -111,7 +112,32 @@ class FloorPlanNotifier extends AsyncNotifier<HavenFloorPlan?> {
       });
       sync.start();
     }
-    return _local ?? repo?.sampleFloorPlan;
+    // Räume, die im Editor vor dem Bereich in HA entstanden sind, bekommen
+    // ihren Bereich, sobald es ihn gibt (sonst fehlen Lampen und Bilder).
+    ref.listen(
+      snapshotProvider.select(
+        (s) => [
+          for (final r in s.rooms)
+            if (r.areaId != null) '${r.areaId}\u0000${r.name}',
+        ].join('\u0001'),
+      ),
+      (_, _) => _linkAreas(),
+    );
+    final plan = _local ?? repo?.sampleFloorPlan;
+    if (plan != null) Future.microtask(_linkAreas);
+    return plan;
+  }
+
+  void _linkAreas() {
+    final plan = state.value;
+    if (plan == null || !ref.mounted) return;
+    final areas = {
+      for (final r in ref.read(snapshotProvider).rooms)
+        if (r.areaId != null) r.areaId!: r.name,
+    };
+    if (areas.isEmpty) return;
+    final next = plan.linkAreasByName(areas);
+    if (!identical(next, plan)) unawaited(save(next));
   }
 
   /// Setzt den Stand sofort, legt ihn lokal ab und speichert entprellt in HA.

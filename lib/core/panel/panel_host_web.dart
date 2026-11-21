@@ -44,6 +44,7 @@ class _WebPanelHost implements PanelHost {
         'version',
         'narrow',
         'language',
+        'standalone',
       ])
         k: v(k),
     });
@@ -57,6 +58,11 @@ class _WebPanelHost implements PanelHost {
 
   @override
   void toggleMenu() => _bridge.callMethod('toggleMenu'.toJS);
+
+  @override
+  void logout() {
+    if (_bridge.has('logout')) _bridge.callMethod('logout'.toJS);
+  }
 
   @override
   Future<String> freshToken() async {

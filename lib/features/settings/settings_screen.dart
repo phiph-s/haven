@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:haven_3d/haven_3d.dart' show SceneQuality;
 import 'package:go_router/go_router.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/router/router.dart';
 import '../../core/panel/panel_host.dart';
@@ -69,6 +70,16 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     ConnectionStatus.offline => 'Getrennt',
   };
 
+  /// Die installierbare Fassung (`/haven_app/` der Integration) in einem
+  /// neuen Tab: dort bietet der Browser „Installieren“ an.
+  Future<void> _openWebApp() async {
+    final origin = ref.read(panelStateProvider)?.origin ?? Uri.base.origin;
+    await launchUrl(
+      Uri.parse('$origin/haven_app/'),
+      webOnlyWindowName: '_blank',
+    );
+  }
+
   Future<void> _reconnect() async {
     final url = ref.read(settingsStoreProvider).haUrl;
     final token = await ref.read(tokenStoreProvider).read();
@@ -105,6 +116,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     final isFake = session.mode == SessionMode.fake;
     // Im HA-Panel: Anmeldung über HA, kein APK-Update.
     final inPanel = ref.watch(panelModeProvider);
+    // Eigenständige Web-App (`/haven_app/`): eigene Anmeldung bei HA.
+    final standalone = ref.watch(
+      panelStateProvider.select((p) => p?.standalone ?? false),
+    );
     final url = ref.watch(settingsStoreProvider).haUrl;
     final app = ref.watch(appUpdateProvider);
     final haUpdates = ref.watch(haUpdatesProvider);
@@ -200,12 +215,30 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                           ? 'In Home Assistant angemeldet'
                           : (url ?? 'Nicht gesetzt'),
                     ),
+                  if (inPanel && !standalone && !isFake)
+                    SettingsRow(
+                      key: const ValueKey('install-web-app'),
+                      icon: Icons.install_desktop_rounded,
+                      title: 'Als App installieren',
+                      subtitle:
+                          'Haven im eigenen Fenster, auf dem Handy auf dem '
+                          'Startbildschirm. Öffnet die Seite dafür.',
+                      onTap: _openWebApp,
+                    ),
                 ],
               ),
             ),
             const SizedBox(height: 12),
             pad(
-              isFake || inPanel
+              standalone
+                  ? HavenButton(
+                      key: const ValueKey('web-app-logout'),
+                      label: 'Abmelden',
+                      icon: Icons.logout_rounded,
+                      destructive: true,
+                      onTap: () => ref.read(panelHostProvider)?.logout(),
+                    )
+                  : isFake || inPanel
                   ? const SizedBox.shrink()
                   : Row(
                       children: [

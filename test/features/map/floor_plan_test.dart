@@ -536,4 +536,41 @@ void main() {
       );
     },
   );
+
+  test('Räume ohne Bereich finden ihren HA-Bereich über den Namen', () {
+    FloorRoom r(String id, String name, [String? area]) => FloorRoom.rect(
+      id: id,
+      name: name,
+      x: 0,
+      y: 0,
+      w: 1,
+      h: 1,
+      areaId: area,
+    );
+    final plan = HavenFloorPlan(
+      rooms: [
+        r('r1', 'Büro'),
+        r('r2', ' Wohn-Zimmer'),
+        r('r3', 'Bad', 'bad_alt'),
+        r('r4', 'Flur'),
+        r('r5', 'Flur'),
+        r('r6', 'Keller'),
+        r('r7', 'Küche'),
+      ],
+    );
+    final linked = plan.linkAreasByName({
+      'buro': 'Büro',
+      'wohnzimmer': 'Wohnzimmer',
+      'bad': 'Bad', // r3 hat schon einen Bereich
+      'flur': 'Flur', // zwei Räume heißen so: nicht raten
+      'bad_alt': 'Keller', // schon vergeben
+      'kuche': 'Küche',
+      'kuche_2': 'küche', // zwei Bereiche: nicht raten
+    });
+    expect(
+      [for (final x in linked.rooms) x.areaId],
+      ['buro', 'wohnzimmer', 'bad_alt', null, null, null, null],
+    );
+    expect(identical(linked.linkAreasByName({'buro': 'Büro'}), linked), isTrue);
+  });
 }

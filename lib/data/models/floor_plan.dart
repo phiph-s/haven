@@ -717,6 +717,37 @@ class HavenFloorPlan {
     return null;
   }
 
+  /// Verknüpft Räume ohne Bereich mit dem HA-Bereich gleichen Namens
+  /// ([areas]: Bereichs-ID → Name). Für Räume, die im Editor vor dem Bereich
+  /// in HA angelegt wurden. Nur eindeutige Treffer: ein Bereich, den kein
+  /// anderer Raum schon hat, und nur ein Raum dieses Namens. Ohne Treffer
+  /// kommt derselbe Plan zurück (`identical`).
+  HavenFloorPlan linkAreasByName(Map<String, String> areas) {
+    final used = {for (final r in rooms) ?r.areaId};
+    final byName = <String, List<String>>{};
+    for (final e in areas.entries) {
+      if (!used.contains(e.key)) (byName[_nameKey(e.value)] ??= []).add(e.key);
+    }
+    final unlinked = <String, int>{};
+    for (final r in rooms) {
+      if (r.areaId != null) continue;
+      unlinked.update(_nameKey(r.name), (n) => n + 1, ifAbsent: () => 1);
+    }
+    String? match(FloorRoom r) {
+      if (r.areaId != null) return null;
+      final k = _nameKey(r.name);
+      final ids = byName[k];
+      return unlinked[k] == 1 && ids != null && ids.length == 1
+          ? ids.single
+          : null;
+    }
+
+    if (!rooms.any((r) => match(r) != null)) return this;
+    return copyWith(
+      rooms: [for (final r in rooms) r.copyWith(areaId: match(r) ?? r.areaId)],
+    );
+  }
+
   FloorPlacement? placementOf(String entityId) {
     for (final p in placements) {
       if (p.entityId == entityId) return p;
@@ -1303,4 +1334,15 @@ class HavenFloorPlan {
     coordinator,
     Object.hashAll(furniture),
   );
+}
+
+/// Vergleichsschlüssel für Raumnamen: ohne Groß/klein, Umlaute wie HA
+/// (`Büro` = `buro`), Leer- und Satzzeichen egal.
+String _nameKey(String s) {
+  const map = {'ä': 'a', 'ö': 'o', 'ü': 'u', 'ß': 'ss'};
+  final b = StringBuffer();
+  for (final ch in s.toLowerCase().split('')) {
+    b.write(map[ch] ?? ch);
+  }
+  return b.toString().replaceAll(RegExp(r'[^a-z0-9]+'), '');
 }
