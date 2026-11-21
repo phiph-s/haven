@@ -29,6 +29,7 @@ import 'fake_thermostat_sim.dart';
 import 'fake_updates.dart';
 import 'fake_zigbee.dart';
 import '../data/models/weather.dart';
+import '../data/models/lamp_calibration.dart';
 import '../data/render_api.dart';
 
 /// Gedächtnis einer Lampe, damit Farbe und Helligkeit beim Aus- und
@@ -91,6 +92,20 @@ class FakeRepository extends BaseRepository {
   Set<String> _excluded = const {};
   Set<String> _locked = const {};
   WeatherConfig _weather = const WeatherConfig();
+  LampCalibrations _calibration = LampCalibrations.empty;
+
+  /// Lampentypen aus dem erfundenen Zigbee-Bestand (wie Zigbee2MQTT sie
+  /// meldet).
+  late final Map<String, LampModel> _lampModels = Map.unmodifiable({
+    for (final d in (inventory['z2m_devices'] as List))
+      for (final id in ((d as Map)['entities'] as Map).keys.cast<String>())
+        if (id.startsWith('light.'))
+          id: LampModel(
+            vendor: d['vendor'] as String?,
+            model: d['model'] as String?,
+            description: d['description'] as String?,
+          ),
+  });
 
   final Map<String, EntityState> _entities = {};
   final Map<String, _Mem> _mem = {};
@@ -195,6 +210,7 @@ class FakeRepository extends BaseRepository {
     _excluded = {..._local.excludedLights};
     _locked = {..._local.lockedIds};
     _weather = WeatherConfig.fromJson(_local.weatherConfig);
+    _calibration = LampCalibrations.fromJson(_local.lampCalibration);
     publish(
       HavenSnapshot(
         status: ConnectionStatus.connected,
@@ -203,6 +219,8 @@ class FakeRepository extends BaseRepository {
         excludedLights: Set.unmodifiable(_excluded),
         locked: Set.unmodifiable(_locked),
         weather: _weather,
+        lampModels: _lampModels,
+        lampCalibration: _calibration,
       ),
     );
     if (simulate) {
@@ -478,6 +496,7 @@ class FakeRepository extends BaseRepository {
         excludedLights: Set.unmodifiable(_excluded),
         locked: Set.unmodifiable(_locked),
         weather: _weather,
+        lampCalibration: _calibration,
       ),
     );
   }
@@ -496,6 +515,13 @@ class FakeRepository extends BaseRepository {
     _weather = config;
     _push();
     await _local.setWeatherConfig(config.toJson());
+  }
+
+  @override
+  Future<void> setLampCalibration(LampCalibrations calibration) async {
+    _calibration = calibration;
+    _push();
+    await _local.setLampCalibration(calibration.toJson());
   }
 
   /// Lampen der Lichtsteuerung (ohne Ausnahmen).

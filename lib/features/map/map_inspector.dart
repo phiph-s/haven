@@ -339,7 +339,12 @@ class _RoomDetail extends ConsumerWidget {
                               decoration: BoxDecoration(
                                 shape: BoxShape.circle,
                                 color: l.on
-                                    ? colorOf(uiColor(l.color, dark: hv.isDark))
+                                    ? colorOf(
+                                        uiColor(
+                                          l.displayColor,
+                                          dark: hv.isDark,
+                                        ),
+                                      )
                                     : hv.s2,
                                 border: l.on ? null : Border.all(color: hv.ln2),
                               ),
@@ -351,7 +356,10 @@ class _RoomDetail extends ConsumerWidget {
                                 color: l.on
                                     ? colorOf(
                                         onColorFor(
-                                          uiColor(l.color, dark: hv.isDark),
+                                          uiColor(
+                                            l.displayColor,
+                                            dark: hv.isDark,
+                                          ),
                                         ),
                                       )
                                     : hv.tx3,

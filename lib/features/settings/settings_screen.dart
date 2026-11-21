@@ -22,6 +22,7 @@ import '../updates/app_update_provider.dart';
 import '../updates/app_update_widgets.dart';
 import '../updates/ha_updates_provider.dart';
 import 'advanced_render_settings.dart';
+import 'lamp_calibration_screen.dart';
 import 'render_settings.dart';
 import 'settings_widgets.dart';
 import 'sync_section.dart';
@@ -256,6 +257,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                         : '${snap.excludedLights.length} ${snap.excludedLights.length == 1 ? 'Licht' : 'Lichter'} ausgenommen',
                     onTap: () => showLightControlSheet(context),
                   ),
+                  const LampCalibrationSettingsRow(),
                   SettingsRow(
                     icon: Icons.restart_alt_rounded,
                     title: 'Widgets zurücksetzen',

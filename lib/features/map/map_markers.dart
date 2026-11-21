@@ -6,7 +6,6 @@ import '../../core/light/room_palette.dart';
 import '../../core/state/providers.dart';
 import '../../core/theme/tokens.dart';
 import '../../data/models/floor_plan.dart';
-import '../../data/models/lamp.dart';
 import 'map_data.dart';
 import 'map_thermostat.dart';
 
@@ -26,10 +25,10 @@ class MapMarker extends ConsumerWidget {
     final available = e?.isAvailable ?? false;
     switch (kind) {
       case FloorKind.light:
-        final lamp = e == null ? null : Lamp.fromEntity(e);
+        final lamp = e == null ? null : ref.watch(lampProvider(entityId));
         final on = lamp?.on ?? false;
         final fill = on
-            ? colorOf(uiColor(lamp!.color, dark: hv.isDark))
+            ? colorOf(uiColor(lamp!.displayColor, dark: hv.isDark))
             : hv.s2;
         return _Bubble(
           label: e?.name ?? entityId,

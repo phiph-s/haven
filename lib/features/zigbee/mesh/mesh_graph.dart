@@ -8,11 +8,12 @@ import '../../../core/light/color_math.dart';
 import '../../../core/light/room_palette.dart';
 import '../../../core/state/providers.dart';
 import '../../../core/theme/tokens.dart';
-import '../../../data/models/lamp.dart';
 import '../../../data/models/zigbee_network.dart';
 import '../../map/floor_geometry.dart' show FloorNode;
 import '../../map/map_3d.dart';
+
 import 'package:haven_3d/haven_3d.dart' as h3;
+
 import 'mesh_painter.dart';
 import 'mesh_scene.dart';
 
@@ -201,8 +202,10 @@ class MeshNodeDot extends ConsumerWidget {
     if (info.lightId != null) {
       final e = ref.watch(entityProvider(info.lightId!));
       if (e != null && e.isAvailable) {
-        final l = Lamp.fromEntity(e);
-        if (l.on) lamp = colorOf(uiColor(l.color, dark: hv.isDark));
+        final l = ref.watch(lampProvider(info.lightId!));
+        if (l != null && l.on) {
+          lamp = colorOf(uiColor(l.displayColor, dark: hv.isDark));
+        }
       }
     }
     final r = meshNodeRadius(info.kind, mini: mini);

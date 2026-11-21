@@ -1,6 +1,7 @@
 import 'device.dart';
 import 'entity_state.dart';
 import 'lamp.dart';
+import 'lamp_calibration.dart';
 import 'light_groups.dart';
 import 'room.dart';
 import 'weather.dart';
@@ -32,6 +33,8 @@ class HavenSnapshot {
     this.locked = const {},
     this.weather = const WeatherConfig(),
     this.devices = const [],
+    this.lampModels = const {},
+    this.lampCalibration = LampCalibrations.empty,
     this.revision = 0,
   });
 
@@ -66,6 +69,20 @@ class HavenSnapshot {
   /// HA-Geräte mit ihren Haupt-Entities (leer bei Integration 0.1.0).
   final List<HavenDevice> devices;
 
+  /// Lampentyp je `light.*`-Entity (aus Zigbee2MQTT bzw. dem HA-Register).
+  final Map<String, LampModel> lampModels;
+
+  /// Anzeige-Korrektur je Lampentyp (in HA über `haven/prefs` geteilt).
+  final LampCalibrations lampCalibration;
+
+  /// Korrektur, die für die Lampe [entityId] gilt.
+  LampCalibration calibrationFor(String entityId) =>
+      lampCalibration.of(lampModels[entityId]);
+
+  /// Lampe mit der Korrektur ihres Typs.
+  Lamp _lampOf(EntityState e) =>
+      Lamp.fromEntity(e, calibration: calibrationFor(e.entityId));
+
   /// Zählt hoch bei jeder Änderung.
   final int revision;
 
@@ -73,7 +90,7 @@ class HavenSnapshot {
 
   Lamp? lamp(String id) {
     final e = entities[id];
-    return e == null ? null : Lamp.fromEntity(e);
+    return e == null ? null : _lampOf(e);
   }
 
   Room? room(String id) {
@@ -94,14 +111,14 @@ class HavenSnapshot {
   ];
 
   List<Lamp> lampsOf(Room r) => [
-    for (final id in controlledLightIds(r)) Lamp.fromEntity(entities[id]!),
+    for (final id in controlledLightIds(r)) _lampOf(entities[id]!),
   ];
 
   /// Ausgenommene Lampen eines Raums.
   List<Lamp> excludedLampsOf(Room r) => [
     for (final id in r.lightIds)
       if (excludedLights.contains(id) && entities[id] != null)
-        Lamp.fromEntity(entities[id]!),
+        _lampOf(entities[id]!),
   ];
 
   /// Alle Entities einer Domain, sortiert nach Name.
@@ -119,6 +136,8 @@ class HavenSnapshot {
     Set<String>? locked,
     WeatherConfig? weather,
     List<HavenDevice>? devices,
+    Map<String, LampModel>? lampModels,
+    LampCalibrations? lampCalibration,
   }) => HavenSnapshot(
     status: status ?? this.status,
     entities: entities ?? this.entities,
@@ -129,6 +148,8 @@ class HavenSnapshot {
     locked: locked ?? this.locked,
     weather: weather ?? this.weather,
     devices: devices ?? this.devices,
+    lampModels: lampModels ?? this.lampModels,
+    lampCalibration: lampCalibration ?? this.lampCalibration,
     revision: revision + 1,
   );
 }
