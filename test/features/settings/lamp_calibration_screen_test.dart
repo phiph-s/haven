@@ -5,7 +5,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:haven/app.dart';
 import 'package:haven/core/state/providers.dart';
 import 'package:haven/data/storage/settings_store.dart';
+import 'package:haven/core/router/router.dart' show Routes;
 import 'package:haven/dev/fake_repository.dart';
+import 'package:haven/features/map/map_3d.dart' show map3dSupportedProvider;
 import 'package:material_ui/material_ui.dart' show Icons, Slider;
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -63,9 +65,27 @@ void main() {
     expect(find.text('Vorschau'), findsOneWidget);
     expect(find.text('Mit echter Lampe vergleichen'), findsOneWidget);
 
+    // 3D-Vorschau: gemeldet und korrigiert umschaltbar.
+    expect(
+      find.bySemanticsLabel(RegExp('^Beispielzimmer mit Korrektur')),
+      findsOneWidget,
+    );
+    await tester.tap(find.text('Gemeldet'));
+    await tester.pumpAndSettle();
+    expect(
+      find.bySemanticsLabel(RegExp('^Beispielzimmer wie bisher')),
+      findsOneWidget,
+    );
+
     // Testwert an die echte Lampe: 2700 K und 50 %.
     final before = repo.snapshot.lamp('light.lampe_decke_ruheraum')!;
     expect(before.kelvin, isNot(2700));
+    await tester.scrollUntilVisible(
+      find.text('An Lampe zeigen'),
+      200,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.pumpAndSettle();
     await tester.tap(find.text('An Lampe zeigen'));
     await tester.pumpAndSettle();
     var now = repo.snapshot.lamp('light.lampe_decke_ruheraum')!;
@@ -108,13 +128,13 @@ void main() {
 
     // Zurück: Die Lampe bekommt ihr voriges Licht, die Liste zeigt
     // „angepasst“.
-    final back = find.byIcon(Icons.arrow_back_rounded);
-    await tester.scrollUntilVisible(
-      back,
-      -300,
-      scrollable: find.byType(Scrollable).first,
+    await tester.fling(
+      find.byType(Scrollable).first,
+      const Offset(0, 4000),
+      4000,
     );
-    await tester.tap(back);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byIcon(Icons.arrow_back_rounded));
     await tester.pumpAndSettle();
     now = repo.snapshot.lamp('light.lampe_decke_ruheraum')!;
     expect(now.kelvin, before.kelvin);
@@ -123,5 +143,38 @@ void main() {
       find.text('3 Lampen · z. B. Lampe Decke Ruheraum · angepasst'),
       findsOneWidget,
     );
+  });
+
+  testWidgets('Ohne 3D: keine Vorschau, die Farbfelder bleiben', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(412 * 2.625, 915 * 2.625);
+    tester.view.devicePixelRatio = 2.625;
+    addTearDown(tester.view.reset);
+    SharedPreferences.setMockInitialValues({});
+    final store = SettingsStore(await SharedPreferences.getInstance());
+    late FakeRepository repo;
+    await tester.runAsync(() async {
+      repo = FakeRepository(simulate: false, localPrefs: store);
+      await repo.start();
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            settingsStoreProvider.overrideWithValue(store),
+            tokenStoreProvider.overrideWithValue(MemoryTokenStore()),
+            initialSessionProvider.overrideWithValue(
+              Session(SessionMode.fake, repo),
+            ),
+            map3dSupportedProvider.overrideWith((ref) async => false),
+          ],
+          child: HavenApp(initialLocation: Routes.lampType('Tuya|TS0505B_hs')),
+        ),
+      );
+    });
+    await tester.pumpAndSettle();
+    expect(find.text('Vorschau'), findsOneWidget);
+    expect(find.text('2700 K'), findsOneWidget);
+    expect(find.text('Korrigiert'), findsNothing);
+    expect(find.bySemanticsLabel(RegExp('Beispielzimmer')), findsNothing);
   });
 }

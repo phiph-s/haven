@@ -18,6 +18,7 @@ import '../../data/models/lamp.dart';
 import '../../data/models/lamp_calibration.dart';
 import '../room/widgets/color_controls.dart' show KelvinSlider;
 import '../zigbee/widgets/zb_common.dart' show zbToast;
+import 'lamp_preview_3d.dart';
 import 'lamp_types.dart';
 import 'settings_widgets.dart';
 
@@ -533,6 +534,13 @@ class _Preview extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        LampPreview3D(
+          calibration: calibration,
+          kelvin: kelvin,
+          level: level,
+          hasKelvin: type.hasKelvin,
+        ),
+        const SizedBox(height: 14),
         Text(
           'Oben wie bisher, unten mit Korrektur. Tippe einen Wert an, um ihn '
           'mit der echten Lampe zu vergleichen.',
