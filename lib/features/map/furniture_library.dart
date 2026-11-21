@@ -35,7 +35,7 @@ class _FurnitureLibraryState extends State<FurnitureLibrary> {
   FurnitureCategory _cat = FurnitureCategory.living;
 
   List<FurnitureType> _of(FurnitureCategory c) => [
-    for (final t in kFurnitureCatalog)
+    for (final t in kFurnitureLibrary)
       if (t.category == c) t,
   ];
 

@@ -11,6 +11,7 @@ final Map<String, FurnitureSpec> structureModels = {
   'door': FurnitureSpec(
     height: 2.0,
     wallMounted: true,
+    zones: const [ColorZone('frame', 'Zarge'), ColorZone('leaf', 'Türblatt')],
     build: (b, w, d, h) {
       final r = math.min(w, d);
       final x0 = -w / 2, wall = d / 2;
@@ -20,6 +21,7 @@ final Map<String, FurnitureSpec> structureModels = {
       b.box(x0, wall - post, 0, x0 + post, wall, h - post);
       b.box(x0 + r - post, wall - post, 0, x0 + r, wall, h - post);
       b.box(x0, wall - post, h - post, x0 + r, wall, h);
+      b.zone = 'leaf';
       if (b.open == false) {
         // Zu (Sensor): Blatt in der Zarge, kein Aufschlag.
         b.box(
@@ -53,6 +55,7 @@ final Map<String, FurnitureSpec> structureModels = {
     elevation: 0.9,
     wallMounted: true,
     facesRoom: true,
+    zones: const [ColorZone('frame', 'Rahmen')],
     build: (b, w, d, h) {
       const f = 0.05;
       // Rahmen als vier Leisten in voller Tiefe.

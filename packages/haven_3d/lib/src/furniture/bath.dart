@@ -4,64 +4,129 @@ import 'dart:ui' show Offset;
 import '../model.dart';
 import 'catalog.dart';
 
-/// Körper enden minimal unter der Linienhöhe, damit die Linien in der
-/// Draufsicht nicht im Tiefenpuffer verschwinden.
-const _lift = 0.002;
+typedef _B = ModelBuilder;
 
-/// Abgerundetes Rechteck als geschlossener Linienzug auf Höhe [z].
-void _roundedRectLines(
-  ModelBuilder b,
-  double x0,
-  double y0,
-  double x1,
-  double y1,
-  double r,
-  double z,
-) {
-  const n = 5; // Segmente je Ecke
-  final pts = <V3>[];
-  // Eckmittelpunkte und Startwinkel, im Uhrzeigersinn ab oben links.
-  final corners = [
-    (x0 + r, y0 + r, math.pi),
-    (x1 - r, y0 + r, 1.5 * math.pi),
-    (x1 - r, y1 - r, 0.0),
-    (x0 + r, y1 - r, 0.5 * math.pi),
-  ];
-  for (final (cx, cy, a0) in corners) {
-    for (var i = 0; i <= n; i++) {
-      final a = a0 + math.pi / 2 * i / n;
-      pts.add(V3(cx + r * math.cos(a), cy + r * math.sin(a), z));
-    }
-  }
-  b.polyline(pts, closed: true);
+const _ceramic = ColorZone('ceramic', 'Keramik', Mat.ceramic);
+const _tap = ColorZone('tap', 'Armatur', Mat.metal);
+
+/// Armatur: Säule auf dem Rand bei ([x], [y]) ab [z], Auslauf nach `+y`
+/// (zur Mitte des Beckens) mit Länge [reach].
+void _faucet(_B b, double x, double y, double z, {double reach = 0.12}) {
+  b.inZone(_tap.id, () {
+    b.cylinder(x, y, 0.018, z, z + 0.11, segments: 8, mat: Mat.metal);
+    b.box(
+      x - 0.012,
+      y,
+      z + 0.085,
+      x + 0.012,
+      y + reach,
+      z + 0.11,
+      mat: Mat.metal,
+    );
+    // Hebel nach hinten.
+    b.box(
+      x - 0.006,
+      y - 0.06,
+      z + 0.11,
+      x + 0.006,
+      y,
+      z + 0.122,
+      mat: Mat.metal,
+    );
+  });
 }
 
-/// 3D-Modelle der Kategorie „bath“.
+/// 3D-Modelle der Kategorie „bath“. Sanitärteile sind Hohlkörper aus
+/// Keramik ([ModelBuilder.basin]): Rand, Mulde und Boden, damit man von
+/// oben und schräg hineinsieht.
 final Map<String, FurnitureSpec> bathModels = {
-  // 2D: Wanne mit Innenrand, Abfluss links in der Mitte.
+  // 2D: Wanne mit Innenrand, Abfluss links. Armatur an der Abflussseite.
   'bathtub': FurnitureSpec(
-    height: 0.55,
+    height: 0.56,
+    zones: const [_ceramic, _tap],
     build: (b, w, d, h) {
-      // Ein Block; die Wannenöffnung nur als Linie auf der Oberseite.
-      b.box(-w / 2, -d / 2, 0, w / 2, d / 2, h - _lift);
-      final t = math.min(0.08, math.min(w, d) * 0.12);
-      final r = math.min(w - 2 * t, d - 2 * t) * 0.3;
-      _roundedRectLines(b, -w / 2 + t, -d / 2 + t, w / 2 - t, d / 2 - t, r, h);
-      // Abfluss links.
+      const rim = 0.07;
+      final n = 32;
+      final outer = _B.superellipse(
+        0,
+        0,
+        w / 2,
+        d / 2,
+        exponent: 7,
+        segments: n,
+      );
+      final inner = _B.superellipse(
+        0.01,
+        0,
+        w / 2 - rim,
+        d / 2 - rim,
+        exponent: 3.4,
+        segments: n,
+      );
+      final floor = _B.superellipse(
+        0.04,
+        0,
+        (w / 2 - rim) * 0.82,
+        (d / 2 - rim) * 0.7,
+        exponent: 3,
+        segments: n,
+      );
+      b.basin(
+        outer,
+        inner,
+        0,
+        h,
+        floor: floor,
+        zFloor: math.min(0.14, h * 0.3),
+        mat: Mat.ceramic,
+        smoothOuter: true,
+      );
+      // Abfluss links am Boden, Armatur links auf dem Rand.
       final rd = math.min(0.03, d * 0.05);
-      b.ellipseLines(-w / 2 + t + 0.12 * (w - 2 * t), 0, rd, rd, h);
+      b.ellipseLines(
+        -w / 2 + rim + 0.14 * w,
+        0,
+        rd,
+        rd,
+        math.min(0.14, h * 0.3),
+      );
+      _faucet(b, -w / 2 + rim / 2 + 0.005, 0, h, reach: 0.09);
     },
   ),
-  // 2D: Tasse mit Kreuz (Diagonalen) und Abfluss in der Mitte.
+  // 2D: Tasse mit Kreuz (Diagonalen) und Abfluss in der Mitte. Glaswände an
+  // den offenen Seiten (+y, +x), Brause an der Wand (-y).
   'shower': FurnitureSpec(
     height: 2.0,
+    zones: const [ColorZone('tray', 'Duschtasse', Mat.ceramic), _tap],
     build: (b, w, d, h) {
-      final tray = math.min(0.08, h * 0.05);
-      // Flache Tasse mit Abfluss.
-      b.box(-w / 2, -d / 2, 0, w / 2, d / 2, tray - _lift);
-      final rd = math.min(w, d) * 0.06;
-      b.ellipseLines(0, 0, rd, rd, tray);
-      // Glaswände an den beiden offenen Seiten (unten und rechts im Plan).
+      final tray = math.min(0.06, h * 0.04);
+      final n = 24;
+      b.basin(
+        _B.superellipse(0, 0, w / 2, d / 2, exponent: 10, segments: n),
+        _B.superellipse(
+          0,
+          0,
+          w / 2 - 0.035,
+          d / 2 - 0.035,
+          exponent: 8,
+          segments: n,
+        ),
+        0,
+        tray,
+        floor: _B.superellipse(
+          0,
+          0,
+          w / 2 - 0.06,
+          d / 2 - 0.06,
+          exponent: 8,
+          segments: n,
+        ),
+        zFloor: tray - 0.02,
+        mat: Mat.ceramic,
+      );
+      final rd = math.min(w, d) * 0.05;
+      b.ellipseLines(0, 0, rd, rd, tray - 0.02);
+      // Glaswände an den offenen Seiten, oben eine schmale Schiene.
       b.panel([
         V3(-w / 2, d / 2, tray),
         V3(w / 2, d / 2, tray),
@@ -74,45 +139,166 @@ final Map<String, FurnitureSpec> bathModels = {
         V3(w / 2, d / 2, h),
         V3(w / 2, -d / 2, h),
       ], mat: Mat.glass);
+      b.inZone(_tap.id, () {
+        b.box(-w / 2, d / 2 - 0.02, h - 0.025, w / 2, d / 2, h, mat: Mat.metal);
+        b.box(
+          w / 2 - 0.02,
+          -d / 2,
+          h - 0.025,
+          w / 2,
+          d / 2 - 0.02,
+          h,
+          mat: Mat.metal,
+        );
+        // Brausestange an der Wand, Kopf oben, Thermostat unten.
+        final y = -d / 2 + 0.03;
+        b.cylinder(0, y, 0.012, 0.9, h - 0.1, segments: 6, mat: Mat.metal);
+        b.box(-0.01, y, h - 0.12, 0.01, y + 0.2, h - 0.1, mat: Mat.metal);
+        b.cylinder(
+          0,
+          y + 0.22,
+          0.11,
+          h - 0.13,
+          h - 0.11,
+          segments: 16,
+          mat: Mat.metal,
+        );
+        b.box(-0.12, -d / 2, 0.95, 0.12, -d / 2 + 0.06, 1.02, mat: Mat.metal);
+      });
     },
   ),
-  // 2D: Spülkasten am oberen Rand (y negativ), Becken als Oval darunter.
+  // 2D: Spülkasten am oberen Rand (Wand, -y), Becken mit Sitz davor, Deckel
+  // hochgeklappt am Spülkasten.
   'toilet': FurnitureSpec(
     height: 0.8,
+    zones: const [_ceramic, ColorZone('seat', 'Sitz und Deckel', Mat.ceramic)],
     build: (b, w, d, h) {
-      final bowlTop = h * 0.5;
-      final tankD = d * 0.26;
-      // Spülkasten an der Wand.
-      b.box(-w * 0.46, -d / 2, 0, w * 0.46, -d / 2 + tankD, h);
-      // Becken als niedriger Block, Sitz als Ellipse auf der Oberseite.
-      final cy = -d / 2 + tankD + (d - tankD) / 2;
-      final rx = w * 0.38, ry = (d - tankD) / 2;
-      b.prism(
-        [
-          for (var i = 0; i < 16; i++)
-            Offset(
-              rx * math.cos(2 * math.pi * i / 16),
-              cy + ry * math.sin(2 * math.pi * i / 16),
-            ),
-        ],
+      final tankD = math.min(0.2, d * 0.28);
+      final y0 = -d / 2;
+      final rimZ = h * 0.5; // Oberkante Becken ~0,4 m
+      // Becken: Ei-Form vor dem Spülkasten, vorn schmaler.
+      final cy = y0 + tankD + (d - tankD) / 2 - 0.01;
+      final rx = w / 2 * 0.94, ry = (d - tankD) / 2 + 0.01;
+      const n = 24;
+      List<Offset> egg(double sx, double sy, {double dy = 0}) => [
+        for (final p in _B.ellipse(0, 0, rx * sx, ry * sy, segments: n))
+          // Vorn (+y) schmaler.
+          Offset(
+            p.dx * (1 - 0.18 * (p.dy / ry).clamp(0.0, 1.0)),
+            p.dy + cy + dy,
+          ),
+      ];
+      // Fuß: verjüngt vom Boden zum Becken.
+      b.loft(
+        egg(0.55, 0.62, dy: -0.03),
         0,
-        bowlTop,
+        egg(0.9, 0.9),
+        rimZ * 0.55,
+        mat: Mat.ceramic,
+        smooth: true,
       );
-      b.ellipseLines(0, cy, rx * 0.8, ry * 0.8, bowlTop);
+      b.basin(
+        egg(1, 1),
+        egg(0.74, 0.76, dy: 0.015),
+        rimZ * 0.55,
+        rimZ,
+        floor: egg(0.3, 0.32, dy: 0.04),
+        zFloor: rimZ - 0.16,
+        mat: Mat.ceramic,
+        smoothOuter: true,
+      );
+      // Spülkasten auf dem hinteren Rand, mit Drücker.
+      final tw = w * 0.92;
+      b.roundBox(
+        -tw / 2,
+        y0,
+        rimZ - 0.05,
+        tw / 2,
+        y0 + tankD,
+        h,
+        0.03,
+        mat: Mat.ceramic,
+      );
+      b.box(
+        -tw * 0.2,
+        y0,
+        0,
+        tw * 0.2,
+        y0 + tankD * 0.7,
+        rimZ - 0.05,
+        mat: Mat.ceramic,
+      );
+      b.zone = null;
+      b.cylinder(
+        0,
+        y0 + tankD / 2,
+        0.025,
+        h,
+        h + 0.008,
+        segments: 10,
+        mat: Mat.metal,
+      );
+      // Sitz als Ring auf dem Becken, Deckel hochgeklappt am Spülkasten.
+      b.inZone('seat', () {
+        b.basin(
+          egg(1.01, 1.0),
+          egg(0.68, 0.7, dy: 0.015),
+          rimZ,
+          rimZ + 0.025,
+          mat: Mat.ceramic,
+          smoothOuter: true,
+        );
+        final lidH = math.min(2 * ry * 0.92, h - rimZ - 0.06);
+        b.roundBox(
+          -rx * 0.95,
+          y0 + tankD,
+          rimZ + 0.03,
+          rx * 0.95,
+          y0 + tankD + 0.025,
+          rimZ + 0.03 + lidH,
+          0.06,
+          mat: Mat.ceramic,
+        );
+      });
     },
   ),
-  // 2D: Rechteck, Ovalbecken, Hahn oben, Abfluss in der Beckenmitte.
-  // Wandmontiert: Oberkante bei 0,8 m.
+  // 2D: Becken mit Armatur hinten (Wand, -y). Hängt an der Wand,
+  // Oberkante bei 0,85 m.
   'washbasin': FurnitureSpec(
-    height: 0.2,
-    elevation: 0.65,
+    height: 0.17,
+    elevation: 0.68,
+    wallHung: true,
+    zones: const [_ceramic, _tap],
     build: (b, w, d, h) {
-      // Eine Platte; Becken als Ellipse auf der Oberseite.
-      b.box(-w / 2, -d / 2, 0, w / 2, d / 2, h - _lift);
-      final cy = -d / 2 + 0.24 * d + (0.66 * d) / 2;
-      b.ellipseLines(0, cy, w * 0.34, d * 0.33, h);
-      final rd = math.min(w, d) * 0.04;
-      b.ellipseLines(0, cy, rd, rd, h);
+      const n = 24;
+      final back = math.min(0.11, d * 0.24); // Rand mit Armatur
+      b.basin(
+        _B.superellipse(0, 0, w / 2, d / 2, exponent: 4.5, segments: n),
+        _B.superellipse(
+          0,
+          back / 2 + 0.005,
+          w / 2 - 0.05,
+          d / 2 - back / 2 - 0.045,
+          exponent: 3,
+          segments: n,
+        ),
+        0,
+        h,
+        floor: _B.superellipse(
+          0,
+          back / 2 + 0.02,
+          w * 0.22,
+          d * 0.18,
+          exponent: 2.2,
+          segments: n,
+        ),
+        zFloor: math.max(0.03, h - 0.13),
+        mat: Mat.ceramic,
+        smoothOuter: true,
+      );
+      final rd = math.min(w, d) * 0.035;
+      b.ellipseLines(0, back / 2 + 0.02, rd, rd, math.max(0.03, h - 0.13));
+      _faucet(b, 0, -d / 2 + back / 2 + 0.005, h, reach: 0.11);
     },
   ),
 };

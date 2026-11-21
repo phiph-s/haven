@@ -203,6 +203,8 @@ class SceneObject {
     this.depth = 0,
     this.width = 0,
     this.sensor,
+    this.colors = const {},
+    this.height,
   });
 
   /// Möbelstück aus dem Katalog: Mitte [center] und Maße [w] × [d] in
@@ -219,6 +221,7 @@ class SceneObject {
     String? roomId,
     bool? open,
     String? sensor,
+    Map<String, Color> colors = const {},
   }) {
     final spec = furnitureSpec(kind);
     return SceneObject(
@@ -232,6 +235,8 @@ class SceneObject {
       depth: d,
       width: w,
       sensor: sensor,
+      colors: colors,
+      height: height,
     );
   }
 
@@ -254,11 +259,22 @@ class SceneObject {
   /// Sensor (frei wählbare ID), der den Zustand offen/zu meldet.
   final String? sensor;
 
+  /// Eigene Farben je Farbzone (siehe [Face3.zone], `FurnitureSpec.zones`);
+  /// fehlende Zonen behalten die Grundfarbe ihres Materials.
+  final Map<String, Color> colors;
+
+  /// Eigene Höhe (Meter) oder `null`: Standard des Katalogs.
+  final double? height;
+
+  /// Eigene Farbe der Fläche [f] oder `null` (Grundfarbe). Glas bleibt Glas.
+  Color? colorOf(Face3 f) =>
+      f.zone == null || f.mat == Mat.glass ? null : colors[f.zone];
+
   /// Dasselbe Objekt mit Modell im Zustand [open] (nur Kataloggrößen).
   SceneObject withOpen(bool? open) => SceneObject(
     id: id,
     kind: kind,
-    model: buildFurniture(kind, width, depth, open: open),
+    model: buildFurniture(kind, width, depth, open: open, height: height),
     position: position,
     rotation: rotation,
     roomId: roomId,
@@ -266,6 +282,8 @@ class SceneObject {
     depth: depth,
     width: width,
     sensor: sensor,
+    colors: colors,
+    height: height,
   );
 
   /// Türöffnung in der Wand: Anfang und Ende auf der Wandlinie (Welt) und
@@ -382,6 +400,8 @@ class SceneMarker {
     this.rotation = 0,
     double? cone,
     this.coneSoftness,
+    this.size,
+    this.colors = const {},
   }) : _cone = cone, // ignore: prefer_initializing_formals
        position = V3(
          at.dx,
@@ -391,6 +411,13 @@ class SceneMarker {
                  ? deviceSpec(model).heightFor(mount)
                  : kDefaultMarkerHeight[kind]!),
        );
+
+  /// Größe skalierbarer Bauformen (siehe `DeviceSpec.sizing`, z. B. die
+  /// Bilddiagonale eines Fernsehers in Zoll), `null`: Standard.
+  final double? size;
+
+  /// Eigene Farben je Farbzone der Bauform (siehe `DeviceSpec.zones`).
+  final Map<String, Color> colors;
 
   /// Montage der Bauform (Decke, Wand, nach oben), `null`: Standard.
   final DeviceMount? mount;
@@ -498,7 +525,10 @@ class Scene {
       d: o.depth,
       rotation: (o.rotation + 180) % 360,
       elevation: o.position.z,
+      height: o.height,
       roomId: objectRoom[o.id],
+      sensor: o.sensor,
+      colors: o.colors,
     );
   }
 
@@ -530,6 +560,8 @@ class Scene {
       depth: o.depth,
       width: o.width,
       sensor: o.sensor,
+      colors: o.colors,
+      height: o.height,
     );
   }
 

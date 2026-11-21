@@ -631,11 +631,12 @@ class GpuScene {
           SceneObject(
             id: 'device:${m.id}',
             kind: 'device:${spec.id}${spec.isWall(how) ? '@wall' : ''}',
-            model: spec.model(how),
+            model: spec.model(how, m.size),
             position: mount,
             rotation: rot,
             roomId: roomId,
             wallMounted: true,
+            colors: m.colors,
           ),
         );
       }
@@ -793,7 +794,8 @@ class GpuScene {
       ..lightChannelMask = spans
           ? rooms.fold<int>(0, (m, r) => m | _maskOf(r))
           : _maskOf(roomId);
-    final byMat = <Mat, _MeshAcc>{};
+    // Je Material und eigener Farbe (Farbzone) ein Teil.
+    final byMat = <(Mat, Color?), _MeshAcc>{};
     final tops = <Face3>[];
     for (final f in o.world.faces) {
       // Waagerechte Oberseiten bekommen gebakenes Lampenlicht (eigene
@@ -810,32 +812,33 @@ class GpuScene {
         continue;
       }
       byMat
-          .putIfAbsent(f.mat, () => _MeshAcc())
+          .putIfAbsent((f.mat, o.colorOf(f)), () => _MeshAcc())
           .addFace(f, twoSided: f.twoSided);
     }
     final parts = [
       for (final e in byMat.entries)
-        if (!e.value.isEmpty) (e.value.geometry(), e.key),
+        if (!e.value.isEmpty) (e.value.geometry(), e.key.$1, e.key.$2),
     ];
     // Geräte etwas dunkler als Möbel (aber kaum), damit man sie erkennt.
     final device = o.kind.startsWith('device:');
     final mesh = fs.Mesh.primitives(
       primitives: [
-        for (final (g, m) in parts)
+        for (final (g, m, c) in parts)
           // Glas wirft keinen Schatten (Sonne durchs Fenster).
-          fs.MeshPrimitive(g, device ? _mat.device(m) : _mat.surface(m))
+          fs.MeshPrimitive(g, device ? _mat.device(m, c) : _mat.surface(m, c))
             ..castsShadow = m != Mat.glass,
       ],
     );
     node.mesh = mesh;
     final topPolys = <List<V3>>[];
     for (final f in tops) {
+      final c = o.colorOf(f);
       final z =
           f.points.map((p) => p.z).reduce((a, b) => a + b) / f.points.length;
       final poly = [for (final p in f.points) V3(p.x, p.y, z)];
       topPolys.add(poly);
       _roomReceivers[roomId]!.add(_receivers.length);
-      node.add(_receiverNode('top:${o.id}', poly, (s) => s.base(f.mat)));
+      node.add(_receiverNode('top:${o.id}', poly, (s) => s.colorOf(f.mat, c)));
     }
     // Keine Echtzeit-Schatten: Sonne und Lampen sind auf Böden und
     // Oberseiten gebaken (mit voller Möbelhöhe, auch in flachen Räumen).
@@ -1416,10 +1419,10 @@ class GpuScene {
         final mix = h.opacity * heat.a * 0.85;
         o.node.mesh = fs.Mesh.primitives(
           primitives: [
-            for (final (g, m) in o.parts)
+            for (final (g, m, c) in o.parts)
               fs.MeshPrimitive(
                 g,
-                m == Mat.glass ? _mat.surface(m) : _tinted(m, heat, mix),
+                m == Mat.glass ? _mat.surface(m) : _tinted(m, c, heat, mix),
               ),
           ],
         );
@@ -1427,8 +1430,13 @@ class GpuScene {
     }
   }
 
-  fs.PhysicallyBasedMaterial _tinted(Mat m, Color heat, double mix) {
-    final base = m == Mat.dark ? style.dark : style.base(m);
+  fs.PhysicallyBasedMaterial _tinted(
+    Mat m,
+    Color? own,
+    Color heat,
+    double mix,
+  ) {
+    final base = style.colorOf(m, own);
     final c = Color.lerp(base, heat.withValues(alpha: 1), mix)!;
     return fs.PhysicallyBasedMaterial()
       ..metallicFactor = 0
@@ -2025,13 +2033,13 @@ class GpuScene {
       final mats = <fs.PhysicallyBasedMaterial>[];
       o.mesh = fs.Mesh.primitives(
         primitives: [
-          for (final (g, m) in o.parts)
+          for (final (g, m, own) in o.parts)
             fs.MeshPrimitive(g, () {
-              final base = _mat.surface(m);
+              final base = _mat.surface(m, own);
               final c = linearColor(tint.color);
               final mat = fs.PhysicallyBasedMaterial()
                 ..baseColorFactor = linearColor(
-                  Color.lerp(style.base(m), tint.color, 0.6)!,
+                  Color.lerp(style.colorOf(m, own), tint.color, 0.6)!,
                 )
                 ..metallicFactor = base.metallicFactor
                 ..roughnessFactor = base.roughnessFactor
@@ -2108,7 +2116,7 @@ class GpuScene {
       o.beforeGhost = o.node.mesh;
       o.node.mesh = fs.Mesh.primitives(
         primitives: [
-          for (final (g, _) in o.parts) fs.MeshPrimitive(g, _mat.wallFront),
+          for (final (g, _, _) in o.parts) fs.MeshPrimitive(g, _mat.wallFront),
         ],
       );
     } else {
@@ -2217,7 +2225,7 @@ class _ObjectNode {
 
   /// Ungetönter Körper (siehe `setDeviceTint`).
   fs.Mesh? baseMesh;
-  List<(fs.Geometry, Mat)> parts = const [];
+  List<(fs.Geometry, Mat, Color?)> parts = const [];
 
   /// Waagerechte Oberseiten (gebakene Flächen), für die Heatmap-Färbung.
   List<List<V3>> tops = const [];
@@ -2300,7 +2308,7 @@ class _Materials {
     update(s);
   }
 
-  final Map<Mat, fs.PhysicallyBasedMaterial> _surfaces = {};
+  final Map<(Mat, Color?), fs.PhysicallyBasedMaterial> _surfaces = {};
   final fs.PhysicallyBasedMaterial floor = fs.PhysicallyBasedMaterial();
   final fs.PhysicallyBasedMaterial wall = fs.PhysicallyBasedMaterial()
     ..doubleSided = true;
@@ -2336,50 +2344,57 @@ class _Materials {
   final fs.UnlitMaterial preview = fs.UnlitMaterial();
   late SceneStyle _style;
 
-  fs.PhysicallyBasedMaterial surface(Mat m) =>
-      _surfaces.putIfAbsent(m, () => _surfaceFor(m));
+  /// Material der Oberfläche [m], mit eigener Farbe [own] (Farbzone) ein
+  /// eigenes, sonst das gemeinsame.
+  fs.PhysicallyBasedMaterial surface(Mat m, [Color? own]) =>
+      _surfaces.putIfAbsent((m, own), () => _surfaceFor(m, own));
 
-  fs.PhysicallyBasedMaterial _surfaceFor(Mat m) {
+  fs.PhysicallyBasedMaterial _surfaceFor(Mat m, Color? own) {
     final mat = fs.PhysicallyBasedMaterial();
-    _paint(mat, m);
+    _paint(mat, m, own);
     return mat;
   }
 
-  final Map<Mat, fs.PhysicallyBasedMaterial> _devices = {};
+  final Map<(Mat, Color?), fs.PhysicallyBasedMaterial> _devices = {};
 
   /// Material eines Geräts: wie [surface], nur leicht dunkler; dunkle
   /// Teile deutlich weniger dunkel als bei Möbeln (Bildschirm, Kochfeld).
-  fs.PhysicallyBasedMaterial device(Mat m) => _devices.putIfAbsent(m, () {
-    final mat = fs.PhysicallyBasedMaterial();
-    _paintDevice(mat, m);
-    return mat;
-  });
+  /// Eigene Farben bleiben, wie sie sind.
+  fs.PhysicallyBasedMaterial device(Mat m, [Color? own]) =>
+      _devices.putIfAbsent((m, own), () {
+        final mat = fs.PhysicallyBasedMaterial();
+        _paintDevice(mat, m, own);
+        return mat;
+      });
 
-  void _paintDevice(fs.PhysicallyBasedMaterial mat, Mat m) {
-    _paint(mat, m);
-    if (m == Mat.glass) return;
+  void _paintDevice(fs.PhysicallyBasedMaterial mat, Mat m, Color? own) {
+    _paint(mat, m, own);
+    if (m == Mat.glass || own != null) return;
     final s = _style;
-    final c = m == Mat.dark
-        ? Color.lerp(s.surface, s.dark, 0.45)!
-        : Color.lerp(s.base(m), s.dark, kDeviceShade)!;
+    final c = switch (m) {
+      Mat.dark => Color.lerp(s.surface, s.dark, 0.45)!,
+      Mat.screen => s.base(m),
+      _ => Color.lerp(s.base(m), s.dark, kDeviceShade)!,
+    };
     mat.baseColorFactor = linearColor(c, 1);
   }
 
-  void _paint(fs.PhysicallyBasedMaterial mat, Mat m) {
+  void _paint(fs.PhysicallyBasedMaterial mat, Mat m, [Color? own]) {
     final s = _style;
     mat.metallicFactor = 0;
-    switch (m) {
-      case Mat.glass:
-        mat.baseColorFactor = linearColor(s.glass, 0.28);
-        mat.alphaMode = fs.AlphaMode.blend;
-        mat.roughnessFactor = 0.15;
-        mat.doubleSided = true;
-      case Mat.dark:
-        mat.baseColorFactor = linearColor(s.dark, 1);
-        mat.roughnessFactor = 0.45;
-      default:
-        mat.baseColorFactor = linearColor(s.base(m), 1);
-        mat.roughnessFactor = m == Mat.soft || m == Mat.rug ? 1.0 : 0.85;
+    mat.baseColorFactor = linearColor(s.colorOf(m, own), 1);
+    mat.roughnessFactor = switch (m) {
+      Mat.soft || Mat.rug || Mat.wall => 1.0,
+      Mat.glass => 0.15,
+      Mat.screen => 0.22,
+      Mat.ceramic => 0.38,
+      Mat.dark || Mat.metal => 0.45,
+      Mat.body || Mat.green => 0.85,
+    };
+    if (m == Mat.glass) {
+      mat.baseColorFactor = linearColor(s.glass, 0.28);
+      mat.alphaMode = fs.AlphaMode.blend;
+      mat.doubleSided = true;
     }
   }
 
@@ -2399,10 +2414,10 @@ class _Materials {
   void update(SceneStyle s) {
     _style = s;
     for (final e in _surfaces.entries) {
-      _paint(e.value, e.key);
+      _paint(e.value, e.key.$1, e.key.$2);
     }
     for (final e in _devices.entries) {
-      _paintDevice(e.value, e.key);
+      _paintDevice(e.value, e.key.$1, e.key.$2);
     }
     floor
       ..metallicFactor = 0

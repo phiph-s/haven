@@ -1,5 +1,5 @@
 import 'dart:math' as math;
-import 'dart:ui' show Offset, Rect;
+import 'dart:ui' show Color, Offset, Rect;
 
 import 'package:flutter/foundation.dart';
 
@@ -27,6 +27,8 @@ class FurnitureType {
     this.w,
     this.h, {
     this.layer = 1,
+    this.wallHung = false,
+    this.legacy = false,
   });
 
   final String id;
@@ -40,6 +42,14 @@ class FurnitureType {
   /// Zeichen- und Trefferreihenfolge: 0 Boden (Teppich), 1 Möbel,
   /// 2 Bau (Tür, Fenster). Höhere Ebenen liegen oben.
   final int layer;
+
+  /// Hängt an der Wand (Oberschrank, Spiegel, Waschbecken): Rückseite
+  /// (Oberkante des Symbols) an die Wand, Höhe über dem Boden aus dem
+  /// 3D-Katalog. Ein Editor rastet es an Wände.
+  final bool wallHung;
+
+  /// Alt: wird noch gezeigt, aber nicht mehr in der Bibliothek angeboten.
+  final bool legacy;
 }
 
 /// Die Bibliothek (25 Elemente). Größen in Zellen nach üblichen Maßen.
@@ -60,7 +70,17 @@ const List<FurnitureType> kFurnitureCatalog = [
     2.4,
     1.2,
   ),
-  FurnitureType('tv_board', 'TV-Board', FurnitureCategory.living, 3.6, 0.9),
+  FurnitureType('sideboard', 'Sideboard', FurnitureCategory.living, 3.6, 0.9),
+  // Bis 0.9.26: Board mit Fernseher in einem. Heute Sideboard plus
+  // Fernseher als Gerät; alte Pläne zeigen weiter beides.
+  FurnitureType(
+    'tv_board',
+    'TV-Board',
+    FurnitureCategory.living,
+    3.6,
+    0.9,
+    legacy: true,
+  ),
   FurnitureType('rug', 'Teppich', FurnitureCategory.living, 4, 3, layer: 0),
   FurnitureType('plant', 'Pflanze', FurnitureCategory.living, 1, 1),
   FurnitureType('shelf', 'Regal', FurnitureCategory.living, 2, 0.8),
@@ -86,7 +106,14 @@ const List<FurnitureType> kFurnitureCatalog = [
   FurnitureType('bathtub', 'Badewanne', FurnitureCategory.bath, 3.4, 1.6),
   FurnitureType('shower', 'Dusche', FurnitureCategory.bath, 1.8, 1.8),
   FurnitureType('toilet', 'WC', FurnitureCategory.bath, 0.8, 1.4),
-  FurnitureType('washbasin', 'Waschbecken', FurnitureCategory.bath, 1.2, 1),
+  FurnitureType(
+    'washbasin',
+    'Waschbecken',
+    FurnitureCategory.bath,
+    1.2,
+    1,
+    wallHung: true,
+  ),
   // Arbeiten
   FurnitureType('desk', 'Schreibtisch', FurnitureCategory.work, 3, 1.4),
   FurnitureType('office_chair', 'Bürostuhl', FurnitureCategory.work, 1.2, 1.2),
@@ -122,6 +149,71 @@ double normalizeDegrees(double d) {
   return (360 - out).abs() < 1e-9 ? 0 : out;
 }
 
+/// Möbel der Bibliothek (ohne alte Typen).
+List<FurnitureType> get kFurnitureLibrary => [
+  for (final t in kFurnitureCatalog)
+    if (!t.legacy) t,
+];
+
+/// Farbe als `#RRGGBB` (ohne Deckkraft).
+String colorToHex(Color c) {
+  final v = c.toARGB32() & 0xFFFFFF;
+  return '#${v.toRadixString(16).padLeft(6, '0').toUpperCase()}';
+}
+
+/// `#RRGGBB` (oder `#AARRGGBB`) als deckende Farbe, sonst `null`.
+Color? colorFromHex(Object? v) {
+  if (v is! String) return null;
+  final h = v.startsWith('#') ? v.substring(1) : v;
+  if (h.length != 6 && h.length != 8) return null;
+  final n = int.tryParse(h, radix: 16);
+  if (n == null) return null;
+  return Color(0xFF000000 | (n & 0xFFFFFF));
+}
+
+/// Farben je Zone aus JSON (`{"zone": "#RRGGBB"}`), Unbrauchbares fällt weg.
+Map<String, Color> colorsFromJson(Object? raw) {
+  if (raw is! Map) return const {};
+  final out = <String, Color>{};
+  for (final e in raw.entries) {
+    final c = colorFromHex(e.value);
+    if (e.key is String && c != null) out[e.key as String] = c;
+  }
+  return out.isEmpty ? const {} : Map.unmodifiable(out);
+}
+
+/// Farben je Zone als JSON, nach Zone sortiert.
+Map<String, String> colorsToJson(Map<String, Color> colors) => {
+  for (final k in colors.keys.toList()..sort()) k: colorToHex(colors[k]!),
+};
+
+/// [colors] mit Zone [zone] auf [color] (`null`: Standardfarbe).
+Map<String, Color> withZoneColor(
+  Map<String, Color> colors,
+  String zone,
+  Color? color,
+) {
+  final out = {...colors};
+  if (color == null) {
+    out.remove(zone);
+  } else {
+    out[zone] = color.withValues(alpha: 1);
+  }
+  return out.isEmpty ? const {} : Map.unmodifiable(out);
+}
+
+bool sameZoneColors(Map<String, Color> a, Map<String, Color> b) {
+  if (a.length != b.length) return false;
+  for (final e in a.entries) {
+    if (b[e.key]?.toARGB32() != e.value.toARGB32()) return false;
+  }
+  return true;
+}
+
+int hashZoneColors(Map<String, Color> c) => Object.hashAllUnordered([
+  for (final e in c.entries) Object.hash(e.key, e.value.toARGB32()),
+]);
+
 /// Ein Möbelstück im Grundriss, **nur optisch** (keine Logik hängt daran).
 ///
 /// Alle Maße in Rastereinheiten als Kommazahlen: [x], [y] ist die **Mitte**
@@ -140,6 +232,7 @@ class FloorFurniture {
     required this.h,
     this.rotation = 0,
     this.sensor,
+    this.colors = const {},
   });
 
   /// Neues Möbelstück in Standardgröße mit Mitte [center].
@@ -180,6 +273,7 @@ class FloorFurniture {
       h: math.max(kFurnitureMinSide, h),
       rotation: rot.isFinite ? normalizeDegrees(rot) : 0,
       sensor: raw['sensor'] is String ? raw['sensor'] as String : null,
+      colors: colorsFromJson(raw['colors']),
     );
   }
 
@@ -194,6 +288,22 @@ class FloorFurniture {
   /// Verknüpfter Kontaktsensor (Entity-ID) bei Türen und Fenstern: Die Karte
   /// zeigt sie offen oder zu.
   final String? sensor;
+
+  /// Eigene Farben je Farbzone des Modells (z. B. `frame`, `cushions`; die
+  /// Zonen kennt der 3D-Katalog). Fehlende Zonen: Standardfarbe. Im JSON
+  /// als `"colors": {"cushions": "#7A8F6B"}`, unbekannte Zonen bleiben
+  /// erhalten.
+  final Map<String, Color> colors;
+
+  /// Eigene Farbe der Zone [zone] oder `null` (Standard).
+  Color? colorOf(String zone) => colors[zone];
+
+  /// Mit Farbe [color] für Zone [zone] (`null`: zurück zum Standard).
+  FloorFurniture withColor(String zone, Color? color) =>
+      copyWith(colors: withZoneColor(colors, zone, color));
+
+  /// Alle Zonen wieder in Standardfarbe.
+  FloorFurniture withoutColors() => copyWith(colors: const {});
 
   /// Lässt sich mit einem Sensor verknüpfen (Tür, Fenster).
   /// Tür, Fenster und Kühlschrank lassen sich mit einem Kontakt verknüpfen
@@ -262,15 +372,18 @@ class FloorFurniture {
     double? rotation,
     String? sensor,
     bool clearSensor = false,
+    String? kind,
+    Map<String, Color>? colors,
   }) => FloorFurniture(
     id: id ?? this.id,
-    kind: kind,
+    kind: kind ?? this.kind,
     x: x ?? this.x,
     y: y ?? this.y,
     w: w ?? this.w,
     h: h ?? this.h,
     rotation: rotation == null ? this.rotation : normalizeDegrees(rotation),
     sensor: clearSensor ? null : (sensor ?? this.sensor),
+    colors: colors ?? this.colors,
   );
 
   FloorFurniture moveTo(Offset c) => copyWith(x: c.dx, y: c.dy);
@@ -284,6 +397,7 @@ class FloorFurniture {
     'h': _r3(h),
     'rotation': _r3(rotation),
     if (sensor != null) 'sensor': sensor,
+    if (colors.isNotEmpty) 'colors': colorsToJson(colors),
   };
 
   @override
@@ -296,10 +410,21 @@ class FloorFurniture {
       other.w == w &&
       other.h == h &&
       other.rotation == rotation &&
-      other.sensor == sensor;
+      other.sensor == sensor &&
+      sameZoneColors(other.colors, colors);
 
   @override
-  int get hashCode => Object.hash(id, kind, x, y, w, h, rotation, sensor);
+  int get hashCode => Object.hash(
+    id,
+    kind,
+    x,
+    y,
+    w,
+    h,
+    rotation,
+    sensor,
+    hashZoneColors(colors),
+  );
 
   @override
   String toString() =>

@@ -85,6 +85,15 @@ enum Mat {
 
   /// Wände (nur der Raum selbst).
   wall,
+
+  /// Bildschirm (Fernseher, Monitor): dunkel und glatt.
+  screen,
+
+  /// Keramik (WC, Waschbecken, Wanne): hell und leicht glänzend.
+  ceramic,
+
+  /// Metall (Griffe, Armaturen, Gestelle): mittleres Grau, glatt.
+  metal,
 }
 
 /// Ebene, ausgefüllte Fläche (konvex oder einfach, Punkte in Reihenfolge).
@@ -101,6 +110,7 @@ class Face3 {
     this.twoSided = false,
     this.smooth = false,
     this.solid = -1,
+    this.zone,
   });
 
   final List<V3> points;
@@ -117,6 +127,11 @@ class Face3 {
   /// [featureEdges] Kanten, die in einem anderen Körper stecken.
   final int solid;
 
+  /// Farbzone (siehe [ColorZone]), z. B. `frame` oder `cushion`: eine
+  /// eigene Farbe für diese Zone ersetzt die Grundfarbe von [mat]. `null`:
+  /// keine Zone (nicht einfärbbar).
+  final String? zone;
+
   V3 get centroid {
     var s = V3.zero;
     for (final p in points) {
@@ -132,7 +147,19 @@ class Face3 {
     twoSided: twoSided,
     smooth: smooth,
     solid: solid,
+    zone: zone,
   );
+}
+
+/// Einfärbbarer Teil eines Modells: Kennung [id] (steht im Plan), Name
+/// [label] für die Auswahl und [mat], dessen Grundfarbe ohne eigene Farbe
+/// gilt (Standard wie bisher).
+@immutable
+class ColorZone {
+  const ColorZone(this.id, this.label, [this.mat = Mat.body]);
+  final String id;
+  final String label;
+  final Mat mat;
 }
 
 /// Detaillinie (Naht, Kante, Griff), wird ohne Fläche gezeichnet.
@@ -204,6 +231,17 @@ class ModelBuilder {
   final List<Face3> _faces = [];
   final List<Line3> _lines = [];
 
+  /// Farbzone für alle folgenden Flächen (siehe [Face3.zone]).
+  String? zone;
+
+  /// [build] mit Farbzone [id], danach wieder die vorige.
+  void inZone(String id, void Function() build) {
+    final prev = zone;
+    zone = id;
+    build();
+    zone = prev;
+  }
+
   Model3 build() =>
       Model3(List.unmodifiable(_faces), List.unmodifiable(_lines));
 
@@ -217,6 +255,98 @@ class ModelBuilder {
 
   int _solids = 0;
 
+  V3 _shift = V3.zero;
+
+  List<V3> _shifted(List<V3> p) =>
+      _shift == V3.zero ? p : [for (final q in p) q + _shift];
+
+  /// [build] um [by] verschoben (z. B. ein Fernseher auf einem Board).
+  void shifted(V3 by, void Function() build) {
+    final prev = _shift;
+    _shift = prev + by;
+    build();
+    _shift = prev;
+  }
+
+  /// Hohlkörper (Becken, Wanne, WC): Außenumriss [outer] von [z0] bis
+  /// [zTop], oben ein Rand bis zur Öffnung [inner], darin eine Mulde bis
+  /// zum Boden [floor] auf [zFloor]. Ohne [floor] ein Ring mit Loch (Sitz).
+  /// Alle Umrisse haben gleich viele Punkte im selben Umlaufsinn, Punkt i
+  /// liegt jeweils in derselben Richtung von der Mitte.
+  void basin(
+    List<Offset> outer,
+    List<Offset> inner,
+    double z0,
+    double zTop, {
+    List<Offset>? floor,
+    double? zFloor,
+    Mat mat = Mat.body,
+    bool smoothOuter = false,
+  }) {
+    final n = outer.length;
+    assert(inner.length == n && (floor == null || floor.length == n));
+    final id = _solids++;
+    final ccw = _signedArea(outer) > 0;
+    V3 at(Offset p, double z) => V3(p.dx, p.dy, z);
+    // Außen.
+    for (var i = 0; i < n; i++) {
+      final j = (i + 1) % n;
+      final q = [
+        at(outer[i], z0),
+        at(outer[j], z0),
+        at(outer[j], zTop),
+        at(outer[i], zTop),
+      ];
+      final e = outer[j] - outer[i];
+      final out = ccw ? V3(e.dy, -e.dx, 0) : V3(-e.dy, e.dx, 0);
+      _face(q, out, mat: mat, smooth: smoothOuter, solid: id);
+    }
+    // Rand oben (und unten beim Ring) in zwei Hälften: einfache Polygone.
+    final h = n ~/ 2;
+    List<V3> half(int from, int to, double z) => [
+      for (var i = from; i <= to; i++) at(outer[i % n], z),
+      for (var i = to; i >= from; i--) at(inner[i % n], z),
+    ];
+    for (final (a, b) in [(0, h), (h, n)]) {
+      _face(half(a, b, zTop), V3.up, mat: mat, solid: id);
+      if (floor == null) {
+        _face(half(a, b, z0).reversed.toList(), -V3.up, mat: mat, solid: id);
+      }
+    }
+    if (floor != null) {
+      _face(
+        [for (final p in outer) at(p, z0)].reversed.toList(),
+        -V3.up,
+        mat: mat,
+        solid: id,
+      );
+    }
+    // Mulde: Wände nach innen, Boden nach oben.
+    final bottom = floor ?? inner;
+    final zb = floor == null ? z0 : (zFloor ?? z0);
+    var cx = 0.0, cy = 0.0;
+    for (final p in inner) {
+      cx += p.dx / n;
+      cy += p.dy / n;
+    }
+    for (var i = 0; i < n; i++) {
+      final j = (i + 1) % n;
+      final q = [
+        at(bottom[i], zb),
+        at(bottom[j], zb),
+        at(inner[j], zTop),
+        at(inner[i], zTop),
+      ];
+      var nn = _newell(q);
+      final mid = (inner[i] + inner[j]) / 2;
+      if (nn.dot(V3(cx - mid.dx, cy - mid.dy, 0)) < 0) nn = -nn;
+      _face(q, nn, mat: mat, smooth: true, solid: id);
+    }
+    if (floor != null) {
+      _face([for (final p in floor) at(p, zb)], V3.up, mat: mat, solid: id);
+    }
+  }
+
   void _face(
     List<V3> points,
     V3 normal, {
@@ -227,11 +357,12 @@ class ModelBuilder {
     if (points.length < 3) return;
     _faces.add(
       Face3(
-        List.unmodifiable(points),
+        List.unmodifiable(_shifted(points)),
         normal.normalized,
         mat: mat,
         smooth: smooth,
         solid: solid,
+        zone: zone,
       ),
     );
   }
@@ -241,10 +372,11 @@ class ModelBuilder {
     if (points.length < 3) return;
     _faces.add(
       Face3(
-        List.unmodifiable(points),
+        List.unmodifiable(_shifted(points)),
         _newell(points),
         mat: mat,
         twoSided: true,
+        zone: zone,
       ),
     );
   }
@@ -355,7 +487,7 @@ class ModelBuilder {
   /// (Kissen und Deckenkante auf dem Bett, Fugen, Kochfeld). Wie alle
   /// Linien blenden sie beim Kippen aus (siehe `SceneStyle.edgesOnlyFromAbove`).
   void line(V3 a, V3 b, {Mat mat = Mat.body}) =>
-      _lines.add(Line3(a, b, mat: mat));
+      _lines.add(Line3(a + _shift, b + _shift, mat: mat));
 
   /// Linienzug, mit [closed] geschlossen.
   void polyline(List<V3> pts, {bool closed = false, Mat mat = Mat.body}) {
@@ -402,6 +534,122 @@ class ModelBuilder {
       mat: mat,
     );
   }
+
+  /// Quader mit senkrecht abgerundeten Ecken (Radius [r], [segments] Stücke
+  /// je Ecke). Die Rundung zeichnet keine Kanten (unter dem Knickwinkel).
+  void roundBox(
+    double x0,
+    double y0,
+    double z0,
+    double x1,
+    double y1,
+    double z1,
+    double r, {
+    Mat mat = Mat.body,
+    int segments = 3,
+  }) {
+    final rr = math.min(r, 0.5 * math.min((x1 - x0).abs(), (y1 - y0).abs()));
+    if (rr <= 1e-4) {
+      box(x0, y0, z0, x1, y1, z1, mat: mat);
+      return;
+    }
+    prism(
+      roundedRect(
+        math.min(x0, x1),
+        math.min(y0, y1),
+        math.max(x0, x1),
+        math.max(y0, y1),
+        rr,
+        segments: segments,
+      ),
+      math.min(z0, z1),
+      math.max(z0, z1),
+      mat: mat,
+    );
+  }
+
+  /// Senkrechter Körper mit elliptischem Grundriss (Mitte [cx], [cy],
+  /// Halbachsen [rx], [ry]), unten [rx0]/[ry0]-fach skaliert für eine
+  /// Verjüngung.
+  void ellipsoid(
+    double cx,
+    double cy,
+    double rx,
+    double ry,
+    double z0,
+    double z1, {
+    double bottomScale = 1,
+    int segments = 16,
+    Mat mat = Mat.body,
+  }) => loft(
+    ellipse(cx, cy, rx * bottomScale, ry * bottomScale, segments: segments),
+    z0,
+    ellipse(cx, cy, rx, ry, segments: segments),
+    z1,
+    mat: mat,
+    smooth: true,
+  );
+
+  /// Abgerundetes Rechteck als Polygon (gegen den Uhrzeigersinn in x/y).
+  static List<Offset> roundedRect(
+    double x0,
+    double y0,
+    double x1,
+    double y1,
+    double r, {
+    int segments = 3,
+  }) {
+    final out = <Offset>[];
+    final corners = [
+      (x1 - r, y0 + r, -math.pi / 2),
+      (x1 - r, y1 - r, 0.0),
+      (x0 + r, y1 - r, math.pi / 2),
+      (x0 + r, y0 + r, math.pi),
+    ];
+    for (final (cx, cy, a0) in corners) {
+      for (var i = 0; i <= segments; i++) {
+        final a = a0 + math.pi / 2 * i / segments;
+        out.add(Offset(cx + r * math.cos(a), cy + r * math.sin(a)));
+      }
+    }
+    return out;
+  }
+
+  /// Superellipse (Exponent [exponent]: 2 Ellipse, größer eckiger, etwa 4
+  /// ein weich gerundetes Rechteck) als Polygon. Punkt i liegt für alle
+  /// Größen in derselben Richtung: passende Umrisse für [basin].
+  static List<Offset> superellipse(
+    double cx,
+    double cy,
+    double rx,
+    double ry, {
+    double exponent = 2,
+    int segments = 24,
+  }) {
+    double f(double v) => v.sign * math.pow(v.abs(), 2 / exponent).toDouble();
+    return [
+      for (var i = 0; i < segments; i++)
+        Offset(
+          cx + rx * f(math.cos(2 * math.pi * (i + 0.5) / segments)),
+          cy + ry * f(math.sin(2 * math.pi * (i + 0.5) / segments)),
+        ),
+    ];
+  }
+
+  /// Ellipse als Polygon in der Ebene.
+  static List<Offset> ellipse(
+    double cx,
+    double cy,
+    double rx,
+    double ry, {
+    int segments = 16,
+  }) => [
+    for (var i = 0; i < segments; i++)
+      Offset(
+        cx + rx * math.cos(2 * math.pi * i / segments),
+        cy + ry * math.sin(2 * math.pi * i / segments),
+      ),
+  ];
 
   /// Kreis als Polygon in der Ebene (für [prism], [loft]).
   static List<Offset> circle(
