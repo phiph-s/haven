@@ -87,7 +87,11 @@ class LayerImages {
     final h = (meta['height'] as num).toInt();
     final view = (meta['view'] as Map?) ?? const {};
     final viewRoom = view['room'] as String?;
-    final baseImg = await _decode(base);
+    // Alle Ebenen entstehen auf demselben Weg (auf der GPU gezeichnet),
+    // auch das Grundbild: die Mip-Stufen eines dekodierten und eines
+    // gezeichneten Bilds weichen an halb durchsichtigen Kanten voneinander
+    // ab, und der Shader rechnet mit den Unterschieden der Ebenen.
+    final baseImg = await _redrawn(await _decode(base));
     var lit = baseImg;
     final roomMeta = (meta['rooms'] as Map?) ?? const {};
     final patch = viewRoom == null ? null : rooms[viewRoom];
@@ -116,19 +120,15 @@ class LayerImages {
       }
       final png = lamps[id];
       if (png == null || m['x'] == null) continue;
-      out.add(
-        LayerLamp(
-          id,
-          ui.Rect.fromLTWH(
-            (m['x'] as num).toDouble(),
-            (m['y'] as num).toDouble(),
-            (m['w'] as num).toDouble(),
-            (m['h'] as num).toDouble(),
-          ),
-          await _decode(png),
-          m['room'] as String?,
-        ),
+      final room = m['room'] as String?;
+      final (rect, image) = await _aligned(
+        await _decode(png),
+        (m['x'] as num).toInt(),
+        (m['y'] as num).toInt(),
+        // Bezug der Lampe wie im Shader: im Raum der Perspektive „Raum an“.
+        viewRoom != null && room == viewRoom ? lit : baseImg,
       );
+      out.add(LayerLamp(id, rect, image, room));
     }
     return LayerImages._(
       width: w,
@@ -168,9 +168,9 @@ class LayerImages {
     // die Quelle wird nach dem ersten Hochladen freigegeben und kann
     // danach nicht erneut hochgeladen werden (Bild fehlt oder zeigt
     // Speichermüll). Aus Pixeln gebaute Bilder hält CanvasKit selbst.
-    final px = (await img.toByteData(
-      format: ui.ImageByteFormat.rawRgba,
-    ))!.buffer.asUint8List();
+    final px = (await img.toByteData(format: ui.ImageByteFormat.rawRgba))!
+        .buffer
+        .asUint8List();
     final w = img.width, h = img.height;
     img.dispose();
     return _fromPixels(px, w, h);
@@ -191,6 +191,71 @@ class LayerImages {
     desc.dispose();
     buf.dispose();
     return img;
+  }
+
+  /// [img] unverändert neu gezeichnet (und freigegeben).
+  static Future<ui.Image> _redrawn(ui.Image img) async {
+    final rec = ui.PictureRecorder();
+    ui.Canvas(rec).drawImage(
+      img,
+      ui.Offset.zero,
+      ui.Paint()
+        ..blendMode = ui.BlendMode.src
+        ..filterQuality = ui.FilterQuality.none,
+    );
+    final pic = rec.endRecording();
+    final out = await pic.toImage(img.width, img.height);
+    pic.dispose();
+    img.dispose();
+    return out;
+  }
+
+  /// Raster, auf das Lampenausschnitte erweitert werden (Pixel).
+  static const int _kGrid = 32;
+
+  /// Lampenausschnitt [patch] (bei [x], [y] im Bild) auf das Raster
+  /// [_kGrid] erweitert, der neue Rand aus dem Bezugsbild [ref] (dort ist
+  /// die Lampe ohne Wirkung).
+  ///
+  /// Kacheln zeigen die Bilder verkleinert, über Mipmaps. Die kleineren
+  /// Stufen eines Ausschnitts an beliebiger Stelle fassen andere Pixel
+  /// zusammen als die des ganzen Bilds; an Kanten und dünnen Linien
+  /// (Wandkronen, Leuchten) weicht „Lampe minus Bezug“ dann stark ab, und
+  /// mal Lampenfarbe entstehen Säume in der Gegenfarbe (Türkis bei warmem
+  /// Licht). Auf dem Raster decken sich die Stufen.
+  static Future<(ui.Rect, ui.Image)> _aligned(
+    ui.Image patch,
+    int x,
+    int y,
+    ui.Image ref,
+  ) async {
+    final x0 = x ~/ _kGrid * _kGrid, y0 = y ~/ _kGrid * _kGrid;
+    int up(int v, int max) =>
+        math.min(max, (v + _kGrid - 1) ~/ _kGrid * _kGrid);
+    final x1 = up(x + patch.width, ref.width);
+    final y1 = up(y + patch.height, ref.height);
+    final rect = ui.Rect.fromLTRB(
+      x0.toDouble(),
+      y0.toDouble(),
+      math.max(x1, x + patch.width).toDouble(),
+      math.max(y1, y + patch.height).toDouble(),
+    );
+    final rec = ui.PictureRecorder();
+    final c = ui.Canvas(rec);
+    final none = ui.Paint()
+      ..blendMode = ui.BlendMode.src
+      ..filterQuality = ui.FilterQuality.none;
+    c.drawImageRect(ref, rect, ui.Offset.zero & rect.size, none);
+    c.drawImage(
+      patch,
+      ui.Offset((x - x0).toDouble(), (y - y0).toDouble()),
+      none,
+    );
+    final pic = rec.endRecording();
+    final img = await pic.toImage(rect.width.toInt(), rect.height.toInt());
+    pic.dispose();
+    patch.dispose();
+    return (rect, img);
   }
 
   /// [base] mit dem Raumausschnitt [patch] bei [box] (wie beim Server).
