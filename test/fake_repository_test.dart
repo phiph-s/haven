@@ -34,6 +34,7 @@ void main() {
           'light.lichtleiste_links',
           'light.lichtleiste_rechts',
           'light.lampe_ruhebett',
+          'light.leselampe_ruheraum', // Matter
         ]),
       );
       expect(r.snapshot.room('kochbereich')!.lightIds, [
@@ -41,7 +42,8 @@ void main() {
         'light.kochbereich_arbeitslicht_2',
       ]);
       expect(r.snapshot.room('waschraum')!.lightIds, ['light.lampe_waschraum']);
-      expect(r.snapshot.room('diele')!.lightIds, isEmpty);
+      // Matter-Lampe (HA-Matter-Integration, nicht Zigbee2MQTT).
+      expect(r.snapshot.room('diele')!.lightIds, ['light.stehleuchte_diele']);
     });
 
     test('Klima, Szenen und Bedienelemente', () async {
@@ -87,7 +89,7 @@ void main() {
       () async {
         final r = await _repo();
         await r.toggleRoom('ruheraum');
-        expect(_view(r, 'ruheraum').lampsOn, hasLength(4));
+        expect(_view(r, 'ruheraum').lampsOn, hasLength(5));
         await r.setLights(['light.lampe_ruhebett'], on: false);
         await r.toggleRoom('ruheraum'); // alles aus
         expect(_view(r, 'ruheraum').anyOn, isFalse);
@@ -96,7 +98,7 @@ void main() {
           _view(r, 'ruheraum').lampsOn.map((l) => l.entityId),
           isNot(contains('light.lampe_ruhebett')),
         );
-        expect(_view(r, 'ruheraum').lampsOn, hasLength(3));
+        expect(_view(r, 'ruheraum').lampsOn, hasLength(4));
       },
     );
 

@@ -28,6 +28,7 @@ import 'heatmap.dart';
 import 'map_actions.dart';
 import 'map_info.dart';
 import 'map_readings.dart';
+import '../../core/widgets/protocol_badge.dart';
 
 /// Kompakte Info-Sheets der Karte. Auf dem Handy erscheinen sie als Sheet
 /// ([showMapPanel]), auf dem Desktop im Inspektor rechts ([MapPanelSpec]).
@@ -224,12 +225,13 @@ String _num(double v, {int digits = 1}) =>
 // ---- Bausteine ----------------------------------------------------------------
 
 /// Kopf eines Panels. Im Inspektor mit Zurück-Pfeil zur Raumliste.
-class MapPanelHead extends StatelessWidget {
+class MapPanelHead extends ConsumerWidget {
   const MapPanelHead({
     super.key,
     required this.title,
     this.subtitle,
     this.trailing,
+    this.entityId,
   });
   final String title;
   final String? subtitle;
@@ -237,9 +239,18 @@ class MapPanelHead extends StatelessWidget {
   /// Rechts im Kopf, z. B. ein Schalter.
   final Widget? trailing;
 
+  /// Entity des Geräts: zeigt das Zeichen seines Funkprotokolls.
+  final String? entityId;
+
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final hv = context.hv;
+    final id = entityId;
+    final protocol = id == null
+        ? null
+        : ref.watch(
+            snapshotProvider.select((s) => s.deviceOfEntity(id)?.protocol),
+          );
     final back = MapPanelScope.maybeOf(context)?.onClose;
     return Padding(
       padding: const EdgeInsets.only(bottom: 14),
@@ -261,11 +272,24 @@ class MapPanelHead extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: HavenText.section.copyWith(color: hv.tx, fontSize: 22),
+                Row(
+                  children: [
+                    Flexible(
+                      child: Text(
+                        title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: HavenText.section.copyWith(
+                          color: hv.tx,
+                          fontSize: 22,
+                        ),
+                      ),
+                    ),
+                    if (protocol != null) ...[
+                      const SizedBox(width: 8),
+                      ProtocolMark(protocol, size: 18),
+                    ],
+                  ],
                 ),
                 if (subtitle != null)
                   Text(
@@ -480,6 +504,7 @@ class SensorPanel extends ConsumerWidget {
       children: [
         MapPanelHead(
           title: f.name,
+          entityId: f.entityId,
           subtitle: kind == HeatKind.temperature
               ? (heat == null
                     ? 'Temperatursensor'
@@ -555,7 +580,11 @@ class MotionPanel extends ConsumerWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        MapPanelHead(title: f.name, subtitle: 'Bewegungsmelder'),
+        MapPanelHead(
+          title: f.name,
+          subtitle: 'Bewegungsmelder',
+          entityId: f.entityId,
+        ),
         Row(
           children: [
             Container(
@@ -703,7 +732,11 @@ class BatteryPanel extends ConsumerWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        MapPanelHead(title: f.name, subtitle: 'Batterie'),
+        MapPanelHead(
+          title: f.name,
+          subtitle: 'Batterie',
+          entityId: f.entityId,
+        ),
         Text(
           bat == null ? 'Kein Stand' : '${bat.round()} %',
           style: HavenText.display.copyWith(color: low ? hv.bad : hv.tx),
@@ -784,7 +817,11 @@ class ControlPanel extends ConsumerWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        MapPanelHead(title: f.name, subtitle: 'Lichtschalter'),
+        MapPanelHead(
+          title: f.name,
+          subtitle: 'Lichtschalter',
+          entityId: f.entityId,
+        ),
         Text(
           'Steuert das Licht in $room',
           style: HavenText.headline.copyWith(color: hv.tx),

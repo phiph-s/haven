@@ -77,7 +77,7 @@ void main() {
     expect(find.textContaining('142', findRichText: true), findsWidgets);
     expect(find.text('Batterien'), findsOneWidget);
     // Navigation
-    for (final t in ['Zuhause', 'Karte', 'Zigbee', 'Abläufe']) {
+    for (final t in ['Zuhause', 'Karte', 'Netzwerk', 'Abläufe']) {
       expect(find.text(t), findsWidgets);
     }
   });
@@ -86,15 +86,15 @@ void main() {
     _phone(tester);
     await tester.runAsync(() async => tester.pumpWidget(await _app()));
     await tester.pumpAndSettle();
-    // Drei Räume aus (der Salon leuchtet).
+    // Vier Räume aus (der Salon leuchtet; die Diele hat eine Matter-Lampe).
     // Status beginnt mit „Aus“ (ohne Regler steht die Temperatur dahinter).
     final off = find.textContaining(RegExp(r'^Aus'));
-    expect(off, findsNWidgets(3));
+    expect(off, findsNWidgets(4));
     await tester.ensureVisible(find.bySemanticsLabel('Licht Waschraum'));
     await tester.pumpAndSettle();
     await tester.tap(find.bySemanticsLabel('Licht Waschraum'));
     await tester.pumpAndSettle();
-    expect(off, findsNWidgets(2));
+    expect(off, findsNWidgets(3));
     expect(find.textContaining('Lampe · 100 %'), findsOneWidget);
   });
 
@@ -344,7 +344,7 @@ void main() {
     _phone(tester);
     await tester.runAsync(() async => tester.pumpWidget(await _app()));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Zigbee'));
+    await tester.tap(find.text('Netzwerk'));
     await tester.pumpAndSettle();
     expect(find.text('Funknetz'), findsOneWidget);
     await tester.tap(find.text('Abläufe'));

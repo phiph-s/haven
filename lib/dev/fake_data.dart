@@ -687,6 +687,72 @@ const Map<String, dynamic> kFakeInventory = {
       ],
     },
   ],
+  // Matter-Geräte (über die Matter-Integration von HA, nicht Zigbee2MQTT).
+  'matter_devices': [
+    {
+      'device_id': 'matter_stehleuchte_diele',
+      'name': 'Stehleuchte Diele',
+      'manufacturer': 'Nanoleaf',
+      'model': 'Essentials A19',
+      'sw_version': '3.5.10',
+      'device_type': 'light',
+      'room': 'diele',
+      'entities': {
+        'light.stehleuchte_diele': {
+          'state': 'off',
+          'attributes': {
+            'supported_color_modes': ['color_temp', 'xy'],
+            'min_color_temp_kelvin': 2700,
+            'max_color_temp_kelvin': 6500,
+            'friendly_name': 'Stehleuchte Diele',
+          },
+        },
+      },
+    },
+    {
+      'device_id': 'matter_leselampe_ruheraum',
+      'name': 'Leselampe Ruheraum',
+      'manufacturer': 'Eve Systems',
+      'model': 'Eve Light Strip',
+      'sw_version': '2.1.3',
+      'device_type': 'light',
+      'room': 'ruheraum',
+      'entities': {
+        'light.leselampe_ruheraum': {
+          'state': 'off',
+          'attributes': {
+            'supported_color_modes': ['color_temp'],
+            'min_color_temp_kelvin': 2700,
+            'max_color_temp_kelvin': 6500,
+            'friendly_name': 'Leselampe Ruheraum',
+          },
+        },
+      },
+    },
+    {
+      'device_id': 'matter_steckdose_kochbereich',
+      'name': 'Steckdose Kaffee',
+      'manufacturer': 'Eve Systems',
+      'model': 'Eve Energy',
+      'sw_version': '3.6.1',
+      'device_type': 'plug',
+      'room': 'kochbereich',
+      'entities': {
+        'switch.steckdose_kaffee': {
+          'state': 'on',
+          'attributes': {'friendly_name': 'Steckdose Kaffee'},
+        },
+        'sensor.steckdose_kaffee_power': {
+          'state': '4.2',
+          'attributes': {
+            'friendly_name': 'Steckdose Kaffee Leistung',
+            'unit_of_measurement': 'W',
+            'device_class': 'power',
+          },
+        },
+      },
+    },
+  ],
   'ha_other': [
     {'entity_id': 'weather.forecast_home', 'state': 'cloudy', 'name': 'Home'},
     {

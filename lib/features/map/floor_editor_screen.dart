@@ -50,6 +50,7 @@ import 'map_3d.dart'
 import 'map_data.dart' show MapLights;
 import 'map_markers.dart';
 import 'placement_3d.dart';
+import '../../core/widgets/protocol_badge.dart';
 
 enum _Mode { rooms, devices, furniture }
 
@@ -237,6 +238,7 @@ class _FloorEditorScreenState extends ConsumerState<FloorEditorScreen> {
   final _dragInfo = ValueNotifier<EditorDragInfo?>(null);
   bool _zigbeeOpen = true;
   bool _otherOpen = false;
+  bool _matterOpen = true;
   bool _migrated = false;
 
   @override
@@ -3425,6 +3427,10 @@ class _FloorEditorScreenState extends ConsumerState<FloorEditorScreen> {
                 _section(plan, pool.zigbee, _zigbeeOpen, (v) {
                   setState(() => _zigbeeOpen = v);
                 }),
+                if (pool.matter case final m?)
+                  _section(plan, m, _matterOpen, (v) {
+                    setState(() => _matterOpen = v);
+                  }),
                 if (pool.other.total > 0)
                   _section(plan, pool.other, _otherOpen, (v) {
                     setState(() => _otherOpen = v);
@@ -3792,7 +3798,12 @@ class _PoolChip extends StatelessWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            ZbDeviceIcon(type: device.iconType, size: 28),
+            WithProtocolMark(
+              protocol: device.protocol,
+              size: 12,
+              ring: hv.s2,
+              child: ZbDeviceIcon(type: device.iconType, size: 28),
+            ),
             const SizedBox(width: 6),
             Flexible(
               child: Text(

@@ -38,6 +38,11 @@ class FakeRooms {
         final ents = (d['entities'] as Map).keys.cast<String>();
         lights.addAll(ents.where((e) => e.startsWith('light.')));
       }
+      for (final d in (inventory['matter_devices'] as List? ?? const [])) {
+        if (d['room'] != id || d['device_type'] != 'light') continue;
+        final ents = (d['entities'] as Map).keys.cast<String>();
+        lights.addAll(ents.where((e) => e.startsWith('light.')));
+      }
 
       // Klimasensor: bevorzugt „Sensor …“, sonst irgendein Gerät mit Werten.
       String? temp;

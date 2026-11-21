@@ -25,6 +25,7 @@ import 'fake_heating.dart';
 import 'fake_data.dart';
 import 'fake_floor_plan.dart';
 import 'fake_rooms.dart';
+import '../data/models/device.dart';
 import 'fake_thermostat_sim.dart';
 import 'fake_updates.dart';
 import 'fake_zigbee.dart';
@@ -221,6 +222,7 @@ class FakeRepository extends BaseRepository {
         weather: _weather,
         lampModels: _lampModels,
         lampCalibration: _calibration,
+        devices: _haDevices(),
       ),
     );
     if (simulate) {
@@ -236,6 +238,32 @@ class FakeRepository extends BaseRepository {
       }
     }
   }
+
+  /// HA-Geräte wie `haven/rooms` sie liefert: Zigbee (mit IEEE) und Matter.
+  List<HavenDevice> _haDevices() => [
+    for (final d in (inventory['z2m_devices'] as List))
+      HavenDevice(
+        id: 'z2m_${d['ieee']}',
+        name: d['friendly_name'] as String,
+        entityIds: (d['entities'] as Map).keys.cast<String>().toList(),
+        ieee: d['ieee'] as String,
+        areaId: d['room'] as String?,
+        manufacturer: d['vendor'] as String?,
+        model: d['model'] as String?,
+        protocol: DeviceProtocol.zigbee,
+      ),
+    for (final d in (inventory['matter_devices'] as List? ?? const []))
+      HavenDevice(
+        id: d['device_id'] as String,
+        name: d['name'] as String,
+        entityIds: (d['entities'] as Map).keys.cast<String>().toList(),
+        areaId: d['room'] as String?,
+        manufacturer: d['manufacturer'] as String?,
+        model: d['model'] as String?,
+        protocol: DeviceProtocol.matter,
+        swVersion: d['sw_version'] as String?,
+      ),
+  ];
 
   void _build() {
     for (final e in buildFakeUpdateEntities()) {
@@ -263,6 +291,21 @@ class FakeRepository extends BaseRepository {
               : ['brightness'];
           attrs['min_color_temp_kelvin'] = 2000;
           attrs['max_color_temp_kelvin'] = 6535;
+          _lampStatic[id] = attrs;
+          _entities[id] = _lampEntity(id);
+        } else {
+          _entities[id] = EntityState(id, '${v['state']}', attrs);
+        }
+      });
+    }
+    // Matter-Geräte: Lampen wie die Zigbee-Lampen, sonst Zustände.
+    for (final d in (inventory['matter_devices'] as List? ?? const [])) {
+      final ents = d['entities'] as Map<String, dynamic>;
+      ents.forEach((id, v) {
+        final attrs = Map<String, dynamic>.from(v['attributes'] as Map);
+        if (id.startsWith('light.')) {
+          final on = v['state'] == 'on';
+          _mem[id] = _Mem(on, 70, kelvinToRgb(2700), 2700);
           _lampStatic[id] = attrs;
           _entities[id] = _lampEntity(id);
         } else {

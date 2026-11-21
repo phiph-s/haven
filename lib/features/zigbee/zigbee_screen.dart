@@ -17,6 +17,9 @@ import '../../core/widgets/press_scale.dart';
 import '../../core/widgets/screen_header.dart';
 import '../../core/widgets/section_header.dart';
 import 'widgets/device_icon.dart';
+import 'matter_section.dart';
+import '../../core/widgets/protocol_badge.dart';
+import '../../data/models/device.dart';
 import 'mesh/mesh_providers.dart' show zigbeeMeshProvider;
 import 'mesh/mesh_screen.dart' show zigbeeMeshPath;
 import 'widgets/mesh_card.dart';
@@ -33,7 +36,8 @@ import '../search/search_sheet.dart';
 String zigbeeDevicePath(String ieee) => '/zigbee/device/$ieee';
 const zigbeePairPath = '/zigbee/pair';
 
-/// Zigbee: Kopf, Gerät hinzufügen, Netz-Slot, „Braucht dich“, Geräteliste.
+/// Netzwerk: Kopf, Gerät hinzufügen, Netz-Slot, „Braucht dich“, Zigbee-
+/// Geräteliste, Matter-Geräte (aus HA).
 class ZigbeeScreen extends ConsumerStatefulWidget {
   const ZigbeeScreen({super.key});
 
@@ -141,7 +145,7 @@ class _ZigbeeScreenState extends ConsumerState<ZigbeeScreen> {
         slivers: [
           SliverToBoxAdapter(
             child: ScreenHeader(
-              title: 'Zigbee',
+              title: 'Netzwerk',
               subtitle: z.loaded ? _subtitle(z, views.length) : 'Lädt',
               large: false,
               actions: const [SearchButton(), SettingsButton()],
@@ -186,7 +190,7 @@ class _ZigbeeScreenState extends ConsumerState<ZigbeeScreen> {
                   onToggle: () => setState(() => _allNeeds = !_allNeeds),
                 ),
                 const SizedBox(height: 22),
-                const SectionHeader('Geräte'),
+                const SectionHeader('Zigbee'),
                 const SizedBox(height: 12),
                 _FilterChips(
                   views: views,
@@ -255,6 +259,15 @@ class _ZigbeeScreenState extends ConsumerState<ZigbeeScreen> {
                       return ZbDeviceRow(view: it as ZbDeviceView);
                     },
                   ),
+          ),
+          const SliverPadding(
+            padding: EdgeInsets.fromLTRB(
+              HavenSpace.page,
+              22,
+              HavenSpace.page,
+              0,
+            ),
+            sliver: SliverToBoxAdapter(child: MatterSection()),
           ),
           SliverToBoxAdapter(child: SizedBox(height: context.navClearance)),
         ],
@@ -869,15 +882,18 @@ class ZbDeviceRow extends ConsumerWidget {
               ),
               child: Row(
                 children: [
-                  Container(
-                    width: 48,
-                    height: 48,
-                    decoration: BoxDecoration(
-                      color: hv.s2,
-                      borderRadius: BorderRadius.circular(HavenRadii.s + 2),
+                  WithProtocolMark(
+                    protocol: DeviceProtocol.zigbee,
+                    child: Container(
+                      width: 48,
+                      height: 48,
+                      decoration: BoxDecoration(
+                        color: hv.s2,
+                        borderRadius: BorderRadius.circular(HavenRadii.s + 2),
+                      ),
+                      padding: const EdgeInsets.all(4),
+                      child: ZbDeviceIcon(type: v.type, size: 40),
                     ),
-                    padding: const EdgeInsets.all(4),
-                    child: ZbDeviceIcon(type: v.type, size: 40),
                   ),
                   const SizedBox(width: 12),
                   Expanded(

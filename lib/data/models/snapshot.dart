@@ -88,6 +88,14 @@ class HavenSnapshot {
 
   EntityState? entity(String id) => entities[id];
 
+  /// HA-Gerät, zu dem [entityId] gehört, oder `null`.
+  HavenDevice? deviceOfEntity(String entityId) {
+    for (final d in devices) {
+      if (d.entityIds.contains(entityId)) return d;
+    }
+    return null;
+  }
+
   Lamp? lamp(String id) {
     final e = entities[id];
     return e == null ? null : _lampOf(e);

@@ -279,7 +279,7 @@ final searchIndexProvider = Provider<List<SearchItem>>((ref) {
 
   page('Zuhause', Icons.home_rounded, Routes.home, 'start übersicht räume');
   page('Karte', Icons.map_rounded, Routes.map, 'grundriss 3d 2d');
-  page('Zigbee', Icons.hub_rounded, Routes.zigbee, 'geräte koppeln');
+  page('Netzwerk', Icons.hub_rounded, Routes.zigbee, 'zigbee matter geräte koppeln');
   page('Funknetz', Icons.device_hub_rounded, zigbeeMeshPath, 'mesh netz lqi');
   page(
     'Abläufe',

@@ -5,6 +5,7 @@ import '../../data/models/floor_plan.dart';
 import '../../data/models/light_groups.dart';
 import '../../data/models/snapshot.dart';
 import '../../data/models/zigbee.dart';
+import '../../data/models/device.dart';
 
 /// Ein Gerät im Pool des Grundriss-Editors. Platziert wird das Gerät: Die
 /// Position gilt für [mainEntityId], die übrigen [entityIds] erben sie.
@@ -19,6 +20,7 @@ class PoolDevice {
     required this.iconType,
     this.areaId,
     this.zigbee = false,
+    this.protocol,
   });
 
   /// IEEE bei Zigbee, sonst HA-Geräte-ID (oder die Entity, wenn die
@@ -35,6 +37,9 @@ class PoolDevice {
   final String iconType;
   final String? areaId;
   final bool zigbee;
+
+  /// Funkprotokoll für das Zeichen am Symbol, `null`: unbekannt.
+  final DeviceProtocol? protocol;
 
   FloorDevice get floorDevice => FloorDevice(id, entityIds, roomId: areaId);
 }
@@ -61,7 +66,7 @@ class PoolRoomGroup {
   final int placed;
 }
 
-/// Ein Abschnitt: „Zigbee-Geräte“ oder „Weitere Geräte“.
+/// Ein Abschnitt: „Zigbee-Geräte“, „Matter-Geräte“ oder „Weitere Geräte“.
 @immutable
 class PoolSection {
   const PoolSection({
@@ -84,14 +89,18 @@ class DevicePool {
     required this.zigbee,
     required this.other,
     required this.all,
+    this.matter,
   });
   final PoolSection zigbee;
   final PoolSection other;
 
+  /// Matter-Geräte aus HA, `null` ohne welche.
+  final PoolSection? matter;
+
   /// Alle Geräte (platziert oder nicht), für Migration und Karte.
   final List<PoolDevice> all;
 
-  int get open => zigbee.open + other.open;
+  int get open => zigbee.open + other.open + (matter?.open ?? 0);
 }
 
 const kNoRoom = 'Ohne Raum';
@@ -129,11 +138,13 @@ DevicePool buildDevicePool(
         iconType: d.deviceType,
         areaId: d.areaId,
         zigbee: true,
+        protocol: DeviceProtocol.zigbee,
       ),
     );
   }
 
   final other = <PoolDevice>[];
+  final matter = <PoolDevice>[];
   if (s.devices.isNotEmpty) {
     for (final d in s.devices) {
       if (d.ieee != null || d.entityIds.any(taken.contains)) continue;
@@ -146,7 +157,7 @@ DevicePool buildDevicePool(
         (a, b) => _rank(a, s.entities[a]).compareTo(_rank(b, s.entities[b])),
       );
       final main = ents.first;
-      other.add(
+      (d.isMatter ? matter : other).add(
         PoolDevice(
           id: d.id,
           name: d.name,
@@ -159,6 +170,7 @@ DevicePool buildDevicePool(
           kind: _kindOfEntity(main, s.entities[main]),
           iconType: _iconOfEntity(main, s.entities[main]),
           areaId: d.areaId,
+          protocol: d.protocol,
         ),
       );
     }
@@ -187,7 +199,8 @@ DevicePool buildDevicePool(
   return DevicePool(
     zigbee: _section('Zigbee-Geräte', zb, s, plan),
     other: _section('Weitere Geräte', other, s, plan),
-    all: [...zb, ...other],
+    matter: matter.isEmpty ? null : _section('Matter-Geräte', matter, s, plan),
+    all: [...zb, ...matter, ...other],
   );
 }
 

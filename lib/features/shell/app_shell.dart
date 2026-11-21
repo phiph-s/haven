@@ -10,7 +10,7 @@ import '../../core/state/providers.dart';
 import '../../core/theme/tokens.dart';
 import '../../core/widgets/accent_scope.dart';
 
-/// Hülle mit schwebender Navigation: Zuhause, Karte, Zigbee, Abläufe.
+/// Hülle mit schwebender Navigation: Zuhause, Karte, Netzwerk, Abläufe.
 class AppShell extends StatelessWidget {
   const AppShell({super.key, required this.shell});
   final StatefulNavigationShell shell;
@@ -18,7 +18,7 @@ class AppShell extends StatelessWidget {
   static const tabs = <(IconData, IconData, String)>[
     (Icons.home_outlined, Icons.home_rounded, 'Zuhause'),
     (Icons.map_outlined, Icons.map_rounded, 'Karte'),
-    (Icons.hub_outlined, Icons.hub_rounded, 'Zigbee'),
+    (Icons.hub_outlined, Icons.hub_rounded, 'Netzwerk'),
     (Icons.auto_awesome_outlined, Icons.auto_awesome_rounded, 'Abläufe'),
   ];
 

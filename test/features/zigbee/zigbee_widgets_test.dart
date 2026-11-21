@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:haven/app.dart';
 import 'package:haven/core/state/providers.dart';
 import 'package:haven/core/widgets/haven_switch.dart';
+import 'package:haven/core/widgets/protocol_badge.dart';
 import 'package:haven/data/haven_repository.dart';
 import 'package:haven/dev/fake_data.dart';
 import 'package:haven/dev/fake_repository.dart';
@@ -99,7 +100,7 @@ void main() {
 
   testWidgets('Liste: Kopf, Braucht dich, Räume, Filter', (tester) async {
     await _open(tester, '/zigbee');
-    expect(find.text('Zigbee'), findsWidgets);
+    expect(find.text('Netzwerk'), findsWidgets);
     expect(find.textContaining('24 Geräte'), findsOneWidget);
     expect(find.textContaining('Kanal 25'), findsOneWidget);
     expect(find.text('Gerät hinzufügen'), findsOneWidget);
@@ -116,6 +117,37 @@ void main() {
     await tester.tap(find.textContaining('Lichter'));
     await tester.pump(const Duration(milliseconds: 400));
     expect(find.text('Bewegungsmelder Waschraum'), findsNothing);
+    await _close(tester);
+  });
+
+  testWidgets('Netzwerk: Matter-Geräte mit Zeichen, Detail, schalten', (
+    tester,
+  ) async {
+    final repo = FakeRepository(simulate: false);
+    await _open(tester, '/zigbee', spy: repo);
+    await tester.scrollUntilVisible(
+      find.text('Stehleuchte Diele'),
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
+    expect(find.text('Matter'), findsOneWidget);
+    expect(find.text('Steckdose Kaffee'), findsOneWidget);
+    expect(find.byType(ProtocolMark), findsWidgets);
+    await tester.ensureVisible(find.text('Stehleuchte Diele'));
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.tap(find.text('Stehleuchte Diele'));
+    for (var i = 0; i < 6; i++) {
+      await tester.pump(const Duration(milliseconds: 200));
+    }
+    expect(find.text('Nanoleaf'), findsOneWidget);
+    expect(find.text('3.5.10'), findsOneWidget);
+    expect(find.byType(ProtocolPill), findsOneWidget);
+    await tester.tap(find.bySemanticsLabel('Stehleuchte Diele an'));
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 50)),
+    );
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(repo.snapshot.entities['light.stehleuchte_diele']!.isOn, isTrue);
     await _close(tester);
   });
 
