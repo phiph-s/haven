@@ -764,19 +764,43 @@ class _Scene3DViewState extends State<Scene3DView>
   Timer? _idle;
   static const _settle = Duration(milliseconds: 900);
 
+  /// Der nächste Neuaufbau zählt nicht als Bewegung und weckt die Ansicht
+  /// nicht: der, mit dem sie zur Ruhe geht, und die der Statistik. (Sonst
+  /// hielte sich die Ansicht selbst wach und renderte jedes Bild, auch wenn
+  /// nichts geschieht.)
+  bool _quiet = false;
+
   void _wake({bool inBuild = false}) {
+    if (inBuild && _quiet) {
+      _quiet = false;
+      return;
+    }
+    _quiet = false;
     _idle?.cancel();
     _idle = Timer(_settle, () {
-      if (mounted) setState(() => _active = false);
+      if (!mounted) return;
+      _quiet = true;
+      setState(() => _active = false);
     });
     if (_active) return;
     // Im Build direkt setzen (setState ist dort verboten), sonst neu bauen.
     if (inBuild) {
       _active = true;
+      _wakes++;
     } else {
-      _later(() => _active = true);
+      _later(() {
+        if (!_active) _wakes++;
+        _active = true;
+      });
     }
   }
+
+  /// Wie oft die Ansicht aus der Ruhe geweckt wurde. Schlüssel der
+  /// `SceneView`: sie bekommt nach jeder Ruhe einen neuen Zustand, weil ihr
+  /// Zustand (flutter_scene 0.24.3) nur einen Ticker je Lebenszeit anlegen
+  /// darf; `autoTick` wieder einzuschalten bräche sonst im Debug-Modus ab.
+  /// Die Szene selbst hängt nicht an diesem Zustand.
+  int _wakes = 0;
 
   /// Licht hat sich geändert: neu bauen, damit [GpuScene.flushLight] die
   /// gebakenen Flächen (Böden, Oberseiten) gleich mischt. [_wake] allein
@@ -833,6 +857,7 @@ class _Scene3DViewState extends State<Scene3DView>
         final recent = _timings.length > 30
             ? _timings.sublist(_timings.length - 30)
             : _timings;
+        _quiet = true;
         setState(() {
           _fps = dt > 0 ? frames / dt : 0;
           _cpuMs = (stats.latest?.cpuMicros ?? 0) / 1000;
@@ -1203,6 +1228,7 @@ class _Scene3DViewState extends State<Scene3DView>
               children: [
                 if (gpu != null)
                   fs.SceneView(
+                    key: ValueKey(_wakes),
                     gpu.scene,
                     cameraBuilder: (_) => fsCamera(_c.camera, _size),
                     autoTick: _active,
