@@ -164,7 +164,7 @@ class SceneController extends ChangeNotifier {
   }
 
   /// GPU-Szene zu [scene]. Das Licht wird immer im Hintergrund gebacken
-  /// (eigener Isolate). Mit [background] entsteht auch die Geometrie erst
+  /// (in Scheiben zwischen den Bildern). Mit [background] entsteht auch die Geometrie erst
   /// nach dem nächsten Bild und die Szene erscheint fertig: bis dahin
   /// `null` (der Platzhalter steht dort). Ohne: sofort, das Licht kommt nach.
   GpuScene? _gpuFor(

@@ -319,10 +319,10 @@ Float32List bakeSun(
   return _blur(out, r.width, r.height);
 }
 
-// ---- Aufträge (reine Daten, auch in einem Isolate rechenbar) --------------
+// ---- Aufträge (reine Daten) ---------------------------------------------
 
 /// Ein Bake-Auftrag für Fläche Nummer [receiver]: nur Daten, kein GPU-Objekt,
-/// damit ihn ein Hintergrund-Isolate rechnen kann ([runBakeTasks]).
+/// getrennt von der Szene rechenbar ([runBakeTasks]).
 sealed class BakeTask {
   const BakeTask(this.receiver, this.surface, this.samples);
   final int receiver;
@@ -440,7 +440,7 @@ BakeResult runBakeTask(BakeTask t) {
   }
 }
 
-/// Alle [tasks] rechnen (für `compute`: oberste Ebene, nur Daten).
+/// Alle [tasks] rechnen (reine Daten).
 List<BakeResult> runBakeTasks(List<BakeTask> tasks) => [
   for (final t in tasks) runBakeTask(t),
 ];

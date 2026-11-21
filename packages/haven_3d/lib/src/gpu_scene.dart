@@ -2,7 +2,7 @@ import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui' show Color, Offset, Size;
 
-import 'package:flutter/foundation.dart' show compute, kIsWeb;
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter_scene/scene.dart' as fs;
 import 'package:vector_math/vector_math.dart' as vm;
 
@@ -1647,9 +1647,14 @@ class GpuScene {
   final Set<String> _staleRooms = {};
   bool _staleSun = false;
 
-  /// Erstes Baking (bei `deferBake`) im Hintergrund: in einem eigenen Isolate
-  /// über [compute], im Web (ohne Isolates) in Scheiben über [flushLight].
+  /// Erstes Baking (bei `deferBake`) im Hintergrund: in Scheiben auf dem
+  /// Haupt-Isolate (zwischen den Bildern), im Web über [flushLight].
   /// Bis dahin zeigt die Szene ungebakenes Licht.
+  ///
+  /// Kein eigener Isolate: Er gehört zur Isolate-Gruppe der App und läuft
+  /// weiter, wenn Android die Activity neu erzeugt und die alte Engine
+  /// abbaut. Seine Speicherbereinigung gibt dann GPU-Puffer der toten
+  /// Engine frei (vkDestroyBuffer auf abgebautem Gerät, Absturz).
   Future<void> bakeInBackground() async {
     if (!_bakePending) return;
     _bakePending = false;
@@ -1665,11 +1670,16 @@ class GpuScene {
     }
     _baking = true;
     try {
-      final results = await compute(
-        runBakeTasks,
-        tasks,
-        debugLabel: 'haven_3d bake',
-      );
+      final results = <BakeResult>[];
+      final sw = Stopwatch()..start();
+      for (final t in tasks) {
+        results.add(runBakeTask(t));
+        if (sw.elapsed >= _bakeSlice) {
+          // Bilder und Eingaben dazwischen lassen.
+          await Future<void>.delayed(Duration.zero);
+          sw.reset();
+        }
+      }
       for (final b in results) {
         _applyBake(b);
       }
@@ -1688,6 +1698,9 @@ class GpuScene {
   }
 
   bool _bakePending = false;
+
+  /// Höchstens so lange am Stück backen, dann ein Bild durchlassen.
+  static const _bakeSlice = Duration(milliseconds: 8);
 
   void _bakeZone(Map<String, List<_Receiver>> byRoom) {
     for (final t in _zoneTasks(byRoom)) {
