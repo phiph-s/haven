@@ -73,6 +73,18 @@ class HeatingNotifier extends AsyncNotifier<HeatingRooms> {
     if (ref.mounted) state = AsyncData(_current.remove(areaId));
   }
 
+  /// Thermostat [ieee] als reines Display markieren oder nicht. Abwählen
+  /// nimmt es auch als Raumregler heraus (die Integration meldet die
+  /// geänderten Räume, daher neu laden).
+  Future<void> setDisplay(String ieee, bool display) async {
+    final displays = await ref
+        .read(repositoryProvider)
+        .setHeatingDisplay(ieee, display);
+    if (!ref.mounted) return;
+    state = AsyncData(_current.withDisplays(displays));
+    if (!display) await reload();
+  }
+
   /// Ziel bzw. Betriebsart: sofort sichtbar, das Ziel gebündelt nach
   /// [delay] gesendet (Plus und Minus mehrmals hintereinander). Fehler kommen
   /// als Text zurück.
@@ -245,7 +257,10 @@ final heatingOfDeviceProvider =
       final ieee = k.ieee ?? device?.ieee;
       final ids = {?k.entityId, ...?device?.haEntities};
       for (final r in rooms) {
-        if (ieee != null && r.config.trvs.contains(ieee)) return r;
+        if (ieee != null &&
+            (r.config.trvs.contains(ieee) || r.config.display == ieee)) {
+          return r;
+        }
         if (r.config.sensors.any(ids.contains) ||
             r.config.windows.any(ids.contains)) {
           return r;

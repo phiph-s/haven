@@ -143,6 +143,13 @@ abstract class BaseRepository implements HavenRepository {
   );
 
   @override
+  Future<Set<String>> setHeatingDisplay(String ieee, bool display) =>
+      throw HavenException(
+        'Die Heizungsregelung gibt es hier nicht',
+        code: 'not_supported',
+      );
+
+  @override
   Future<HeatingStatus> controlHeating(
     String areaId, {
     double? target,

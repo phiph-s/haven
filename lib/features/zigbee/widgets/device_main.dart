@@ -66,6 +66,9 @@ class ZbMainFunction extends ConsumerWidget {
         final heat = ref.watch(
           heatingOfDeviceProvider((ieee: view.ieee, entityId: climate)),
         );
+        final toggle = compact
+            ? null
+            : ThermostatDisplayToggle(ieee: view.ieee, roomId: view.roomId);
         if (heat != null) {
           final r = (ieee: view.ieee, entityId: climate);
           return Column(
@@ -77,13 +80,19 @@ class ZbMainFunction extends ConsumerWidget {
                 thermostat: r,
                 onOpen: () => showThermostatSheet(context, r),
               ),
+              if (toggle != null) ...[const SizedBox(height: 12), toggle],
             ],
           );
         }
-        return ThermostatMain(
+        final main = ThermostatMain(
           ieee: view.ieee,
           entityId: climate,
           compact: compact,
+        );
+        if (toggle == null) return main;
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [main, const SizedBox(height: 12), toggle],
         );
       case ZbType.motion:
       case ZbType.presence:

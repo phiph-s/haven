@@ -1360,7 +1360,8 @@ class FakeRepository extends BaseRepository {
       values,
       DateTime.now(),
     );
-    await _zb.set(ieee, {...values, ...derived});
+    // Ausdrücklich gesendete Werte gehen vor (Preset und Sollwert zusammen).
+    await _zb.set(ieee, {...derived, ...values});
     _syncThermostat(ieee);
     _push();
   }
@@ -1410,6 +1411,10 @@ class FakeRepository extends BaseRepository {
   Future<RoomHeating> saveHeating(HeatingConfig config) => _heat.save(config);
   @override
   Future<void> deleteHeating(String areaId) => _heat.delete(areaId);
+
+  @override
+  Future<Set<String>> setHeatingDisplay(String ieee, bool display) =>
+      _heat.setDisplay(ieee, display);
   @override
   Future<HeatingStatus> controlHeating(
     String areaId, {

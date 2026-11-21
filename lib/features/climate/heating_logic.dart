@@ -162,6 +162,9 @@ String fmtSigned(double v) {
   return r > 0 ? '+$s' : '−$s';
 }
 
+/// Eigener Wochenplan eines Displays (Haven stellt ihn auf Manuell zurück).
+const kDisplaySchedulePresets = {'auto', 'schedule', 'program'};
+
 /// Satz zum Zustand des Raums, z. B. „Heizt auf 21 °C“.
 String heatingStatusText(HeatingStatus s, {DateTime? now}) {
   final t = s.effectiveTarget;
@@ -176,6 +179,9 @@ String heatingStatusText(HeatingStatus s, {DateTime? now}) {
     case null:
       break;
   }
+  if (s.windowOpen && s.windowOverride) {
+    return 'Fenster offen, am Display eingeschaltet';
+  }
   if (s.windowOpen && s.pauseAt != null) {
     return 'Fenster offen, pausiert gleich';
   }
@@ -188,6 +194,16 @@ String heatingStatusText(HeatingStatus s, {DateTime? now}) {
 
 /// Woher die Raumtemperatur kommt (Zeile unter dem Wert).
 String heatingSourceText(HeatingStatus s, int sensorCount) {
+  final display = s.display;
+  if (s.roomSource == 'display') {
+    return display == null ? 'Am Display gemessen' : 'Laut ${display.name}';
+  }
+  if (s.roomSource == 'sensors' && display?.localTemperature != null) {
+    final valid = s.sensorValues.values.whereType<double>().length;
+    return valid == 1
+        ? 'Mittel aus Display und Thermometer'
+        : 'Mittel aus Display und $valid Thermometern';
+  }
   if (s.roomSource == 'sensors') {
     final valid = s.sensorValues.values.whereType<double>().length;
     if (sensorCount <= 1) return 'Raumthermometer';

@@ -13,6 +13,7 @@ Map<String, dynamic> thermostatDerived(
 ) {
   final out = <String, dynamic>{};
   final preset = values['preset'];
+  if (isWallThermostat(state)) return _wallDerived(state, values, now);
   if (preset is String) {
     out['system_mode'] = switch (preset) {
       'off' => 'off',
@@ -43,6 +44,42 @@ Map<String, dynamic> thermostatDerived(
   if (boost is num && boost > 0 && state['preset'] != 'off') {
     out['running_state'] = 'heat';
     out['position'] = 100;
+  }
+  return out;
+}
+
+/// Wandthermostat wie der Beok BOT-R9V-ZB: Ein/Aus über `system_mode`,
+/// `preset` manual/eco/auto getrennt davon (erkannt an der Totzone).
+bool isWallThermostat(Map<String, dynamic> state) =>
+    state.containsKey('deadzone_temperature');
+
+Map<String, dynamic> _wallDerived(
+  Map<String, dynamic> state,
+  Map<String, dynamic> values,
+  DateTime now,
+) {
+  final out = <String, dynamic>{};
+  final preset = values['preset'] ?? state['preset'];
+  // Am Gerät gedreht oder gesendet: Tuya-Wandthermostate gehen auf Manuell.
+  if (values['current_heating_setpoint'] != null &&
+      values['preset'] == null &&
+      state['preset'] != 'manual') {
+    out['preset'] = 'manual';
+  }
+  if (values.containsKey('preset') || values.containsKey('eco_temperature')) {
+    final sp = switch (preset) {
+      'eco' => values['eco_temperature'] ?? state['eco_temperature'],
+      'auto' => _scheduleNow(state, now),
+      _ => null,
+    };
+    if (sp is num) out['current_heating_setpoint'] = sp.toDouble();
+  }
+  if (values['system_mode'] == 'off') out['running_state'] = 'idle';
+  final cal = values['local_temperature_calibration'];
+  final local = state['local_temperature'];
+  if (cal is num && local is num) {
+    final old = (state['local_temperature_calibration'] as num?) ?? 0;
+    out['local_temperature'] = ((local + cal - old) * 10).round() / 10;
   }
   return out;
 }
@@ -81,7 +118,7 @@ Map<String, dynamic> thermostatStep(Map<String, dynamic> s, int tick) {
   final out = <String, dynamic>{};
   final cur = (s['local_temperature'] as num?)?.toDouble() ?? 19;
   final sp = (s['current_heating_setpoint'] as num?)?.toDouble() ?? 20;
-  final off = s['preset'] == 'off';
+  final off = s['preset'] == 'off' || s['system_mode'] == 'off';
   final windowOpen = s['window'] == 'OPEN';
   var boost = (s['boost_timeset_countdown'] as num?)?.toInt() ?? 0;
   if (boost > 0 && tick % 15 == 0) {
@@ -97,7 +134,9 @@ Map<String, dynamic> thermostatStep(Map<String, dynamic> s, int tick) {
       : ((sp - cur) * 40).clamp(15, 90).round();
   final r = (next * 10).round() / 10;
   if (r != cur) out['local_temperature'] = r;
-  if (pos != s['position']) out['position'] = pos;
+  if (s.containsKey('position') && pos != s['position']) {
+    out['position'] = pos;
+  }
   final rs = heat ? 'heat' : 'idle';
   if (rs != s['running_state']) out['running_state'] = rs;
   return out;

@@ -302,7 +302,8 @@ void main() {
     const ruheraum = '0x00124b0000000031';
     final (c, spy) = await _pump(tester, '/home/room/ruheraum');
     await _scrollTo(tester, find.text('Heizung'));
-    expect(find.byType(ThermostatRow), findsOneWidget);
+    // Thermostat und Wandthermostat (Display) des Raums.
+    expect(find.byType(ThermostatRow), findsNWidgets(2));
     expect(find.text('Thermostat Ruheraum'), findsOneWidget);
     await tester.tap(find.bySemanticsLabel('Wärmer Thermostat Ruheraum'));
     await _settle(tester, 10);

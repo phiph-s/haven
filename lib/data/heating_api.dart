@@ -14,6 +14,12 @@ abstract interface class HeatingApi {
   /// den Thermostaten zurück.
   Future<void> deleteHeating(String areaId);
 
+  /// `haven/heating/display` (Admin): Thermostat [ieee] als reines Display
+  /// markieren oder nicht. Abwählen nimmt es auch als Raumregler heraus.
+  /// Fehler `device_taken`, wenn es als Heizkörperthermostat geregelt wird.
+  /// Liefert alle markierten Displays.
+  Future<Set<String>> setHeatingDisplay(String ieee, bool display);
+
   /// `haven/heating/control` (Admin): Ziel und/oder Betriebsart des Raums.
   /// Ein Ziel ohne Betriebsart schaltet auf Manuell. Jede Bedienung (oder
   /// nur [resume]) übernimmt am Thermostat freigegebene Geräte wieder.

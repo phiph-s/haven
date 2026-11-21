@@ -52,6 +52,12 @@ class FakeHeating {
   final Map<String, _RoomState> _state = {'salon': _RoomState(target: 21)};
   final Map<String, HeatingStatus> _last = {};
 
+  static const ruheraumDisplay = '0x00124b0000000032';
+
+  /// Als reines Display markierte Thermostate (das Wandthermostat im
+  /// Ruheraum ist es von Anfang an).
+  final Set<String> _displays = {ruheraumDisplay};
+
   Stream<HeatingUpdate> get updates => _updates.stream;
   Stream<void> get changed => _changed.stream;
 
@@ -64,7 +70,39 @@ class FakeHeating {
               ..sort((a, b) => a.areaId.compareTo(b.areaId))))
           RoomHeating(c, status(c.areaId)!),
       ],
+      displays: {..._displays},
     );
+  }
+
+  Future<Set<String>> setDisplay(String ieee, bool display) async {
+    if (!thermostats().contains(ieee)) {
+      throw HavenException(
+        '$ieee ist kein bekanntes Thermostat',
+        code: 'not_found',
+      );
+    }
+    if (display) {
+      final room = _configs.values.where((c) => c.trvs.contains(ieee));
+      if (room.isNotEmpty) {
+        throw HavenException(
+          '${trvName(ieee)} wird als Heizkörperthermostat in einem Raum '
+          'geregelt',
+          code: 'device_taken',
+        );
+      }
+      _displays.add(ieee);
+    } else {
+      _displays.remove(ieee);
+      for (final c in _configs.values.toList()) {
+        if (c.display == ieee) {
+          _configs[c.areaId] = c.copyWith(clearDisplay: true);
+          _state[c.areaId]?.display = null;
+        }
+      }
+    }
+    tick(DateTime.now());
+    if (!_changed.isClosed) _changed.add(null);
+    return {..._displays};
   }
 
   Future<RoomHeating> save(HeatingConfig c) async {
@@ -73,6 +111,31 @@ class FakeHeating {
         'Wähle mindestens ein Thermostat.',
         code: 'invalid_format',
       );
+    }
+    final asTrv = c.trvs.where(_displays.contains).firstOrNull;
+    if (asTrv != null) {
+      throw HavenException(
+        '${trvName(asTrv)} ist als Display markiert und kein '
+        'Heizkörperthermostat',
+        code: 'invalid_format',
+      );
+    }
+    if (c.display case final d?) {
+      if (!_displays.contains(d)) {
+        throw HavenException(
+          '${trvName(d)} ist nicht als Display markiert',
+          code: 'invalid_format',
+        );
+      }
+      final other = _configs.values
+          .where((o) => o.areaId != c.areaId && o.display == d)
+          .firstOrNull;
+      if (other != null) {
+        throw HavenException(
+          '${trvName(d)} steuert schon einen anderen Raum',
+          code: 'device_taken',
+        );
+      }
     }
     for (final other in _configs.values) {
       if (other.areaId == c.areaId) continue;
@@ -87,7 +150,7 @@ class FakeHeating {
     final before = _configs[c.areaId];
     _configs[c.areaId] = c;
     _state.putIfAbsent(c.areaId, () {
-      final sp = c.trvs
+      final sp = [?c.display, ...c.trvs]
           .map((i) => (trvState(i)['current_heating_setpoint'] as num?))
           .whereType<num>()
           .firstOrNull;
@@ -176,10 +239,21 @@ class FakeHeating {
     return e.number;
   }
 
+  /// Messung des Displays (zählt als Raumthermometer).
+  double? _displayLocal(HeatingConfig c) => switch (c.display) {
+    final d? => (trvState(d)['local_temperature'] as num?)?.toDouble(),
+    null => null,
+  };
+
   (double?, String?) _room(HeatingConfig c) {
     final vals = [for (final s in c.sensors) ?_sensor(s)];
-    if (vals.isNotEmpty) {
-      return (vals.reduce((a, b) => a + b) / vals.length, 'sensors');
+    final display = _displayLocal(c);
+    if (vals.isNotEmpty || display != null) {
+      final all = [...vals, ?display];
+      return (
+        all.reduce((a, b) => a + b) / all.length,
+        vals.isNotEmpty ? 'sensors' : 'display',
+      );
     }
     final locals = [
       for (final t in c.trvs)
@@ -196,6 +270,29 @@ class FakeHeating {
     HeatingMode.heat => st.target,
     final m => c.presets[m] ?? kDefaultHeatingPresets[m],
   };
+
+  /// Sollzustand des Displays: aus bei Aus und in der Fensterpause, sonst
+  /// an; Eco als eigenes Preset (Sollwert dann vom Gerät), sonst Manuell mit
+  /// dem Ziel des Raums. Eco-Temperatur immer die des Raums.
+  ({String power, String? preset, double? setpoint, double eco}) _displayWant(
+    HeatingConfig c,
+    _RoomState st,
+    double? target,
+  ) {
+    final eco = (c.presets[HeatingMode.eco] ??
+            kDefaultHeatingPresets[HeatingMode.eco]!)
+        .toDouble();
+    if (target == null || st.paused) {
+      return (power: 'off', preset: null, setpoint: null, eco: eco);
+    }
+    final isEco = st.mode == HeatingMode.eco;
+    return (
+      power: 'heat',
+      preset: isEco ? 'eco' : 'manual',
+      setpoint: isEco ? null : target,
+      eco: eco,
+    );
+  }
 
   HeatingPause? _pause(_RoomState st) {
     if (st.mode == HeatingMode.off) return HeatingPause.off;
@@ -229,6 +326,14 @@ class FakeHeating {
       a.windowOpen != b.windowOpen ||
       a.outdoorValue != b.outdoorValue ||
       a.released != b.released ||
+      a.display?.setpoint != b.display?.setpoint ||
+      a.display?.localTemperature != b.display?.localTemperature ||
+      a.display?.mode != b.display?.mode ||
+      a.display?.preset != b.display?.preset ||
+      a.display?.ecoTemperature != b.display?.ecoTemperature ||
+      a.display?.pending != b.display?.pending ||
+      a.windowOverride != b.windowOverride ||
+      (a.display == null) != (b.display == null) ||
       a.trvs.length != b.trvs.length ||
       [
         for (var i = 0; i < a.trvs.length; i++)
@@ -241,7 +346,12 @@ class FakeHeating {
   void _evaluate(HeatingConfig c, _RoomState st, DateTime now) {
     // Fenster
     final open = c.windows.any((w) => _contact(w) == true);
-    if (open) {
+    if (!open || st.mode == HeatingMode.off) st.windowOverride = false;
+    if (open && st.windowOverride) {
+      // Am Display trotz offenem Fenster eingeschaltet: keine Pause.
+      st.openSince = st.closedSince = null;
+      st.paused = false;
+    } else if (open) {
       st.closedSince = null;
       st.openSince ??= now;
       if (!st.paused &&
@@ -279,6 +389,70 @@ class FakeHeating {
         st.summer = false;
       }
     }
+    // Display: was daran eingestellt wird, gilt für den ganzen Raum (auch
+    // bei gesperrter Bedienung der Thermostate und bei offenem Fenster).
+    if (c.display case final d?) {
+      if (st.displayIeee != d) {
+        st.display = null;
+        st.displayIeee = d;
+      }
+      final memo = st.display ??= _TrvMemo();
+      final s = trvState(d);
+      final sp = (s['current_heating_setpoint'] as num?)?.toDouble();
+      final power = s['system_mode'] as String?;
+      final preset = s['preset'] as String?;
+      // Ein/Aus am Display
+      if (memo.seenMode != null &&
+          power != memo.seenMode &&
+          power != memo.sentMode) {
+        if (power == 'off') {
+          st.mode = HeatingMode.off;
+          st.userChange = true;
+        } else if (power == 'heat' && st.paused) {
+          // Fensterpause: einschalten heißt trotzdem heizen
+          st.windowOverride = true;
+          st.paused = false;
+          st.closedSince = st.openSince = null;
+        } else if (power == 'heat' && st.mode == HeatingMode.off) {
+          st.mode = HeatingMode.heat;
+          st.userChange = true;
+        }
+      }
+      // Bestätigt: ein späteres gleiches Schalten ist wieder Bedienung.
+      if (power == memo.sentMode) memo.sentMode = null;
+      memo.seenMode = power;
+      // Eco/Manuell am Display, eigener Wochenplan zählt nicht
+      var presetAdopted = false;
+      if (memo.seenPreset != null &&
+          preset != memo.seenPreset &&
+          preset != memo.sentPreset) {
+        if (preset == 'eco') {
+          st.mode = HeatingMode.eco;
+          st.userChange = presetAdopted = true;
+        } else if (preset == 'manual' && memo.seenPreset == 'eco') {
+          st.mode = HeatingMode.heat;
+          if (sp != null) st.target = ((sp.clamp(5, 30) * 2).round() / 2);
+          st.userChange = presetAdopted = true;
+        }
+      }
+      if (preset == memo.sentPreset) memo.sentPreset = null;
+      memo.seenPreset = preset;
+      if (!presetAdopted &&
+          sp != null &&
+          memo.seenSp != null &&
+          sp != memo.seenSp &&
+          sp != memo.sentSp &&
+          sp != memo.prevSentSp &&
+          power != 'off' &&
+          preset == 'manual') {
+        st.target = ((sp.clamp(5, 30) * 2).round() / 2).toDouble();
+        st.mode = HeatingMode.heat;
+        st.userChange = true;
+      }
+      memo.seenSp = sp;
+    } else {
+      st.display = st.displayIeee = null;
+    }
     // Änderungen am Thermostat übernehmen
     for (final ieee in c.trvs) {
       final s = trvState(ieee);
@@ -309,6 +483,7 @@ class FakeHeating {
           memo.seenSp != null &&
           sp != memo.seenSp &&
           sp != memo.sentSp &&
+          sp != memo.prevSentSp &&
           preset == 'comfort' &&
           _pause(st) == null) {
         final shift = c.calibration == HeatingCalibration.target
@@ -324,6 +499,32 @@ class FakeHeating {
     final (room, source) = _room(c);
     final target = _effective(c, st);
     final pause = _pause(st);
+    // Display zeigt das Ziel des Raums, aus bei Betriebsart Aus und in der
+    // Fensterpause. Eco am Display = Eco im Raum. Nie kalibriert.
+    if ((c.display, st.display) case (final d?, final memo?)) {
+      final s = trvState(d);
+      final want = _displayWant(c, st, target);
+      final values = <String, dynamic>{};
+      if (s['system_mode'] != want.power) {
+        values['system_mode'] = memo.sentMode = want.power;
+      }
+      if (want.preset != null && s['preset'] != want.preset) {
+        values['preset'] = memo.sentPreset = want.preset;
+      }
+      if (want.setpoint != null &&
+          ((s['current_heating_setpoint'] as num?)?.toDouble() !=
+                  want.setpoint ||
+              values.containsKey('preset'))) {
+        memo.prevSentSp = memo.sentSp;
+        values['current_heating_setpoint'] = memo.sentSp = want.setpoint;
+      }
+      if ((s['eco_temperature'] as num?)?.toDouble() != want.eco) {
+        values['eco_temperature'] = want.eco;
+      }
+      // Gesehen wird erst, was das Display meldet (es übernimmt verzögert);
+      // bis dahin ist sein alter Wert keine Änderung.
+      if (values.isNotEmpty) unawaited(trvSet(d, values));
+    }
     for (final ieee in c.trvs) {
       final s = trvState(ieee);
       final memo = st.trvs[ieee]!;
@@ -332,7 +533,9 @@ class FakeHeating {
       final cal = (s['local_temperature_calibration'] as num?)?.toDouble() ?? 0;
       final sp = (s['current_heating_setpoint'] as num?)?.toDouble();
       final released = memo.released != null;
-      final method = source == 'sensors' && !(released && !c.calibrateReleased)
+      final method =
+          (source == 'sensors' || source == 'display') &&
+              !(released && !c.calibrateReleased)
           ? c.calibration
           : HeatingCalibration.none;
       if (released) {
@@ -357,6 +560,7 @@ class FakeHeating {
             now.difference(memo.sentSpAt!).inSeconds < 60;
         if (sp != want && !throttled) {
           values['current_heating_setpoint'] = want;
+          memo.prevSentSp = memo.sentSp;
           memo.sentSp = want;
           memo.sentSpAt = now;
           memo.shift = method == HeatingCalibration.target ? want - target : 0;
@@ -408,11 +612,10 @@ class FakeHeating {
       final s = trvState(ieee);
       final local = (s['local_temperature'] as num?)?.toDouble();
       final cal = (s['local_temperature_calibration'] as num?)?.toDouble();
-      final method = source == 'sensors'
-          ? c.calibration
-          : HeatingCalibration.none;
+      final fromRoom = source == 'sensors' || source == 'display';
+      final method = fromRoom ? c.calibration : HeatingCalibration.none;
       final raw = local == null ? null : local - (cal ?? 0);
-      final corr = room != null && raw != null && source == 'sensors'
+      final corr = room != null && raw != null && fromRoom
           ? ((room - raw) * 100).round() / 100
           : null;
       final heating = s['running_state'] == null
@@ -446,6 +649,27 @@ class FakeHeating {
       );
     }
     final flags = [for (final t in trvs) ?t.heating];
+    HeatingDisplayStatus? display;
+    if (c.display case final d?) {
+      final s = trvState(d);
+      final sp = (s['current_heating_setpoint'] as num?)?.toDouble();
+      final want = _displayWant(c, st, target);
+      display = HeatingDisplayStatus(
+        ieee: d,
+        name: trvName(d),
+        localTemperature: (s['local_temperature'] as num?)?.toDouble(),
+        setpoint: sp,
+        mode: s['system_mode'] as String?,
+        preset: s['preset'] as String?,
+        ecoTemperature: (s['eco_temperature'] as num?)?.toDouble(),
+        battery: (s['battery'] as num?)?.round(),
+        pending:
+            s['system_mode'] != want.power ||
+            (want.preset != null && s['preset'] != want.preset) ||
+            (want.setpoint != null && sp != want.setpoint) ||
+            (s['eco_temperature'] as num?)?.toDouble() != want.eco,
+      );
+    }
     return HeatingStatus(
       mode: st.mode,
       target: st.target,
@@ -459,6 +683,7 @@ class FakeHeating {
           : (flags.isEmpty ? null : flags.any((x) => x)),
       windowOpen: c.windows.any((w) => _contact(w) == true),
       windowPaused: st.paused,
+      windowOverride: st.windowOverride,
       pauseAt: st.openSince != null && !st.paused
           ? st.openSince!.add(Duration(seconds: c.windowOpenDelay))
           : null,
@@ -474,6 +699,7 @@ class FakeHeating {
       summer: st.summer,
       trvs: trvs,
       released: trvs.any((t) => t.released),
+      display: display,
     );
   }
 
@@ -491,21 +717,33 @@ class _RoomState {
   DateTime? openSince;
   DateTime? closedSince;
   bool paused = false;
+
+  /// Am Display trotz offenem Fenster eingeschaltet (bis alle zu sind).
+  bool windowOverride = false;
   bool summer = false;
   double? outdoorEma;
   DateTime? outdoorAt;
   final Map<String, _TrvMemo> trvs = {};
+  String? displayIeee;
+  _TrvMemo? display;
 }
 
 class _TrvMemo {
   double? seenSp;
   double? sentSp;
+
+  /// Davor gesendet: eine späte Bestätigung zählt nicht als Handarbeit.
+  double? prevSentSp;
   DateTime? sentSpAt;
   double? sentCal;
   DateTime? sentCalAt;
   double shift = 0;
   String? seenPreset;
   String? sentPreset;
+
+  /// Ein/Aus eines Displays (`system_mode`).
+  String? seenMode;
+  String? sentMode;
 
   /// Am Gerät auf eigene Steuerung gestellt (`on`, `auto`), sonst `null`.
   String? released;

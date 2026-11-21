@@ -88,6 +88,18 @@ class HaHeating {
   Future<void> delete(String areaId) =>
       _send('haven/heating/delete', {'area_id': areaId});
 
+  Future<Set<String>> setDisplay(String ieee, bool display) async {
+    final r = await _send('haven/heating/display', {
+      'ieee': ieee,
+      'display': display,
+    });
+    final d = r['displays'];
+    return {
+      if (d is List)
+        for (final x in d) '$x',
+    };
+  }
+
   Future<HeatingStatus> control(
     String areaId, {
     double? target,

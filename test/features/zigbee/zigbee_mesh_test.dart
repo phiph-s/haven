@@ -350,7 +350,7 @@ void main() {
       expect(find.textContaining('gemessen vor'), findsOneWidget);
       expect(find.byType(MeshGraph), findsOneWidget);
       // 23 Geräte und Koordinator (Geräte auf einem Feld rücken auseinander).
-      expect(find.byType(MeshNodeDot), findsNWidgets(24));
+      expect(find.byType(MeshNodeDot), findsNWidgets(25));
 
       final target = find.byWidgetPredicate(
         (w) => w is MeshNodeDot && w.info.name == 'Kochbereich Arbeitslicht 1',

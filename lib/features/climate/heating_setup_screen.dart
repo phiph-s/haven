@@ -67,7 +67,20 @@ class _HeatingSetupState extends ConsumerState<HeatingSetupScreen> {
   HeatingConfig _initial() {
     final existing = ref.watch(heatingProvider).value?.byArea(widget.areaId);
     if (existing != null) return existing.config;
-    final trvs = _thermostats().where((v) => v.roomId == widget.areaId);
+    final all = ref.watch(heatingProvider).value;
+    final displays = all?.displays ?? const <String>{};
+    final trvs = _thermostats().where(
+      (v) => v.roomId == widget.areaId && !displays.contains(v.ieee),
+    );
+    // Ein Display im Raum, das noch keinen Raum steuert, wird der Regler.
+    final display = _thermostats()
+        .where(
+          (v) =>
+              v.roomId == widget.areaId &&
+              displays.contains(v.ieee) &&
+              all?.controlledBy(v.ieee) == null,
+        )
+        .firstOrNull;
     final sensors = ref.watch(heatingSensorSourcesProvider(widget.areaId));
     final windows = ref.watch(heatingWindowSourcesProvider(widget.areaId));
     final canCal = trvs.isEmpty || trvs.any(trvCanCalibrate);
@@ -85,6 +98,7 @@ class _HeatingSetupState extends ConsumerState<HeatingSetupScreen> {
       calibration: canCal
           ? HeatingCalibration.offset
           : HeatingCalibration.target,
+      display: display?.ieee,
     );
   }
 
@@ -231,6 +245,12 @@ class _HeatingSetupState extends ConsumerState<HeatingSetupScreen> {
                         _TrvSection(
                           draft: d,
                           others: all.value?.rooms ?? const [],
+                          displays: all.value?.displays ?? const {},
+                          onChanged: _set,
+                        ),
+                        _DisplaySection(
+                          draft: d,
+                          heating: all.value ?? const HeatingRooms(),
                           onChanged: _set,
                         ),
                         _SensorSection(draft: d, onChanged: _set),
@@ -241,9 +261,13 @@ class _HeatingSetupState extends ConsumerState<HeatingSetupScreen> {
                         const FieldLabel('Am Thermostat'),
                         _ToggleCard(
                           title: 'Drehen am Thermostat zurücksetzen',
-                          subtitle: d.lockManual
-                              ? 'Haven stellt jede Änderung am Gerät wieder zurück.'
-                              : 'Aus: Wer am Thermostat dreht, ändert das Ziel für den ganzen Raum.',
+                          subtitle:
+                              (d.lockManual
+                                  ? 'Haven stellt jede Änderung am Gerät wieder zurück.'
+                                  : 'Aus: Wer am Thermostat dreht, ändert das Ziel für den ganzen Raum.') +
+                              (d.display != null
+                                  ? ' Am Display gilt jede Änderung immer.'
+                                  : ''),
                           value: d.lockManual,
                           onChanged: (v) => _set(d.copyWith(lockManual: v)),
                         ),
@@ -315,7 +339,17 @@ class _Preview extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final hv = context.hv;
     final entities = ref.watch(snapshotProvider.select((s) => s.entities));
-    final room = averageOf(entities, draft.sensors);
+    final sensorAvg = averageOf(entities, draft.sensors);
+    final displayView = draft.display == null
+        ? null
+        : ref.watch(zigbeeViewProvider(draft.display!));
+    final displayLocal = displayView?.number('local_temperature')?.toDouble();
+    final parts = [?sensorAvg, ?displayLocal];
+    // Wie die Integration: Display zählt wie ein Raumthermometer (grob
+    // gemittelt, die Thermometer als Gruppe).
+    final room = parts.isEmpty
+        ? null
+        : parts.reduce((a, b) => a + b) / parts.length;
     final rows = <Widget>[];
     for (final ieee in draft.trvs) {
       final v = ref.watch(zigbeeViewProvider(ieee));
@@ -375,16 +409,18 @@ class _Preview extends ConsumerWidget {
               ),
             ],
           ),
-          Text(
-            draft.sensors.isEmpty
-                ? 'Kein Raumthermometer gewählt'
-                : draft.sensors.length == 1
-                ? 'laut Raumthermometer'
-                : 'Mittel aus ${draft.sensors.length} Thermometern',
-            style: HavenText.caption.copyWith(color: hv.tx2),
-          ),
+          Text(switch ((draft.sensors.length, displayView != null)) {
+            (0, false) => 'Kein Raumthermometer gewählt',
+            (0, true) => 'laut Display ${displayView!.name}',
+            (1, false) => 'laut Raumthermometer',
+            (final n, false) => 'Mittel aus $n Thermometern',
+            (final n, true) =>
+              'Mittel aus Display und ${n == 1 ? 'Thermometer' : '$n Thermometern'}',
+          }, style: HavenText.caption.copyWith(color: hv.tx2)),
           ...rows,
-          if (rows.isNotEmpty && room != null && draft.sensors.isNotEmpty)
+          if (rows.isNotEmpty &&
+              room != null &&
+              (draft.sensors.isNotEmpty || draft.display != null))
             Padding(
               padding: const EdgeInsets.only(top: 10),
               child: Text(switch (draft.calibration) {
@@ -408,10 +444,14 @@ class _TrvSection extends ConsumerWidget {
   const _TrvSection({
     required this.draft,
     required this.others,
+    required this.displays,
     required this.onChanged,
   });
   final HeatingConfig draft;
   final List<RoomHeating> others;
+
+  /// Als Display markiert: keine Heizkörperthermostate.
+  final Set<String> displays;
   final ValueChanged<HeatingConfig> onChanged;
 
   @override
@@ -420,7 +460,7 @@ class _TrvSection extends ConsumerWidget {
     final trvs =
         [
           for (final v in ref.watch(zigbeeViewsProvider))
-            if (v.type == ZbType.thermostat) v,
+            if (v.type == ZbType.thermostat && !displays.contains(v.ieee)) v,
         ]..sort((a, b) {
           final ia = a.roomId == draft.areaId, ib = b.roomId == draft.areaId;
           if (ia != ib) return ia ? -1 : 1;
@@ -489,6 +529,90 @@ class _TrvSection extends ConsumerWidget {
               'Mehrere Thermostate laufen als Gruppe: ein Ziel, eine Betriebsart.',
               style: HavenText.caption.copyWith(color: hv.tx2),
             ),
+          ),
+      ],
+    );
+  }
+}
+
+// ---- Display (Raumregler) ----------------------------------------------------------
+
+class _DisplaySection extends ConsumerWidget {
+  const _DisplaySection({
+    required this.draft,
+    required this.heating,
+    required this.onChanged,
+  });
+  final HeatingConfig draft;
+  final HeatingRooms heating;
+  final ValueChanged<HeatingConfig> onChanged;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final hv = context.hv;
+    final displays =
+        [
+          for (final v in ref.watch(zigbeeViewsProvider))
+            if (heating.isDisplay(v.ieee)) v,
+        ]..sort((a, b) {
+          final ia = a.roomId == draft.areaId, ib = b.roomId == draft.areaId;
+          if (ia != ib) return ia ? -1 : 1;
+          return a.name.compareTo(b.name);
+        });
+    if (displays.isEmpty) return const SizedBox.shrink();
+    final rooms = ref.watch(snapshotProvider.select((s) => s.rooms));
+    String nameOf(String area) =>
+        rooms.where((r) => (r.areaId ?? r.id) == area).firstOrNull?.name ??
+        area;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const FieldLabel('Display als Regler'),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(4, 0, 4, 8),
+          child: Text(
+            'Was am Display eingestellt wird, gilt für den ganzen Raum, und es zeigt das Ziel. Eco am Display ist Eco für den Raum, seinen eigenen Wochenplan stellt Haven auf Manuell zurück. Seine Messung zählt wie ein Raumthermometer.',
+            style: HavenText.caption.copyWith(color: hv.tx2),
+          ),
+        ),
+        PickRow(
+          title: 'Kein Display',
+          leading: Icon(
+            Icons.block_rounded,
+            color: draft.display == null ? hv.acc : hv.tx2,
+          ),
+          selected: draft.display == null,
+          onTap: () => onChanged(draft.copyWith(clearDisplay: true)),
+        ),
+        for (final v in displays)
+          Builder(
+            builder: (context) {
+              final owner = heating.controlledBy(v.ieee);
+              final taken = owner != null && owner.areaId != draft.areaId;
+              final selected = draft.display == v.ieee;
+              final local = v.number('local_temperature');
+              final sp = v.number('current_heating_setpoint');
+              return PickRow(
+                key: ValueKey('heating-display-${v.ieee}'),
+                title: v.name,
+                subtitle: taken
+                    ? 'steuert schon ${nameOf(owner.areaId)}'
+                    : [
+                        if (local != null) 'misst ${fmtTemp(local.toDouble())}',
+                        if (sp != null) 'zeigt ${fmtTemp(sp.toDouble())}',
+                        if (v.roomId != draft.areaId && v.roomName != null)
+                          v.roomName!,
+                      ].join(' · '),
+                leading: Icon(
+                  Icons.thermostat_auto_rounded,
+                  color: selected ? hv.acc : hv.tx2,
+                ),
+                selected: selected,
+                onTap: taken
+                    ? null
+                    : () => onChanged(draft.copyWith(display: v.ieee)),
+              );
+            },
           ),
       ],
     );
@@ -654,7 +778,8 @@ class _WindowSection extends ConsumerWidget {
         Padding(
           padding: const EdgeInsets.fromLTRB(4, 0, 4, 8),
           child: Text(
-            'Ist ein Fenster offen, pausiert die Heizung im ganzen Raum. Ein Kontakt ohne Verbindung zählt als zu.',
+            'Ist ein Fenster offen, pausiert die Heizung im ganzen Raum. Ein Kontakt ohne Verbindung zählt als zu.'
+            '${draft.display != null ? ' Das Display geht in der Pause aus; schaltest du es ein, heizt der Raum trotzdem, bis alle Fenster wieder zu sind.' : ''}',
             style: HavenText.caption.copyWith(color: hv.tx2),
           ),
         ),

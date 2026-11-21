@@ -5,8 +5,10 @@ import 'package:go_router/go_router.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../../core/router/router.dart' show Routes;
+import '../../core/state/providers.dart';
 import '../../core/theme/tokens.dart';
 import '../../core/widgets/haptics.dart';
+import '../../core/widgets/haven_switch.dart';
 import '../../core/widgets/press_scale.dart';
 import '../../data/models/room_heating.dart';
 import '../zigbee/widgets/zb_common.dart';
@@ -153,6 +155,13 @@ class RoomHeatingCard extends ConsumerWidget {
           ),
           const SizedBox(height: 10),
           Divider(height: 1, color: hv.ln),
+          if (s.display case final d?)
+            _DisplayLine(
+              display: d,
+              windowPause: s.pause == HeatingPause.window,
+              onTap: () =>
+                  showThermostatSheet(context, (ieee: d.ieee, entityId: null)),
+            ),
           for (final trv in s.trvs)
             _TrvLine(
               trv: trv,
@@ -459,6 +468,97 @@ class _TrvLine extends StatelessWidget {
   }
 }
 
+/// Display, das den Raum steuert: was es misst und zeigt.
+class _DisplayLine extends StatelessWidget {
+  const _DisplayLine({
+    required this.display,
+    required this.windowPause,
+    required this.onTap,
+  });
+  final HeatingDisplayStatus display;
+
+  /// Raum pausiert wegen offenem Fenster (Haven hat das Display aus).
+  final bool windowPause;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final hv = context.hv;
+    final parts = [
+      'Regler',
+      if (!display.available) 'nicht erreichbar',
+      if (display.localTemperature != null)
+        'misst ${fmtTemp(display.localTemperature!)}',
+      if (display.isOff)
+        windowPause ? 'aus, Fenster offen' : 'aus'
+      else if (display.preset == 'eco')
+        display.ecoTemperature == null
+            ? 'Eco'
+            : 'Eco ${fmtTemp(display.ecoTemperature!)}'
+      else if (kDisplaySchedulePresets.contains(display.preset))
+        'eigener Wochenplan, wird zurückgestellt'
+      else if (display.setpoint != null)
+        'zeigt ${fmtTemp(display.setpoint!)}',
+      if (display.battery case final b?) 'Batterie $b %',
+    ];
+    final lowBattery = (display.battery ?? 100) < 20;
+    return Semantics(
+      button: true,
+      label: display.name,
+      child: PressScale(
+        pressedScale: 0.99,
+        onTap: onTap,
+        child: Padding(
+          key: const ValueKey('heating-display-line'),
+          padding: const EdgeInsets.symmetric(vertical: 10),
+          child: Row(
+            children: [
+              Icon(
+                lowBattery
+                    ? Icons.battery_alert_rounded
+                    : Icons.thermostat_auto_rounded,
+                size: 20,
+                color: lowBattery ? hv.warn : hv.acc,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      display.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: HavenText.label.copyWith(
+                        color: hv.tx,
+                        fontSize: 14.5,
+                      ),
+                    ),
+                    Text(
+                      parts.join(' · '),
+                      maxLines: 2,
+                      style: HavenText.caption.copyWith(color: hv.tx2),
+                    ),
+                  ],
+                ),
+              ),
+              if (display.pending)
+                Padding(
+                  padding: const EdgeInsets.only(left: 6),
+                  child: Tooltip(
+                    message: 'Wartet auf das Display',
+                    child: Icon(Icons.sync_rounded, size: 16, color: hv.tx3),
+                  ),
+                ),
+              Icon(Icons.chevron_right_rounded, size: 20, color: hv.tx3),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _Footer extends StatelessWidget {
   const _Footer({
     required this.status,
@@ -564,6 +664,135 @@ class HeatingSetupPrompt extends StatelessWidget {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// Am Thermostat: „Nur als Display“. Haven regelt es dann nie als
+/// Heizkörperthermostat; es misst die Raumtemperatur und kann in der
+/// Regelung eines Raums als Regler dienen (was daran eingestellt wird, gilt
+/// für den ganzen Raum).
+class ThermostatDisplayToggle extends ConsumerStatefulWidget {
+  const ThermostatDisplayToggle({super.key, required this.ieee, this.roomId});
+  final String ieee;
+
+  /// Raum, in dem das Gerät hängt (für „Raum einrichten“).
+  final String? roomId;
+
+  @override
+  ConsumerState<ThermostatDisplayToggle> createState() =>
+      _ThermostatDisplayToggleState();
+}
+
+class _ThermostatDisplayToggleState
+    extends ConsumerState<ThermostatDisplayToggle> {
+  bool _busy = false;
+
+  Future<void> _set(bool on) async {
+    setState(() => _busy = true);
+    Haptics.tap();
+    try {
+      await ref.read(heatingProvider.notifier).setDisplay(widget.ieee, on);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.maybeOf(
+          context,
+        )?.showSnackBar(SnackBar(content: Text('$e')));
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final hv = context.hv;
+    final rooms = ref.watch(heatingProvider).value;
+    if (rooms == null || !rooms.supported) return const SizedBox.shrink();
+    final on = rooms.isDisplay(widget.ieee);
+    final controls = rooms.controlledBy(widget.ieee);
+    final asTrv = rooms.rooms
+        .where((r) => r.config.trvs.contains(widget.ieee))
+        .firstOrNull;
+    final snap = ref.watch(snapshotProvider);
+    String roomName(String area) =>
+        snap.rooms.where((r) => (r.areaId ?? r.id) == area).firstOrNull?.name ??
+        area;
+    final area = widget.roomId == null
+        ? null
+        : ref.watch(roomAreaProvider(widget.roomId!));
+    final String text;
+    if (!on) {
+      text = asTrv != null
+          ? 'Regelt gerade die Heizung in ${roomName(asTrv.areaId)} mit. '
+                'Als Display nimm es dort erst heraus.'
+          : 'Haven regelt es dann nicht als Heizkörperthermostat. Es misst '
+                'die Raumtemperatur und kann die Heizung eines Raums steuern.';
+    } else if (controls != null) {
+      text =
+          'Steuert die Heizung in ${roomName(controls.areaId)}: Was du daran '
+          'einstellst, gilt für den ganzen Raum.';
+    } else {
+      text =
+          'Noch kein Raumregler. Wähle es in der Heizungsregelung eines '
+          'Raums als Display.';
+    }
+    final setup = on && controls == null && area != null;
+    return Container(
+      key: const ValueKey('thermostat-display-toggle'),
+      padding: const EdgeInsets.fromLTRB(14, 12, 12, 12),
+      decoration: BoxDecoration(
+        color: on ? hv.acc.withValues(alpha: 0.08) : hv.s1,
+        borderRadius: BorderRadius.circular(HavenRadii.m),
+        border: Border.all(color: on ? hv.acc.withValues(alpha: 0.35) : hv.ln),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.thermostat_auto_rounded, color: on ? hv.acc : hv.tx2),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Nur als Display',
+                      style: HavenText.label.copyWith(color: hv.tx),
+                    ),
+                    Text(
+                      text,
+                      style: HavenText.caption.copyWith(color: hv.tx2),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              HavenSwitch(
+                value: on,
+                semanticLabel: 'Nur als Display',
+                onChanged: _busy || (!on && asTrv != null) ? null : _set,
+              ),
+            ],
+          ),
+          if (setup)
+            Padding(
+              padding: const EdgeInsets.only(left: 30, top: 4),
+              child: TextButton.icon(
+                onPressed: () {
+                  Haptics.tap();
+                  unawaited(context.push<void>(Routes.heating(area)));
+                },
+                icon: Icon(Icons.tune_rounded, size: 18, color: hv.acc),
+                label: Text(
+                  'Als Regler für ${roomName(area)}',
+                  style: HavenText.label.copyWith(color: hv.acc),
+                ),
+              ),
+            ),
+        ],
       ),
     );
   }

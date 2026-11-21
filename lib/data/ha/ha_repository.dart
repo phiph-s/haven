@@ -1112,6 +1112,10 @@ class HaRepository extends BaseRepository {
   Future<void> deleteHeating(String areaId) => _heat.delete(areaId);
 
   @override
+  Future<Set<String>> setHeatingDisplay(String ieee, bool display) =>
+      _heat.setDisplay(ieee, display);
+
+  @override
   Future<HeatingStatus> controlHeating(
     String areaId, {
     double? target,

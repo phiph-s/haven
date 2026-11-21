@@ -76,6 +76,7 @@ class HeatingConfig {
     this.presets = kDefaultHeatingPresets,
     this.lockManual = false,
     this.calibrateReleased = true,
+    this.display,
   });
 
   factory HeatingConfig.fromJson(Map<String, dynamic> j) {
@@ -100,6 +101,7 @@ class HeatingConfig {
       },
       lockManual: j['lock_manual'] == true,
       calibrateReleased: j['calibrate_released'] != false,
+      display: j['display'] is String ? j['display'] as String : null,
     );
   }
 
@@ -134,6 +136,11 @@ class HeatingConfig {
   /// weiter auf das Raumthermometer kalibrieren.
   final bool calibrateReleased;
 
+  /// IEEE eines als Display markierten Thermostats, das den Raum steuert:
+  /// misst die Raumtemperatur, was daran eingestellt wird, gilt für den
+  /// ganzen Raum, und es zeigt das Ziel des Raums. `null`: keins.
+  final String? display;
+
   Map<String, dynamic> toJson() => {
     'area_id': areaId,
     'enabled': enabled,
@@ -149,6 +156,7 @@ class HeatingConfig {
     'presets': {for (final e in presets.entries) e.key.wire: e.value},
     'lock_manual': lockManual,
     'calibrate_released': calibrateReleased,
+    'display': display,
   };
 
   HeatingConfig copyWith({
@@ -165,6 +173,8 @@ class HeatingConfig {
     Map<HeatingMode, double>? presets,
     bool? lockManual,
     bool? calibrateReleased,
+    String? display,
+    bool clearDisplay = false,
   }) => HeatingConfig(
     areaId: areaId,
     enabled: enabled ?? this.enabled,
@@ -179,6 +189,7 @@ class HeatingConfig {
     presets: presets ?? this.presets,
     lockManual: lockManual ?? this.lockManual,
     calibrateReleased: calibrateReleased ?? this.calibrateReleased,
+    display: clearDisplay ? null : (display ?? this.display),
   );
 
   @override
@@ -195,7 +206,8 @@ class HeatingConfig {
       other.calibration == calibration &&
       mapEquals(other.presets, presets) &&
       other.lockManual == lockManual &&
-      other.calibrateReleased == calibrateReleased;
+      other.calibrateReleased == calibrateReleased &&
+      other.display == display;
 
   @override
   int get hashCode => Object.hash(areaId, trvs.length, sensors.length);
@@ -274,6 +286,65 @@ class HeatingTrvStatus {
   final DateTime? releaseUntil;
 }
 
+/// Zustand des Displays (Raumregler) in der Regelung.
+@immutable
+class HeatingDisplayStatus {
+  const HeatingDisplayStatus({
+    required this.ieee,
+    this.name = '',
+    this.available = true,
+    this.localTemperature,
+    this.setpoint,
+    this.mode,
+    this.preset,
+    this.ecoTemperature,
+    this.battery,
+    this.pending = false,
+  });
+
+  factory HeatingDisplayStatus.fromJson(Map<String, dynamic> j) =>
+      HeatingDisplayStatus(
+        ieee: '${j['ieee']}',
+        name: '${j['name'] ?? ''}',
+        available: j['available'] != false,
+        localTemperature: _d(j['local_temperature']),
+        setpoint: _d(j['setpoint']),
+        mode: j['mode'] as String?,
+        preset: j['preset'] as String?,
+        ecoTemperature: _d(j['eco_temperature']),
+        battery: (j['battery'] as num?)?.round(),
+        pending: j['pending'] == true,
+      );
+
+  final String ieee;
+  final String name;
+  final bool available;
+
+  /// Was das Display im Raum misst.
+  final double? localTemperature;
+
+  /// Was das Display gerade anzeigt (Ziel des Raums).
+  final double? setpoint;
+  /// Ein/Aus am Gerät (`heat`/`off` bzw. sein Regelmodus).
+  final String? mode;
+
+  /// Eigener Modus des Geräts (Beok: `manual`, `eco`, `auto`), falls es einen
+  /// getrennt von Ein/Aus hat.
+  final String? preset;
+
+  /// Eco-Temperatur am Gerät (Haven hält sie gleich der des Raums).
+  final double? ecoTemperature;
+
+  /// Batterie in Prozent, `null`: Netzbetrieb oder unbekannt.
+  final int? battery;
+
+  /// Display ist aus (Raum aus oder Fensterpause).
+  bool get isOff => mode == 'off';
+
+  /// Haven hat das Ziel gesendet, das Display hat es noch nicht bestätigt.
+  final bool pending;
+}
+
 /// Warum gerade nicht geheizt wird.
 enum HeatingPause {
   off('Aus'),
@@ -305,6 +376,7 @@ class HeatingStatus {
     this.heating,
     this.windowOpen = false,
     this.windowPaused = false,
+    this.windowOverride = false,
     this.pauseAt,
     this.resumeAt,
     this.contacts = const {},
@@ -314,6 +386,7 @@ class HeatingStatus {
     this.trvs = const [],
     this.running = true,
     this.released = false,
+    this.display,
   });
 
   factory HeatingStatus.fromJson(Map<String, dynamic> j) {
@@ -337,6 +410,7 @@ class HeatingStatus {
       heating: j['heating'] as bool?,
       windowOpen: window['open'] == true,
       windowPaused: window['paused'] == true,
+      windowOverride: window['override'] == true,
       pauseAt: _t(window['pause_at']),
       resumeAt: _t(window['resume_at']),
       contacts: {
@@ -352,6 +426,11 @@ class HeatingStatus {
       ],
       running: j['running'] != false,
       released: j['released'] == true,
+      display: j['display'] is Map
+          ? HeatingDisplayStatus.fromJson(
+              Map<String, dynamic>.from(j['display'] as Map),
+            )
+          : null,
     );
   }
 
@@ -364,13 +443,18 @@ class HeatingStatus {
   final double? effectiveTarget;
   final double? roomTemperature;
 
-  /// `sensors` (Raumthermometer), `trv` (Rückfall) oder `null`.
+  /// `sensors` (Raumthermometer, mit Display), `display` (nur das Display),
+  /// `trv` (Rückfall) oder `null`.
   final String? roomSource;
   final Map<String, double?> sensorValues;
   final HeatingPause? pause;
   final bool? heating;
   final bool windowOpen;
   final bool windowPaused;
+
+  /// Am Display trotz offenem Fenster eingeschaltet: keine Pause, bis alle
+  /// Fenster wieder zu sind.
+  final bool windowOverride;
 
   /// Fenster offen, Pause beginnt um.
   final DateTime? pauseAt;
@@ -389,7 +473,12 @@ class HeatingStatus {
   /// Mindestens ein Thermostat steuert gerade selbst (am Gerät gestellt).
   final bool released;
 
-  bool get usesSensors => roomSource == 'sensors';
+  /// Display, das den Raum steuert, `null`: keins.
+  final HeatingDisplayStatus? display;
+
+  /// Raumtemperatur kommt aus dem Raum (Thermometer oder Display), nicht vom
+  /// Heizkörper: dann greift die Korrektur.
+  bool get usesSensors => roomSource == 'sensors' || roomSource == 'display';
 
   HeatingStatus copyWith({
     HeatingMode? mode,
@@ -411,6 +500,7 @@ class HeatingStatus {
     heating: heating,
     windowOpen: windowOpen,
     windowPaused: windowPaused,
+    windowOverride: windowOverride,
     pauseAt: pauseAt,
     resumeAt: resumeAt,
     contacts: contacts,
@@ -420,6 +510,7 @@ class HeatingStatus {
     trvs: trvs,
     running: running,
     released: released,
+    display: display,
   );
 }
 
@@ -450,6 +541,7 @@ class HeatingRooms {
     this.rooms = const [],
     this.supported = true,
     this.running = true,
+    this.displays = const {},
   });
 
   factory HeatingRooms.fromJson(Map<String, dynamic> j) => HeatingRooms(
@@ -458,6 +550,7 @@ class HeatingRooms {
         if (r is Map) RoomHeating.fromJson(Map<String, dynamic>.from(r)),
     ],
     running: j['running'] != false,
+    displays: {..._ls(j['displays'])},
   );
 
   /// Integration ohne Feature `heating`.
@@ -466,6 +559,23 @@ class HeatingRooms {
   final List<RoomHeating> rooms;
   final bool supported;
   final bool running;
+
+  /// Als reines Display markierte Thermostate (IEEE): Haven regelt sie nie
+  /// als Heizkörperthermostat, sie können einen Raum steuern.
+  final Set<String> displays;
+
+  bool isDisplay(String ieee) => displays.contains(ieee);
+
+  /// Raum, den das Display [ieee] steuert.
+  RoomHeating? controlledBy(String ieee) =>
+      rooms.where((r) => r.config.display == ieee).firstOrNull;
+
+  HeatingRooms withDisplays(Set<String> d) => HeatingRooms(
+    rooms: rooms,
+    supported: supported,
+    running: running,
+    displays: d,
+  );
 
   RoomHeating? byArea(String areaId) =>
       rooms.where((r) => r.areaId == areaId).firstOrNull;
@@ -478,6 +588,7 @@ class HeatingRooms {
     ]..sort((a, b) => a.areaId.compareTo(b.areaId)),
     supported: supported,
     running: running,
+    displays: displays,
   );
 
   HeatingRooms remove(String areaId) => HeatingRooms(
@@ -487,6 +598,7 @@ class HeatingRooms {
     ],
     supported: supported,
     running: running,
+    displays: displays,
   );
 }
 
