@@ -74,6 +74,23 @@ class SceneProjection {
 /// Rückmeldung mit Bildschirmposition (lange drücken, Rechtsklick).
 typedef SceneHitCallback = void Function(SceneHit? hit, Offset globalPosition);
 
+/// Ein Editor übernimmt einzelne Zeiger, statt dass sie die Kamera bewegen
+/// (z. B. ein Möbelstück ziehen und drehen).
+///
+/// [start] bekommt den Punkt, an dem ein Finger (oder die linke Maustaste)
+/// aufsetzte, sobald er sich bewegt, und sagt, ob der Editor ihn übernimmt.
+/// Danach meldet [update] die Position (lokal, ab dem Aufsetzpunkt; kommt
+/// ein zweiter Finger dazu, bleibt sie stehen) und die Drehung zweier Finger
+/// in Bogenmaß seit dem Start (im Uhrzeigersinn positiv). [end] am Schluss.
+/// Zwei Finger ohne übernommenen Zeiger bewegen wie immer die Kamera.
+@immutable
+class SceneGrab {
+  const SceneGrab({required this.start, required this.update, this.end});
+  final bool Function(Offset localPosition) start;
+  final void Function(Offset localPosition, double rotation) update;
+  final VoidCallback? end;
+}
+
 /// Steuert die Kamera eines [Scene3DView] von außen und hält die
 /// aufgebaute 3D-Szene.
 ///
@@ -143,6 +160,7 @@ class SceneController extends ChangeNotifier {
     for (final e in _tints.entries) {
       g.setDeviceTint(e.key, e.value);
     }
+    if (_objectPreview != null) g.setObjectPreview(_objectPreview);
   }
 
   /// GPU-Szene zu [scene]. Das Licht wird immer im Hintergrund gebacken
@@ -398,6 +416,18 @@ class SceneController extends ChangeNotifier {
     _view?._wake();
   }
 
+  SceneObject? _objectPreview;
+
+  /// Möbelstück als Vorschau beim Platzieren oder Ziehen (siehe
+  /// `GpuScene.setObjectPreview`), `null` aus. Gilt auch für eine später
+  /// gebaute Szene.
+  void setObjectPreview(SceneObject? object) {
+    if (identical(object, _objectPreview)) return;
+    _objectPreview = object;
+    _gpu?.setObjectPreview(object);
+    _view?._wake();
+  }
+
   final Map<String, bool?> _open = {};
 
   /// Tür oder Fenster [id] offen, zu oder unbekannt (`null`) zeigen, etwa
@@ -466,6 +496,9 @@ class Scene3DView extends StatefulWidget {
     this.hiddenObjects = const {},
     this.revealRoomId,
     this.lightsOn = true,
+    this.grab,
+    this.onTapAt,
+    this.onScroll,
   });
 
   final Scene scene;
@@ -555,6 +588,16 @@ class Scene3DView extends StatefulWidget {
   /// Zeichnet über allem (z. B. Griffe eines Editors).
   final Widget Function(BuildContext context, SceneProjection p)?
   foregroundBuilder;
+
+  /// Zeiger, die ein Editor statt der Kamera bedient (siehe [SceneGrab]).
+  final SceneGrab? grab;
+
+  /// Wie [onTap], mit der Stelle (global) des Tippens.
+  final SceneHitCallback? onTapAt;
+
+  /// Mausrad zuerst an den Editor: `true` heißt erledigt (dann zoomt die
+  /// Kamera nicht), z. B. Drehen mit gedrückter Umschalttaste.
+  final bool Function(PointerScrollEvent event)? onScroll;
 
   @override
   State<Scene3DView> createState() => _Scene3DViewState();
@@ -855,8 +898,68 @@ class _Scene3DViewState extends State<Scene3DView>
     _from = _to = null;
   }
 
+  /// Aufsetzpunkt des ersten Fingers (für [SceneGrab.start]).
+  Offset? _down;
+  int _downCount = 0;
+
+  /// Übernommener Zeiger (siehe [SceneGrab]): virtuelle Position, letzter
+  /// Mittelpunkt der Finger, Drehung bis zum letzten Fingerwechsel.
+  bool _grabbing = false;
+  Offset _grabAt = Offset.zero;
+  Offset _grabFocal = Offset.zero;
+  double _grabTurn = 0;
+  double _grabTurn0 = 0;
+  double _grabTurnNow = 0;
+
+  bool _startGrab(ScaleStartDetails d) {
+    final g = widget.grab;
+    if (g == null || d.pointerCount != 1) return false;
+    final mouseOther =
+        _buttons & (kSecondaryMouseButton | kMiddleMouseButton) != 0;
+    if (mouseOther || HardwareKeyboard.instance.isControlPressed) return false;
+    final at = _down ?? d.localFocalPoint;
+    if (!g.start(at)) return false;
+    _grabbing = true;
+    _grabAt = at;
+    _grabFocal = at;
+    _grabTurn = 0;
+    _grabTurn0 = 0;
+    _grabTurnNow = 0;
+    _pointers = 1;
+    return true;
+  }
+
+  void _updateGrab(ScaleUpdateDetails d) {
+    if (d.pointerCount != _pointers) {
+      // Finger dazu oder weg: Position und Drehung neu verankern.
+      _pointers = d.pointerCount;
+      _grabTurn += _grabTurnNow;
+      _grabTurnNow = 0;
+      _grabTurn0 = d.rotation;
+      _grabFocal = d.localFocalPoint;
+      return;
+    }
+    if (d.pointerCount == 1) {
+      _grabAt += d.localFocalPoint - _grabFocal;
+    } else {
+      _grabTurnNow = math.atan2(
+        math.sin(d.rotation - _grabTurn0),
+        math.cos(d.rotation - _grabTurn0),
+      );
+    }
+    _grabFocal = d.localFocalPoint;
+    widget.grab?.update(_grabAt, _grabTurn + _grabTurnNow);
+  }
+
+  void _endGrab() {
+    if (!_grabbing) return;
+    _grabbing = false;
+    widget.grab?.end?.call();
+  }
+
   void _onScaleStart(ScaleStartDetails d) {
     _stop();
+    if (_startGrab(d)) return;
     _startCam = _c.camera;
     _startFocal = d.localFocalPoint;
     _tilting = null;
@@ -876,6 +979,8 @@ class _Scene3DViewState extends State<Scene3DView>
   int _buttons = 0;
 
   void _onScaleUpdate(ScaleUpdateDetails d) {
+    if (_grabbing) return _updateGrab(d);
+    if (widget.gestures == SceneGestures.none) return;
     if (d.pointerCount != _pointers) {
       // Finger dazu oder weg: neu verankern (der Mittelpunkt springt).
       _pointers = d.pointerCount;
@@ -963,6 +1068,8 @@ class _Scene3DViewState extends State<Scene3DView>
 
   void _onScroll(PointerSignalEvent e) {
     if (e is! PointerScrollEvent) return;
+    if (widget.onScroll?.call(e) ?? false) return;
+    if (widget.gestures == SceneGestures.none) return;
     _stop();
     final cam = _c.camera;
     final f = math.exp(-e.scrollDelta.dy / 400);
@@ -1053,17 +1160,32 @@ class _Scene3DViewState extends State<Scene3DView>
             e.key: cam.project(e.value, size).offset,
         });
         final own = widget.gestures != SceneGestures.none;
+        final scales = own || widget.grab != null;
         final view = Listener(
-          onPointerSignal: own ? _onScroll : null,
-          onPointerDown: (e) => _buttons = e.buttons,
+          onPointerSignal: own || widget.onScroll != null ? _onScroll : null,
+          onPointerDown: (e) {
+            _buttons = e.buttons;
+            if (_downCount++ == 0) _down = e.localPosition;
+          },
+          onPointerUp: (_) => _downCount = math.max(0, _downCount - 1),
+          onPointerCancel: (_) => _downCount = math.max(0, _downCount - 1),
           child: GestureDetector(
             behavior: HitTestBehavior.opaque,
-            onScaleStart: own ? _onScaleStart : null,
-            onScaleUpdate: own ? _onScaleUpdate : null,
-            onScaleEnd: own ? (_) => _startCam = null : null,
-            onTapUp: widget.onTap == null
+            onScaleStart: scales ? _onScaleStart : null,
+            onScaleUpdate: scales ? _onScaleUpdate : null,
+            onScaleEnd: scales
+                ? (_) {
+                    _startCam = null;
+                    _endGrab();
+                  }
+                : null,
+            onTapUp: widget.onTap == null && widget.onTapAt == null
                 ? null
-                : (d) => widget.onTap!(hit(d.localPosition)),
+                : (d) {
+                    final h = hit(d.localPosition);
+                    widget.onTap?.call(h);
+                    widget.onTapAt?.call(h, d.globalPosition);
+                  },
             onLongPressStart: widget.onLongPress == null
                 ? null
                 : (d) => widget.onLongPress!(

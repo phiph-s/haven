@@ -1154,6 +1154,67 @@ class GpuScene {
       );
   }
 
+  // --- Vorschau eines Möbelstücks (Platzieren, Ziehen im Editor) ----------
+
+  fs.Node? _objectPreview;
+  String? _objectPreviewKey;
+
+  /// Möbelstück [o] als Vorschau zeigen (echte Materialien, Akzentkanten),
+  /// z. B. solange ein Editor es zieht oder neu platziert. Steht es in einem
+  /// Raum, rückt es wie die übrigen Möbel ganz hinein (siehe
+  /// `Scene.fittedToRooms`). Ein anderes Modell baut neu, sonst kostet das
+  /// Verschieben und Drehen nur eine Transformation. `null` entfernt sie.
+  void setObjectPreview(SceneObject? o) {
+    if (o == null) {
+      final n = _objectPreview;
+      if (n != null) scene.root.remove(n);
+      _objectPreview = null;
+      _objectPreviewKey = null;
+      return;
+    }
+    final key =
+        '${o.kind}:${o.width.toStringAsFixed(4)}x'
+        '${o.depth.toStringAsFixed(4)}:${o.model.faces.length}';
+    if (key != _objectPreviewKey || _objectPreview == null) {
+      final old = _objectPreview;
+      if (old != null) scene.root.remove(old);
+      final byMat = <Mat, _MeshAcc>{};
+      for (final f in o.model.faces) {
+        byMat.putIfAbsent(f.mat, () => _MeshAcc()).addFace(f, twoSided: true);
+      }
+      final node = fs.Node(name: 'object-preview')
+        ..mesh = fs.Mesh.primitives(
+          primitives: [
+            for (final e in byMat.entries)
+              if (!e.value.isEmpty)
+                fs.MeshPrimitive(e.value.geometry(), _mat.surface(e.key)),
+          ],
+        );
+      final edges = featureEdges(o.model);
+      if (edges.isNotEmpty) {
+        node.add(_edgesNode('object-preview-edges', edges, _mat.accentEdge));
+      }
+      scene.add(node);
+      _objectPreview = node;
+      _objectPreviewKey = key;
+    }
+    var pos = o.position;
+    final shape = o.wallMounted ? null : _shapes[o.roomId];
+    if (shape != null) {
+      final foot = [
+        for (final p in o.model.placed(o.position, o.rotation).points) p.xy,
+      ];
+      final d = fitInside(foot, shape);
+      pos = V3(pos.x + d.dx, pos.y + d.dy, pos.z);
+    }
+    _objectPreview!
+      ..position = toFs(pos)
+      ..rotation = vm.Quaternion.axisAngle(
+        vm.Vector3(0, 1, 0),
+        o.rotation * math.pi / 180,
+      );
+  }
+
   /// Wandgerät an die nächste Wand seines Raums: Punkt auf der Wand und
   /// Drehung (Grad), so dass die Vorderseite (-y) in den Raum zeigt.
   /// `null`, wenn keine Wand nah genug ist (frei stehend).

@@ -3,7 +3,8 @@ import 'dart:math' as math;
 import 'dart:ui' show PointMode;
 
 import 'package:flutter/foundation.dart' show ValueListenable;
-import 'package:flutter/gestures.dart' show DragStartBehavior;
+import 'package:flutter/gestures.dart'
+    show DragStartBehavior, PointerScrollEvent;
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -28,6 +29,7 @@ import 'floor_assign_sheet.dart';
 import 'floor_editor_ops.dart';
 import 'floor_plan_store.dart';
 import 'floor_geometry.dart';
+import 'furniture_3d_overlay.dart';
 import 'furniture_library.dart';
 import 'furniture_ops.dart';
 import 'furniture_painter.dart';
@@ -45,8 +47,12 @@ import 'map_3d.dart'
         spreadNodes;
 import 'map_data.dart' show MapLights;
 import 'map_markers.dart';
+import 'placement_3d.dart';
 
 enum _Mode { rooms, devices, furniture }
+
+/// Innenfläche der Wände in der Editor-Szene (Spalt der Räume, Wandstärke).
+final double _kWallInset = h3.wallInset(h3.SceneStyle.light().roomGap);
 
 /// Licht beim Geräte setzen: aus, wie gerade zu Hause, oder alle Lampen an
 /// (warmweiß), um die Wirkung der Platzierung zu sehen.
@@ -62,8 +68,19 @@ enum _FurnOpKind { move, resize, rotate }
 
 /// Laufende Geste an einem Möbelstück.
 class _FurnOp {
-  _FurnOp(this.kind, this.base, this.item, this.start, {this.handle});
+  _FurnOp(
+    this.kind,
+    this.base,
+    this.item,
+    this.start, {
+    this.handle,
+    this.z = 0,
+  });
   final _FurnOpKind kind;
+
+  /// 3D: Höhe (Meter) der Ebene, auf der [start] liegt (Oberseite des
+  /// gegriffenen Möbelstücks, damit es unter dem Finger bleibt).
+  final double z;
 
   /// Stand vor der Geste (Rückgängig).
   final HavenFloorPlan base;
@@ -118,6 +135,7 @@ class FloorEditorScreen extends ConsumerStatefulWidget {
     super.key,
     this.startInDevices = false,
     this.startInFurniture = false,
+    this.startFurniture3d,
     this.startSelected,
     this.startFurniture,
     this.startDrag,
@@ -126,6 +144,9 @@ class FloorEditorScreen extends ConsumerStatefulWidget {
   /// Nur für Screenshots und Tests.
   final bool startInDevices;
   final bool startInFurniture;
+
+  /// Einrichten in 3D (`true`) oder von oben, `null`: wie zuletzt gewählt.
+  final bool? startFurniture3d;
 
   /// Gewähltes Möbelstück beim Start (Screenshots, Tests).
   final String? startFurniture;
@@ -156,8 +177,35 @@ class _FloorEditorScreenState extends ConsumerState<FloorEditorScreen> {
   /// Licht beim Geräte setzen (aus, live, alle an).
   _EditorLight _light = _EditorLight.off;
 
-  /// Geräte werden nur in 3D gesetzt.
-  bool get _view3d => _mode == _Mode.devices;
+  /// Einrichten in 3D: Möbel direkt in der schrägen Szene platzieren.
+  late bool _furn3d =
+      widget.startFurniture3d ??
+      ref.read(settingsStoreProvider).editorFurniture3d;
+
+  /// Neues Möbelstück beim Platzieren in 3D (noch nicht im Plan): folgt
+  /// Finger oder Maus, Antippen stellt es ab.
+  FloorFurniture? _ghost;
+
+  /// Ziehen der Vorschau: Boden unter dem Finger und Vorschau beim Start
+  /// (Zellen), Höhe der Ebene.
+  ({Offset from, FloorFurniture item, double z})? _ghostGrab;
+
+  /// Gewünschte Drehung des neuen Möbelstücks (Drehen-Knopf, R, zwei
+  /// Finger). An einer Wand dreht es sich nur vorübergehend mit dem Rücken
+  /// zu ihr und kehrt danach hierher zurück. [_ghostTwist]: Drehung zweier
+  /// Finger, die beim Loslassen gilt.
+  double _ghostRot = 0;
+  double? _ghostTwist;
+
+  /// Drehen mit dem Mausrad: Schritte kurz hintereinander sind ein Schritt
+  /// zum Rückgängigmachen.
+  Timer? _wheelTimer;
+
+  /// Geräte werden nur in 3D gesetzt, Möbel wahlweise.
+  bool get _view3d => _mode == _Mode.devices || _furniture3d;
+
+  /// Einrichten in der 3D-Ansicht?
+  bool get _furniture3d => _mode == _Mode.furniture && _furn3d;
 
   /// Gerät, das gerade gezogen wird (sein Modell weicht der Vorschau).
   String? _dragId;
@@ -185,6 +233,7 @@ class _FloorEditorScreenState extends ConsumerState<FloorEditorScreen> {
   @override
   void dispose() {
     _hintTimer?.cancel();
+    _wheelTimer?.cancel();
     _dragInfo.dispose();
     _focus.dispose();
     super.dispose();
@@ -211,6 +260,8 @@ class _FloorEditorScreenState extends ConsumerState<FloorEditorScreen> {
 
   void _undoLast() {
     if (_undo.isEmpty) return;
+    _wheelTimer?.cancel();
+    _wheelTimer = null;
     Haptics.tap();
     final prev = _undo.removeLast();
     setState(() {
@@ -577,9 +628,16 @@ class _FloorEditorScreenState extends ConsumerState<FloorEditorScreen> {
     return box?.globalToLocal(global);
   }
 
-  /// Zelle unter dem Finger oder `null` (außerhalb der Fläche oder des
-  /// Rasters: Loslassen entfernt das Gerät).
-  GridPoint? _dropCell(Offset global, {double z = 0}) {
+  /// Ziel eines Geräts unter dem Finger: Zelle und ob es an die Wand kommt,
+  /// `null` außerhalb der Fläche oder des Rasters (Loslassen entfernt das
+  /// Gerät). Zeigt der Finger in 3D auf die Innenseite einer Wand, landet
+  /// es direkt davor: was an die Wand kann, hängt dann an dieser Wand, alles
+  /// andere steht davor auf dem Boden.
+  ({GridPoint cell, bool wall})? _deviceTarget(
+    Offset global,
+    String? entityId,
+    FloorKind kind,
+  ) {
     final local = _toLocal(global);
     if (local == null || _geo == null) return null;
     if (local.dx < 0 ||
@@ -588,7 +646,34 @@ class _FloorEditorScreenState extends ConsumerState<FloorEditorScreen> {
         local.dy > _size.height) {
       return null;
     }
-    return _cellAt(local, z: z);
+    final z = entityId == null ? 0.0 : _dragZ(entityId);
+    final p = _proj.current;
+    if (p != null && _mode == _Mode.devices) {
+      final plan = _plan!;
+      final hit = h3.wallAt(
+        sceneOfPlan(plan),
+        p.camera,
+        p.size,
+        local,
+        inset: _kWallInset,
+      );
+      if (hit != null) {
+        final mountable = wallMountable(
+          h3.deviceSpec(_modelOf(entityId, kind)),
+        );
+        // Eine Deckenleuchte trifft ihre Höhe oft vor der Wand: dann bleibt
+        // sie dort an der Decke.
+        final plane = mountable
+            ? null
+            : h3.rayAt(p.camera, local, p.size).tOnPlane(z);
+        if (plane == null || hit.t < plane) {
+          final cell = cellBeforeWall(hit, plan);
+          if (cell != null) return (cell: cell, wall: mountable);
+        }
+      }
+    }
+    final cell = _cellAt(local, z: z);
+    return cell == null ? null : (cell: cell, wall: false);
   }
 
   /// Bauform eines (vielleicht noch nicht platzierten) Geräts.
@@ -602,12 +687,19 @@ class _FloorEditorScreenState extends ConsumerState<FloorEditorScreen> {
   /// Montage eines Geräts, wenn es in [cell] landet: Was an Decke und Wand
   /// kann (Deckenleuchte, Spot, Bewegungsmelder), rastet an der Wand ein,
   /// wenn [cell] an einer geschlossenen Wand liegt, sonst an der Decke.
-  /// Nach oben gestellte Geräte bleiben so.
-  h3.DeviceMount? _mountAt(String? entityId, FloorKind kind, GridPoint cell) {
+  /// Nach oben gestellte Geräte bleiben so, außer der Finger zeigt auf eine
+  /// Wand ([wall]).
+  h3.DeviceMount? _mountAt(
+    String? entityId,
+    FloorKind kind,
+    GridPoint cell, {
+    bool wall = false,
+  }) {
     final spec = h3.deviceSpec(_modelOf(entityId, kind));
     final old = entityId == null ? null : _plan!.placementOf(entityId);
     final cur = old == null ? spec.mountOf(null) : deviceMountOf(old);
     final m = spec.mounts;
+    if (wall && m.contains(h3.DeviceMount.wall)) return h3.DeviceMount.wall;
     if (cur == h3.DeviceMount.up ||
         !m.contains(h3.DeviceMount.wall) ||
         !m.contains(h3.DeviceMount.ceiling)) {
@@ -644,9 +736,14 @@ class _FloorEditorScreenState extends ConsumerState<FloorEditorScreen> {
   /// ihrer Höhe (oder der gewählten, solange die Montage bleibt),
   /// Stehlampen auf dem Boden, Tischlampen, Lightbars und Ähnliches auf dem
   /// Möbelstück darunter, sonst auf dem Boden.
-  double _placeZ(String? entityId, FloorKind kind, GridPoint cell) {
+  double _placeZ(
+    String? entityId,
+    FloorKind kind,
+    GridPoint cell, {
+    bool wall = false,
+  }) {
     final spec = h3.deviceSpec(_modelOf(entityId, kind));
-    final how = _mountAt(entityId, kind, cell);
+    final how = _mountAt(entityId, kind, cell, wall: wall);
     final old = entityId == null ? null : _plan!.placementOf(entityId);
     final std = spec.heightFor(how);
     final kept = old != null && deviceMountOf(old) == how ? old.height : null;
@@ -665,7 +762,12 @@ class _FloorEditorScreenState extends ConsumerState<FloorEditorScreen> {
   }
 
   /// Vorschau des Modells beim Ziehen (eingerastet), `null` aus.
-  void _showPreview(GridPoint? cell, FloorKind kind, String? entityId) {
+  void _showPreview(
+    GridPoint? cell,
+    FloorKind kind,
+    String? entityId, {
+    bool wall = false,
+  }) {
     final c = _proj.controller;
     if (c == null || !_view3d) return;
     if (cell == null) return c.setPreview(null);
@@ -674,9 +776,9 @@ class _FloorEditorScreenState extends ConsumerState<FloorEditorScreen> {
     c.setPreview(
       _modelOf(entityId, kind),
       at: Offset(cell.x + 0.5, cell.y + 0.5) * m,
-      z: _placeZ(entityId, kind, cell),
+      z: _placeZ(entityId, kind, cell, wall: wall),
       roomId: loc == kOutsideId ? null : loc,
-      mount: _mountAt(entityId, kind, cell),
+      mount: _mountAt(entityId, kind, cell, wall: wall),
     );
   }
 
@@ -692,13 +794,17 @@ class _FloorEditorScreenState extends ConsumerState<FloorEditorScreen> {
     FloorKind kind, [
     String? entityId,
   ]) {
-    final cell = _dropCell(global, z: entityId == null ? 0 : _dragZ(entityId));
-    _showPreview(cell, kind, entityId);
+    final t = _deviceTarget(global, entityId, kind);
+    final cell = t?.cell;
+    final wall = t?.wall ?? false;
+    _showPreview(cell, kind, entityId, wall: wall);
     final loc = cell == null ? null : _plan!.locationOfCell(cell.x, cell.y);
     _dragInfo.value = EditorDragInfo(
       name: name,
       kind: kind,
-      target: loc == null ? null : _roomName(loc),
+      target: loc == null
+          ? null
+          : (wall ? '${_roomName(loc)} · an der Wand' : _roomName(loc)),
       remove: cell == null && _overPool(global),
     );
     if (cell != _dragCell || loc != _hover) {
@@ -718,7 +824,10 @@ class _FloorEditorScreenState extends ConsumerState<FloorEditorScreen> {
   }) {
     final plan = _plan!;
     final old = plan.placementOf(entityId);
-    final cell = _dropCell(global, z: _dragZ(entityId));
+    final k = kind ?? old?.resolvedKind ?? FloorKind.ofEntity(entityId);
+    final target = _deviceTarget(global, entityId, k);
+    final cell = target?.cell;
+    final wall = target?.wall ?? false;
     _dragInfo.value = null;
     setState(() {
       _hover = null;
@@ -736,10 +845,9 @@ class _FloorEditorScreenState extends ConsumerState<FloorEditorScreen> {
       }
       return;
     }
-    final k = kind ?? old?.resolvedKind ?? FloorKind.ofEntity(entityId);
     final spec = h3.deviceSpec(_modelOf(entityId, k));
-    final how = _mountAt(entityId, k, cell);
-    final z = _placeZ(entityId, k, cell);
+    final how = _mountAt(entityId, k, cell, wall: wall);
+    final z = _placeZ(entityId, k, cell, wall: wall);
     final std = spec.heightFor(how);
     final p = FloorPlacement(
       entityId: entityId,
@@ -1308,11 +1416,44 @@ class _FloorEditorScreenState extends ConsumerState<FloorEditorScreen> {
     setState(() => _fsel = hit?.id);
   }
 
+  /// Menü eines Möbelstücks (Rechtsklick in 2D und 3D).
+  void _furnitureMenu(FloorFurniture hit, Offset global) {
+    final ctrl = ctrlLabel(context);
+    unawaited(
+      showHavenContextMenu(context, global, [
+        HavenMenuItem(
+          label: 'Um 90° drehen',
+          icon: Icons.rotate_right_rounded,
+          shortcut: 'R',
+          onSelected: () => _rotateSel(90),
+        ),
+        if (hit.canHaveSensor)
+          HavenMenuItem(
+            label: hit.sensor == null ? 'Sensor verknüpfen' : 'Sensor ändern',
+            icon: Icons.sensors_rounded,
+            onSelected: () => _linkSensor(hit),
+          ),
+        HavenMenuItem(
+          label: 'Duplizieren',
+          icon: Icons.copy_all_rounded,
+          shortcut: '${ctrl}D',
+          onSelected: _duplicateSel,
+        ),
+        HavenMenuItem(
+          label: 'Löschen',
+          icon: Icons.delete_outline_rounded,
+          shortcut: 'Entf',
+          destructive: true,
+          onSelected: _deleteFurnitureSel,
+        ),
+      ]),
+    );
+  }
+
   /// Rechtsklick: auf einem Möbelstück dessen Menü, auf einem Raum (Modus
   /// Räume) Zuordnen und Löschen.
   void _secondaryTap(TapUpDetails d) {
     final plan = _plan!;
-    final ctrl = ctrlLabel(context);
     if (_mode == _Mode.furniture) {
       final hit = furnitureAt(
         plan.furniture,
@@ -1324,35 +1465,7 @@ class _FloorEditorScreenState extends ConsumerState<FloorEditorScreen> {
         return;
       }
       setState(() => _fsel = hit.id);
-      unawaited(
-        showHavenContextMenu(context, d.globalPosition, [
-          HavenMenuItem(
-            label: 'Um 90° drehen',
-            icon: Icons.rotate_right_rounded,
-            shortcut: 'R',
-            onSelected: () => _rotateSel(90),
-          ),
-          if (hit.canHaveSensor)
-            HavenMenuItem(
-              label: hit.sensor == null ? 'Sensor verknüpfen' : 'Sensor ändern',
-              icon: Icons.sensors_rounded,
-              onSelected: () => _linkSensor(hit),
-            ),
-          HavenMenuItem(
-            label: 'Duplizieren',
-            icon: Icons.copy_all_rounded,
-            shortcut: '${ctrl}D',
-            onSelected: _duplicateSel,
-          ),
-          HavenMenuItem(
-            label: 'Löschen',
-            icon: Icons.delete_outline_rounded,
-            shortcut: 'Entf',
-            destructive: true,
-            onSelected: _deleteFurnitureSel,
-          ),
-        ]),
-      );
+      _furnitureMenu(hit, d.globalPosition);
       return;
     }
     if (_mode == _Mode.rooms) {
@@ -1399,6 +1512,8 @@ class _FloorEditorScreenState extends ConsumerState<FloorEditorScreen> {
     if (_geo == null || _fop != null || _op != null) return;
     MouseCursor c = MouseCursor.defer;
     switch (_mode) {
+      case _Mode.furniture when _furn3d:
+        c = _hover3d(p);
       case _Mode.furniture:
         final h = _furnHandleAt(p);
         if (h != null) {
@@ -1445,6 +1560,8 @@ class _FloorEditorScreenState extends ConsumerState<FloorEditorScreen> {
   }
 
   void _addFurniture(FurnitureType t, {Offset? at}) {
+    // In 3D folgt das neue Möbelstück erst Finger oder Maus.
+    if (_furniture3d && at == null) return _startPlacing(t);
     final plan = _plan!;
     var spot = at ?? _defaultSpot(plan);
     // Mehrfach hinzufügen stapelt nicht genau übereinander.
@@ -1638,6 +1755,370 @@ class _FloorEditorScreenState extends ConsumerState<FloorEditorScreen> {
     );
   }
 
+  // ---- Einrichten in 3D -----------------------------------------------------
+
+  /// 2D oder 3D beim Einrichten (gemerkt für das nächste Mal).
+  void _setFurniture3d(bool on) {
+    if (on == _furn3d) return;
+    _cancelPlacing();
+    setState(() {
+      _furn3d = on;
+      _cursor = MouseCursor.defer;
+    });
+    unawaited(ref.read(settingsStoreProvider).setEditorFurniture3d(on));
+  }
+
+  double get _m => _plan!.grid.cellMeters;
+
+  /// Punkt auf dem Boden (Zellen) unter [local] in der 3D-Ansicht, auf der
+  /// Höhe [z] (Meter).
+  Offset? _floor3d(Offset local, {double z = 0}) {
+    final p = _proj.current;
+    if (p == null) return null;
+    return floorCellAt(p.camera, p.size, local, _m, z: z);
+  }
+
+  FloorFurniture? _furnitureAt3d(Offset local) {
+    final p = _proj.current;
+    if (p == null) return null;
+    return furnitureAt3d(_plan!.furniture, p.camera, p.size, local, _m);
+  }
+
+  /// Trifft [local] das Möbelstück [f] (Quader in der 3D-Ansicht)?
+  bool _hits3d(FloorFurniture f, Offset local) {
+    final p = _proj.current;
+    if (p == null) return false;
+    return rayIntoFurniture(h3.rayAt(p.camera, local, p.size), f, _m) != null;
+  }
+
+  bool _onKnob3d(FloorFurniture f, Offset local) {
+    final p = _proj.current;
+    if (p == null) return false;
+    return Furniture3dOverlay.onKnob(context, p, f, _m, local);
+  }
+
+  /// Vorschau [f] in der Szene (gezogen oder neu), `null` aus.
+  void _preview3d(FloorFurniture? f) {
+    _proj.controller?.setObjectPreview(
+      f == null
+          ? null
+          : furnitureObject(f, _m, roomId: _plan!.roomAt(f.center)?.id),
+    );
+  }
+
+  /// Bildmitte auf dem Boden (Zellen), dort erscheint ein neues Möbelstück.
+  Offset? _viewCenter3d() {
+    final p = _proj.current;
+    if (p == null) return null;
+    return _floor3d(p.size.center(Offset.zero));
+  }
+
+  /// Letzte Mausposition über der Fläche (neue Möbel erscheinen dort).
+  Offset? _mouse3d;
+
+  /// Neues Möbelstück aus der Bibliothek: erscheint unter der Maus bzw. in
+  /// der Bildmitte und folgt dann Finger oder Maus. Antippen stellt es ab.
+  void _startPlacing(FurnitureType t, {Offset? at}) {
+    final plan = _plan!;
+    final spot =
+        at ??
+        (_mouse3d == null ? null : _floor3d(_mouse3d!)) ??
+        _viewCenter3d() ??
+        _defaultSpot(plan);
+    _ghostRot = 0;
+    final f = placeFurnitureAt(
+      FloorFurniture.of(t, id: newFurnitureId(), center: spot),
+      spot,
+      plan,
+      snap: !_shift,
+    );
+    setState(() {
+      _ghost = f;
+      _fsel = null;
+    });
+    _preview3d(f);
+  }
+
+  void _setGhost(FloorFurniture next) {
+    final g = _ghost;
+    if (g == null || g == next) return;
+    if (!_shift && (g.center != next.center || g.rotation != next.rotation)) {
+      Haptics.tick();
+    }
+    setState(() => _ghost = next);
+    _preview3d(next);
+  }
+
+  /// Vorschau mit der Mitte nach [cell] (eingerastet, an der Wand).
+  void _moveGhost(Offset cell) {
+    final g = _ghost;
+    if (g == null) return;
+    _setGhost(
+      placeFurnitureAt(
+        g.copyWith(rotation: _ghostRot),
+        cell,
+        _plan!,
+        snap: !_shift,
+      ),
+    );
+  }
+
+  void _rotateGhost(double deg) {
+    final g = _ghost;
+    if (g == null) return;
+    _ghostRot = normalizeDegrees(_ghostRot + deg);
+    _setGhost(rotateFurnitureBy(g, deg));
+  }
+
+  /// Stellt das neue Möbelstück ab: in den Plan, gewählt.
+  void _dropGhost() {
+    final g = _ghost;
+    if (g == null) return;
+    Haptics.tap();
+    final plan = _plan!;
+    _ghostGrab = null;
+    _preview3d(null);
+    setState(() {
+      _ghost = null;
+      _fsel = g.id;
+    });
+    _commit(plan, plan.withFurniture(g));
+    final room = plan.roomAt(g.center);
+    _say(
+      '${g.type?.name ?? 'Möbelstück'} steht '
+      '${room == null ? 'draußen' : 'in ${room.name}'}',
+    );
+  }
+
+  void _cancelPlacing() {
+    if (_ghost == null) return;
+    _ghostGrab = null;
+    _preview3d(null);
+    setState(() => _ghost = null);
+  }
+
+  /// Ein Finger (oder die linke Maustaste) setzt auf: Vorschau, Drehgriff
+  /// oder ein Möbelstück übernehmen, sonst dreht er die Kamera.
+  bool _grabStart3d(Offset local) {
+    final plan = _plan!;
+    if (_ghost != null) {
+      // Auf der Vorschau: mitnehmen. Daneben: sie springt unter den Finger.
+      if (!_hits3d(_ghost!, local)) {
+        final c = _floor3d(local);
+        if (c != null) _moveGhost(c);
+      }
+      final item = _ghost!.copyWith(rotation: _ghostRot);
+      final z = furnitureTop(item);
+      final from = _floor3d(local, z: z);
+      _ghostGrab = from == null ? null : (from: from, item: item, z: z);
+      return true;
+    }
+    final sel = _selFurniture;
+    if (sel != null && _onKnob3d(sel, local)) {
+      Haptics.tick();
+      _fop = _FurnOp(
+        _FurnOpKind.rotate,
+        plan,
+        sel,
+        _floor3d(local) ?? sel.center,
+      );
+      setState(() => _cursor = SystemMouseCursors.grabbing);
+      _preview3d(sel);
+      return true;
+    }
+    final hit = _furnitureAt3d(local);
+    if (hit == null) return false;
+    final z = furnitureTop(hit);
+    Haptics.tick();
+    _fop = _FurnOp(
+      _FurnOpKind.move,
+      plan,
+      hit,
+      _floor3d(local, z: z) ?? hit.center,
+      z: z,
+    );
+    setState(() {
+      _fsel = hit.id;
+      _cursor = SystemMouseCursors.grabbing;
+    });
+    _preview3d(hit);
+    return true;
+  }
+
+  /// Finger bewegt (Position ab dem Aufsetzpunkt), [turn] ist die Drehung
+  /// zweier Finger (Bogenmaß, im Uhrzeigersinn).
+  void _grabUpdate3d(Offset local, double turn) {
+    final snap = !_shift;
+    final twist = turn * 180 / math.pi;
+    final twisting = twist.abs() >= 5;
+    if (_ghost != null) {
+      final gg = _ghostGrab;
+      if (gg == null) return;
+      final at = _floor3d(local, z: gg.z);
+      if (at == null) return;
+      var next = placeFurnitureAt(
+        gg.item,
+        gg.item.center + (at - gg.from),
+        _plan!,
+        snap: snap && !twisting,
+      );
+      if (twisting) {
+        next = next.copyWith(
+          rotation: snapRotation(gg.item.rotation + twist, free: !snap),
+        );
+        _ghostTwist = next.rotation;
+      }
+      _setGhost(next);
+      return;
+    }
+    final op = _fop;
+    if (op == null) return;
+    FloorFurniture next;
+    switch (op.kind) {
+      case _FurnOpKind.move:
+        final at = _floor3d(local, z: op.z);
+        if (at == null) return;
+        final delta = at - op.start;
+        if (twisting) {
+          // Zwei Finger drehen: im Raster, aber frei von der Wand.
+          next = moveFurniture(op.item, delta, op.base.grid, snap: snap)
+              .copyWith(
+                rotation: snapRotation(op.item.rotation + twist, free: !snap),
+              );
+        } else {
+          next = moveFurniture3d(op.item, delta, op.base, snap: snap);
+        }
+      case _FurnOpKind.rotate:
+        final at = _floor3d(local);
+        if (at == null) return;
+        next = rotateAround(op.item, op.start, at, snap: snap);
+      case _FurnOpKind.resize:
+        return;
+    }
+    final cur = _plan!.furnitureById(next.id);
+    if (cur == next) return;
+    if (snap) Haptics.tick();
+    op.changed = true;
+    setState(() => _plan = op.base.withFurniture(next));
+    _preview3d(next);
+  }
+
+  void _grabEnd3d() {
+    if (_ghost != null) {
+      _ghostGrab = null;
+      if (_ghostTwist != null) _ghostRot = _ghostTwist!;
+      _ghostTwist = null;
+      return;
+    }
+    final op = _fop;
+    _fop = null;
+    if (op == null) return;
+    _preview3d(null);
+    setState(() => _cursor = MouseCursor.defer);
+    if (op.changed) _record(op.base);
+  }
+
+  /// Tippen in 3D: neues Möbelstück abstellen, sonst wählen oder abwählen.
+  void _tap3d(Offset global) {
+    final local = _toLocal(global);
+    if (local == null) return;
+    final g = _ghost;
+    if (g != null) {
+      if (!_hits3d(g, local)) {
+        final c = _floor3d(local);
+        if (c != null) _moveGhost(c);
+      }
+      _dropGhost();
+      return;
+    }
+    final hit = _furnitureAt3d(local);
+    Haptics.tick();
+    setState(() => _fsel = hit?.id);
+  }
+
+  void _secondaryTap3d(Offset global) {
+    final local = _toLocal(global);
+    if (local == null) return;
+    if (_ghost != null) return _cancelPlacing();
+    final hit = _furnitureAt3d(local);
+    if (hit == null) {
+      setState(() => _fsel = null);
+      return;
+    }
+    setState(() => _fsel = hit.id);
+    _furnitureMenu(hit, global);
+  }
+
+  /// Umschalt oder Alt + Mausrad dreht das gewählte (oder neue)
+  /// Möbelstück in 15°-Schritten; ohne zoomt die Kamera.
+  bool _scroll3d(PointerScrollEvent e) {
+    final k = HardwareKeyboard.instance;
+    if (!k.isShiftPressed && !k.isAltPressed) return false;
+    final d = e.scrollDelta.dy != 0 ? e.scrollDelta.dy : e.scrollDelta.dx;
+    if (d == 0) return false;
+    final step = d > 0 ? kFurnitureRotationStep : -kFurnitureRotationStep;
+    if (_ghost != null) {
+      _rotateGhost(step);
+      return true;
+    }
+    final f = _selFurniture;
+    if (f == null || _fop != null) return false;
+    Haptics.tick();
+    final plan = _plan!;
+    final next = plan.withFurniture(rotateFurnitureBy(f, step));
+    if (_wheelTimer?.isActive ?? false) {
+      // Dieselbe Drehung: nur speichern, ein Schritt zum Rückgängigmachen.
+      setState(() => _plan = next);
+      unawaited(ref.read(floorPlanProvider.notifier).save(next));
+    } else {
+      _commit(plan, next);
+    }
+    _wheelTimer?.cancel();
+    _wheelTimer = Timer(const Duration(milliseconds: 700), () {});
+    return true;
+  }
+
+  /// Maus über der 3D-Ansicht: die Vorschau folgt, sonst die passende Form.
+  MouseCursor _hover3d(Offset p) {
+    _mouse3d = p;
+    if (_ghost != null) {
+      final c = _floor3d(p);
+      if (c != null) _moveGhost(c);
+      return SystemMouseCursors.precise;
+    }
+    final sel = _selFurniture;
+    if (sel != null && _onKnob3d(sel, p)) return SystemMouseCursors.grab;
+    if (_furnitureAt3d(p) != null) return SystemMouseCursors.move;
+    return MouseCursor.defer;
+  }
+
+  /// Über der 3D-Szene: Grundfläche, Drehring und Werkzeuge des gewählten
+  /// Möbelstücks bzw. die Grundfläche des neuen.
+  Widget _foreground3d(BuildContext context, h3.SceneProjection p) {
+    final g = _ghost;
+    final op = _fop;
+    final item = g ?? _selFurniture;
+    final rotating = op?.kind == _FurnOpKind.rotate;
+    return Furniture3dOverlay(
+      projection: p,
+      item: item,
+      cellMeters: _m,
+      shift: item == null ? Offset.zero : sceneFitShift(item, _plan!),
+      ghost: g != null,
+      ring: g == null && item != null && (op == null || rotating),
+      label: rotating && item != null ? '${item.rotation.round()}°' : null,
+      toolbar: g != null || op != null || item == null
+          ? null
+          : FurnitureToolbar3d(
+              duplicateShortcut: '${ctrlLabel(context)}D',
+              onRotateLeft: () => _rotateSel(-90),
+              onRotateRight: () => _rotateSel(90),
+              onDuplicate: _duplicateSel,
+              onDelete: _deleteFurnitureSel,
+            ),
+    );
+  }
+
   /// Tastatur: Esc, Strg/Cmd+Z, Entf, Strg/Cmd+D, R, Pfeile.
   KeyEventResult _onKey(FocusNode node, KeyEvent e) {
     if (e is! KeyDownEvent && e is! KeyRepeatEvent) {
@@ -1656,6 +2137,24 @@ class _FloorEditorScreenState extends ConsumerState<FloorEditorScreen> {
             k == LogicalKeyboardKey.arrowUp ||
             k == LogicalKeyboardKey.arrowDown)) {
       return KeyEventResult.handled;
+    }
+    // Neues Möbelstück in 3D: Esc bricht ab, Enter stellt ab, R dreht.
+    if (_ghost != null) {
+      if (k == LogicalKeyboardKey.escape ||
+          k == LogicalKeyboardKey.delete ||
+          k == LogicalKeyboardKey.backspace) {
+        _cancelPlacing();
+        return KeyEventResult.handled;
+      }
+      if (k == LogicalKeyboardKey.enter ||
+          k == LogicalKeyboardKey.numpadEnter) {
+        _dropGhost();
+        return KeyEventResult.handled;
+      }
+      if (!ctrl && k == LogicalKeyboardKey.keyR) {
+        _rotateGhost(hk.isShiftPressed ? -kFurnitureRotationStep : 90);
+        return KeyEventResult.handled;
+      }
     }
     if (k == LogicalKeyboardKey.escape) {
       if (_fsel != null || _sel != null || _dsel != null) {
@@ -1704,6 +2203,7 @@ class _FloorEditorScreenState extends ConsumerState<FloorEditorScreen> {
 
   /// Bibliotheks-Element ziehbar: Vorschau in echter Größe unter dem Zeiger.
   Widget _furnitureDrag(FurnitureType t, Widget child) {
+    if (_furniture3d) return _furnitureDrag3d(t, child);
     final scale = _geo?.scale ?? 20;
     final size = Size(t.w * scale, t.h * scale);
     final hv = context.hv;
@@ -1735,6 +2235,72 @@ class _FloorEditorScreenState extends ConsumerState<FloorEditorScreen> {
       data: t.id,
       dragAnchorStrategy: anchor,
       feedback: feedback,
+      onDragEnd: end,
+      child: child,
+    );
+  }
+
+  /// 3D: Bibliotheks-Element in die Szene ziehen. Über der Fläche steht die
+  /// Vorschau unter dem Finger, Loslassen dort stellt sie ab, daneben nicht.
+  Widget _furnitureDrag3d(FurnitureType t, Widget child) {
+    final hv = context.hv;
+    final feedback = Material(
+      type: MaterialType.transparency,
+      child: FractionalTranslation(
+        translation: const Offset(-0.5, -1.6),
+        child: Container(
+          padding: const EdgeInsets.fromLTRB(6, 5, 12, 5),
+          decoration: BoxDecoration(
+            color: hv.s1,
+            borderRadius: BorderRadius.circular(HavenRadii.pill),
+            border: Border.all(color: hv.acc.withValues(alpha: 0.6)),
+            boxShadow: hv.shadowSmall,
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              FurnitureThumb(kind: t.id, size: 26),
+              const SizedBox(width: 6),
+              Text(t.name, style: HavenText.label.copyWith(color: hv.tx)),
+            ],
+          ),
+        ),
+      ),
+    );
+    void update(DragUpdateDetails d) {
+      final local = _toLocal(d.globalPosition);
+      if (local == null || !(Offset.zero & _size).contains(local)) {
+        return _cancelPlacing();
+      }
+      final c = _floor3d(local);
+      if (c == null) return;
+      if (_ghost?.kind == t.id) {
+        _moveGhost(c);
+      } else {
+        _startPlacing(t, at: c);
+      }
+    }
+
+    void end(DraggableDetails _) => _dropGhost();
+    if (!context.isDesktopLayout) {
+      return LongPressDraggable<String>(
+        data: t.id,
+        delay: const Duration(milliseconds: 150),
+        hapticFeedbackOnStart: true,
+        dragAnchorStrategy: pointerDragAnchorStrategy,
+        feedback: feedback,
+        onDragStarted: _cancelPlacing,
+        onDragUpdate: update,
+        onDragEnd: end,
+        child: child,
+      );
+    }
+    return Draggable<String>(
+      data: t.id,
+      dragAnchorStrategy: pointerDragAnchorStrategy,
+      feedback: feedback,
+      onDragStarted: _cancelPlacing,
+      onDragUpdate: update,
       onDragEnd: end,
       child: child,
     );
@@ -1829,8 +2395,12 @@ class _FloorEditorScreenState extends ConsumerState<FloorEditorScreen> {
         Row(children: tools),
         const SizedBox(height: 8),
         Text(
-          'Ziehen verschiebt im Halbraster, mit Shift frei. Die Griffe '
-          'ändern die Größe, der runde Griff dreht in 15°-Schritten.',
+          _furniture3d
+              ? 'Ziehen verschiebt im Halbraster, mit Shift frei. Schränke, '
+                    'Betten und Sofas rücken mit dem Rücken an die Wand. Der '
+                    'Ring dreht in 15°-Schritten, Shift + Mausrad ebenso.'
+              : 'Ziehen verschiebt im Halbraster, mit Shift frei. Die Griffe '
+                    'ändern die Größe, der runde Griff dreht in 15°-Schritten.',
           style: HavenText.caption.copyWith(color: hv.tx3),
         ),
       ],
@@ -1858,8 +2428,12 @@ class _FloorEditorScreenState extends ConsumerState<FloorEditorScreen> {
                       alignment: Alignment.centerLeft,
                       child: Text(
                         _hint ??
-                            'Antippen setzt in die Mitte, halten und ziehen '
-                                'legt es genau ab. Möbel sind nur Deko.',
+                            (_furniture3d
+                                ? 'Antippen, dann folgt es dem Finger. Möbel '
+                                      'ziehen verschiebt, der Ring dreht.'
+                                : 'Antippen setzt in die Mitte, halten und '
+                                      'ziehen legt es genau ab. Möbel sind '
+                                      'nur Deko.'),
                         maxLines: 2,
                         style: HavenText.caption.copyWith(
                           color: _hint == null ? hv.tx2 : hv.tx,
@@ -1919,9 +2493,15 @@ class _FloorEditorScreenState extends ConsumerState<FloorEditorScreen> {
                             const SizedBox(height: 4),
                             Text(
                               _hint ??
-                                  'Möbel in den Grundriss ziehen oder '
-                                      'anklicken. Sie sind nur Deko und '
-                                      'liegen auf der Karte unter dem Licht.',
+                                  (_furniture3d
+                                      ? 'Möbel anklicken: es folgt der Maus, '
+                                            'ein Klick stellt es ab. Ziehen '
+                                            'verschiebt, der Ring dreht. Sie '
+                                            'sind nur Deko.'
+                                      : 'Möbel in den Grundriss ziehen oder '
+                                            'anklicken. Sie sind nur Deko und '
+                                            'liegen auf der Karte unter dem '
+                                            'Licht.'),
                               style: HavenText.caption.copyWith(
                                 color: _hint == null ? hv.tx2 : hv.tx,
                               ),
@@ -2010,13 +2590,16 @@ class _FloorEditorScreenState extends ConsumerState<FloorEditorScreen> {
             (_Mode.furniture, 'Einrichten'),
           ],
           selected: _mode,
-          onChanged: (m) => setState(() {
-            _mode = m;
-            _hover = null;
-            _dragCell = null;
-            _cursor = MouseCursor.defer;
-            if (m != _Mode.furniture) _fsel = null;
-          }),
+          onChanged: (m) {
+            _cancelPlacing();
+            setState(() {
+              _mode = m;
+              _hover = null;
+              _dragCell = null;
+              _cursor = MouseCursor.defer;
+              if (m != _Mode.furniture) _fsel = null;
+            });
+          },
         ),
       ),
     );
@@ -2035,6 +2618,22 @@ class _FloorEditorScreenState extends ConsumerState<FloorEditorScreen> {
                   Positioned(top: 6, right: 6, child: _lightToggle()),
                 if (_mode == _Mode.rooms)
                   Positioned(top: 6, right: 6, child: _northControl(plan)),
+                if (furniture)
+                  Positioned(top: 6, right: 6, child: _furnitureViewToggle()),
+                if (_furniture3d && _ghost != null)
+                  Positioned(
+                    left: 8,
+                    right: 8,
+                    bottom: 10,
+                    child: Center(
+                      child: PlacingBar(
+                        item: _ghost!,
+                        onRotate: () => _rotateGhost(90),
+                        onDrop: _dropGhost,
+                        onCancel: _cancelPlacing,
+                      ),
+                    ),
+                  ),
               ],
             );
           },
@@ -2169,7 +2768,12 @@ class _FloorEditorScreenState extends ConsumerState<FloorEditorScreen> {
       sun: ref.watch(map3dSettingsProvider).environment
           ? mapSunOf(ref, stable.north)
           : null,
-      transparentWalls: ref.watch(map3dSettingsProvider).transparentWalls,
+      // Beim Einrichten in 3D verdecken die vorderen Wände sonst die Möbel
+      // dahinter.
+      transparentWalls:
+          _furniture3d || ref.watch(map3dSettingsProvider).transparentWalls,
+      fitRooms: _furniture3d,
+      fitRoomId: _furniture3d ? _sel : null,
       geo: geo,
       tilt: _view3d,
       projection: _proj,
@@ -2182,6 +2786,22 @@ class _FloorEditorScreenState extends ConsumerState<FloorEditorScreen> {
       },
       interactiveMarkers: _mode == _Mode.devices,
       highlightRoomId: !rooms ? _hover : null,
+      selectedObjects: _furniture3d && fsel != null && _fop == null
+          ? {fsel.id}
+          : const {},
+      grab: _furniture3d
+          ? h3.SceneGrab(
+              start: _grabStart3d,
+              update: _grabUpdate3d,
+              end: _grabEnd3d,
+            )
+          : null,
+      onTapAt: _furniture3d ? (_, global) => _tap3d(global) : null,
+      onSecondaryTap: _furniture3d
+          ? (_, global) => _secondaryTap3d(global)
+          : null,
+      onScroll: _furniture3d ? _scroll3d : null,
+      foreground: _furniture3d ? _foreground3d : null,
       hiddenObjects: {
         // Räume zeichnen ohne Möbel; Geräte setzen mit Möbeln (Tischlampe
         // auf den Tisch), das gezogene Gerät weicht der Vorschau.
@@ -2225,7 +2845,7 @@ class _FloorEditorScreenState extends ConsumerState<FloorEditorScreen> {
         onSecondaryTapUp: _secondaryTap,
         child: IgnorePointer(child: view),
       );
-    } else if (furniture) {
+    } else if (furniture && !_furn3d) {
       child = GestureDetector(
         behavior: HitTestBehavior.opaque,
         dragStartBehavior: DragStartBehavior.down,
@@ -2378,6 +2998,40 @@ class _FloorEditorScreenState extends ConsumerState<FloorEditorScreen> {
               ],
               selected: _light,
               onChanged: (v) => setState(() => _light = v),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Einrichten von oben (2D) oder schräg in 3D.
+  Widget _furnitureViewToggle() {
+    final hv = context.hv;
+    return Container(
+      padding: const EdgeInsets.only(left: 10),
+      decoration: BoxDecoration(
+        color: hv.s1.withValues(alpha: 0.92),
+        borderRadius: BorderRadius.circular(HavenRadii.pill),
+        border: Border.all(color: hv.ln),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            _furn3d ? Icons.view_in_ar_rounded : Icons.grid_view_rounded,
+            size: 18,
+            color: _furn3d ? hv.acc : hv.tx2,
+          ),
+          const SizedBox(width: 4),
+          SizedBox(
+            width: 118,
+            child: HavenSegmented<bool>(
+              key: const ValueKey('editor-furniture-view'),
+              neutral: true,
+              options: const [(false, '2D'), (true, '3D')],
+              selected: _furn3d,
+              onChanged: _setFurniture3d,
             ),
           ),
         ],
@@ -3377,7 +4031,32 @@ class _EditorScene extends StatefulWidget {
     this.lamps = const {},
     this.sun,
     this.transparentWalls = false,
+    this.selectedObjects = const {},
+    this.fitRooms = false,
+    this.fitRoomId,
+    this.grab,
+    this.onTapAt,
+    this.onSecondaryTap,
+    this.onScroll,
+    this.foreground,
   });
+
+  /// Hervorgehobene Möbel (Akzentkanten).
+  final Set<String> selectedObjects;
+
+  /// Schräg: die Räume (bzw. Raum [fitRoomId]) einpassen statt des ganzen
+  /// Rasters.
+  final bool fitRooms;
+  final String? fitRoomId;
+
+  /// Gesten des Editors in der 3D-Szene (Einrichten in 3D).
+  final h3.SceneGrab? grab;
+  final h3.SceneHitCallback? onTapAt;
+  final h3.SceneHitCallback? onSecondaryTap;
+  final bool Function(PointerScrollEvent e)? onScroll;
+
+  /// Über der Szene, folgt der Kamera (Griffe, Werkzeuge in 3D).
+  final Widget Function(BuildContext context, h3.SceneProjection p)? foreground;
 
   /// Sonnenrichtung (siehe `mapSunOf`), `null`: Standard.
   final h3.V3? sun;
@@ -3410,7 +4089,7 @@ class _EditorScene extends StatefulWidget {
 
 class _EditorSceneState extends State<_EditorScene> {
   final _c = h3.SceneController();
-  (h3.OrbitCamera, bool)? _camKey;
+  (h3.OrbitCamera, bool, bool, String?)? _camKey;
 
   @override
   void dispose() {
@@ -3431,16 +4110,34 @@ class _EditorSceneState extends State<_EditorScene> {
     final m = w.plan.grid.cellMeters;
     w.projection?.controller = _c;
     final top = _cameraFor(w.geo, m);
-    final key = (top, w.tilt);
+    final key = (top, w.tilt, w.fitRooms, w.fitRoomId);
     if (key != _camKey) {
       // Neue Fläche oder Ansicht: Kamera setzen (schräg: von dort aus
       // frei drehbar, bis sich etwas ändert).
       _camKey = key;
-      _c.preset(
-        w.tilt
-            ? top.copyWith(yaw: -0.35, pitch: 0.85, scale: top.scale * 0.9)
-            : top,
-      );
+      var cam = w.tilt
+          ? top.copyWith(yaw: -0.35, pitch: 0.85, scale: top.scale * 0.9)
+          : top;
+      if (w.tilt && w.fitRooms && !w.geo.size.isEmpty) {
+        // Einrichten: nur die Wohnung (bzw. den gewählten Raum) einpassen,
+        // oben frei für den Schalter, unten für die Leiste beim Platzieren.
+        final scene = sceneOfPlan(w.plan);
+        final room = scene.room(w.fitRoomId ?? '') == null ? null : w.fitRoomId;
+        final pts = scene.points(roomId: room).toList();
+        if (pts.isNotEmpty) {
+          final size = w.geo.size;
+          final area = const EdgeInsets.fromLTRB(
+            8,
+            52,
+            8,
+            64,
+          ).deflateRect(Offset.zero & size);
+          cam = cam
+              .fit(pts, area.size, padding: 12)
+              .copyWith(pan: area.center - size.center(Offset.zero));
+        }
+      }
+      _c.preset(cam);
     }
     final byId = {for (final n in w.nodes) n.id: n};
     // Wie die Karte ohne Himmel: im dunklen Design dieselben Farben mit
@@ -3468,6 +4165,12 @@ class _EditorSceneState extends State<_EditorScene> {
       quality: w.lit ? h3.SceneQuality.draftLit : h3.SceneQuality.draft,
       gestures: w.tilt ? h3.SceneGestures.orbit : h3.SceneGestures.none,
       fitOnStart: false,
+      selected: w.selectedObjects,
+      grab: w.grab,
+      onTapAt: w.onTapAt,
+      onSecondaryTap: w.onSecondaryTap,
+      onScroll: w.onScroll,
+      foregroundBuilder: w.foreground,
       // Schräg stehen die Räume (Wandgeräte sitzen an ihren Wänden).
       raisedRooms: w.tilt ? null : const {},
       selectedRoomId: w.highlightRoomId,

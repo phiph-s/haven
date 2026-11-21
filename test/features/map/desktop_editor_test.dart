@@ -105,7 +105,11 @@ void main() {
     tester,
   ) async {
     final repo = _MemoryRepo(kFakeFloorPlan);
-    await _pump(tester, '/map/editor?mode=furniture&sel=salon', repo: repo);
+    await _pump(
+      tester,
+      '/map/editor?mode=furniture&view=2d&sel=salon',
+      repo: repo,
+    );
     final before = kFakeFloorPlan.furniture.length;
     // Wohnen ist vorgewählt, das Sofa steht vorne.
     final sofa = find.byWidgetPredicate(

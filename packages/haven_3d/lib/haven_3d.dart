@@ -22,6 +22,7 @@ export 'src/furniture/catalog.dart'
         kFurnitureModels;
 export 'src/model.dart';
 export 'src/picking.dart';
+export 'src/placing.dart';
 export 'src/quality.dart';
 export 'src/sample.dart';
 export 'src/sky.dart';

@@ -65,6 +65,7 @@ class SettingsStore implements LocalPrefs {
   static const _kMap3dQuality = 'map_3d_quality';
   static const _kMap3dPerspective = 'map_3d_perspective';
   static const _kMap3dTilt = 'map_3d_tilt';
+  static const _kEditorFurniture3d = 'editor_furniture_3d';
   static const _kMap3dTransparentWalls = 'map_3d_transparent_walls';
   static const _kMap3dEnvironment = 'map_3d_environment';
   static const _kHomeRoomsDetailed = 'home_rooms_detailed';
@@ -181,6 +182,11 @@ class SettingsStore implements LocalPrefs {
   /// Zuletzt gewählte Ansicht: schräg (Puppenhaus) statt Draufsicht.
   bool get map3dTilt => _p.getBool(_kMap3dTilt) ?? false;
   Future<void> setMap3dTilt(bool v) => _p.setBool(_kMap3dTilt, v);
+
+  /// Einrichten im Grundriss-Editor in 3D (Standard) statt von oben.
+  bool get editorFurniture3d => _p.getBool(_kEditorFurniture3d) ?? true;
+  Future<void> setEditorFurniture3d(bool v) =>
+      _p.setBool(_kEditorFurniture3d, v);
 
   /// Wände halbdurchsichtig (Nachbarräume scheinen durch); Standard deckend.
   bool get map3dTransparentWalls =>
