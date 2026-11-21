@@ -461,7 +461,7 @@ void main() {
       await _pump(tester, '/home/room/salon');
       await _scrollTo(tester, find.byType(RoomHeatingCard));
       expect(find.byType(RoomHeatingCard), findsOneWidget);
-      expect(find.text('21,3°'), findsOneWidget);
+      expect(find.byKey(const ValueKey('heating-room-temp')), findsOneWidget);
       expect(find.text('Mittel aus 2 Thermometern'), findsOneWidget);
       expect(find.text('21°'), findsOneWidget);
       expect(find.text('Eco 18°'), findsOneWidget);

@@ -9,6 +9,7 @@ import 'core/widgets/system_bars.dart';
 import 'features/home_widget/room_widget_bridge.dart';
 import 'features/map/map_3d.dart' show mapPreloadProvider;
 import 'features/zigbee/widgets/zb_common.dart' show zbToast;
+import 'features/search/search_sheet.dart';
 
 /// Kommt die App wieder nach vorne, stößt sie die Verbindung zu Home
 /// Assistant an (siehe `HavenRepository.nudgeConnection`): Im Hintergrund
@@ -19,6 +20,11 @@ final connectionNudgeProvider = Provider<void>((ref) {
   );
   ref.onDispose(l.dispose);
 });
+
+void _search() {
+  final ctx = rootNavigatorKey.currentContext;
+  if (ctx != null) showHavenSearch(ctx);
+}
 
 /// Wurzel der App: Theme (Hell, Dunkel, System), Router, Deutsch.
 class HavenApp extends ConsumerWidget {
@@ -64,7 +70,16 @@ class HavenApp extends ConsumerWidget {
         // Bildschirme setzen ihre eigene über `SystemBars`.
         return AnnotatedRegion<SystemUiOverlayStyle>(
           value: SystemBars.styleFor(dark: dark),
-          child: child!,
+          // Strg+K (macOS: Cmd+K) öffnet überall die Suche.
+          child: CallbackShortcuts(
+            bindings: {
+              const SingleActivator(LogicalKeyboardKey.keyK, control: true):
+                  _search,
+              const SingleActivator(LogicalKeyboardKey.keyK, meta: true):
+                  _search,
+            },
+            child: child!,
+          ),
         );
       },
     );

@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:haven/features/home/widgets/room_row.dart';
 import 'package:haven/app.dart';
 import 'package:haven/core/state/providers.dart';
+import 'package:haven/core/widgets/haven_card.dart';
 import 'package:haven/core/widgets/haven_sheet.dart';
 import 'package:haven/dev/fake_repository.dart';
 import 'package:haven/features/room/widgets/scene_card.dart';
@@ -377,12 +378,26 @@ void main() {
     await tester.tap(find.bySemanticsLabel('Übersicht bearbeiten'));
     await tester.pumpAndSettle();
     expect(find.text('Widget hinzufügen'), findsOneWidget);
-    expect(find.byIcon(Icons.remove_rounded), findsNWidgets(3));
-    await tester.drag(find.byType(Scrollable).first, const Offset(0, -500));
+    // Alle Widgets in einer Liste; der Kopf bleibt (ohne Entfernen).
+    final n = find.byIcon(Icons.remove_rounded).evaluate().length;
+    expect(n, greaterThan(5));
+    await tester.scrollUntilVisible(
+      find.text('Strom'),
+      200,
+      scrollable: find.byType(Scrollable).first,
+    );
     await tester.pumpAndSettle();
-    await tester.tap(find.byIcon(Icons.remove_rounded).first);
+    final row = find.ancestor(
+      of: find.text('Strom'),
+      matching: find.byType(HavenCard),
+    );
+    await tester.tap(
+      find.descendant(of: row, matching: find.byIcon(Icons.remove_rounded)),
+    );
     await tester.pumpAndSettle();
-    expect(find.byIcon(Icons.remove_rounded), findsNWidgets(2));
+    expect(find.byIcon(Icons.remove_rounded), findsNWidgets(n - 1));
+    await tester.tap(find.bySemanticsLabel('Bearbeiten beenden'));
+    await tester.pumpAndSettle();
     expect(find.text('Strom jetzt'), findsNothing);
     sem.dispose();
   });
@@ -404,51 +419,61 @@ void main() {
     expect(find.text('Vorschau: Neon Tokyo'), findsNothing);
   });
 
-  testWidgets('Kompakt zeigt zwei Räume je Zeile, ohne Szenen', (tester) async {
+  testWidgets('Raum-Widget einstellen: kompakt, zwei nebeneinander', (
+    tester,
+  ) async {
     _phone(tester);
-    await tester.runAsync(
-      () async => tester.pumpWidget(await _app(detailed: true)),
-    );
+    await tester.runAsync(() async => tester.pumpWidget(await _app()));
     await tester.pumpAndSettle();
-    double top(String name) => tester.getTopLeft(find.text(name)).dy;
+    double top(String name) => tester.getTopLeft(find.text(name).first).dy;
     expect(top('Ruheraum'), greaterThan(top('Salon') + 50));
-    await tester.tap(find.bySemanticsLabel('Kompakt'));
+    await tester.tap(find.bySemanticsLabel('Übersicht bearbeiten'));
+    await tester.pumpAndSettle();
+    for (final i in [0, 1]) {
+      await tester.tap(find.byTooltip('Einstellen').at(i));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Kompakt'));
+      await tester.pumpAndSettle();
+      await tester.tapAt(const Offset(20, 20));
+      await tester.pumpAndSettle();
+    }
+    await tester.tap(find.bySemanticsLabel('Bearbeiten beenden'));
     await tester.pumpAndSettle();
     expect(top('Ruheraum'), closeTo(top('Salon'), 1));
     expect(find.bySemanticsLabel('Szene Golden Hour'), findsNothing);
   });
 
-  testWidgets('Tabs neben dem Raum: Heizung mit Plus, Bewegungslicht', (
+  testWidgets('Knöpfe über den Szenen: Heizung im Blatt, Bewegungslicht', (
     tester,
   ) async {
     _phone(tester);
-    await tester.runAsync(
-      () async => tester.pumpWidget(await _app(detailed: true)),
-    );
+    await tester.runAsync(() async => tester.pumpWidget(await _app()));
     await tester.pumpAndSettle();
-    // Salon: Heizungs-Tab zeigt Raumtemperatur und Ziel.
-    await tester.tap(find.bySemanticsLabel('Heizung').first);
+    // Salon: Heizung öffnet ein Blatt mit Raumtemperatur und Ziel.
+    await tester.tap(find.bySemanticsLabel('Heizung Salon'));
     await tester.pumpAndSettle();
-    expect(find.text('21,3°'), findsWidgets);
+    expect(find.text('Heizung Salon'), findsOneWidget);
     expect(find.text('21,0°'), findsOneWidget);
     await tester.tap(find.bySemanticsLabel('Wärmer').first);
     await tester.pump();
     expect(find.text('21,5°'), findsOneWidget);
     await tester.pump(const Duration(seconds: 8));
-    // Waschraum: Bewegungslicht im eigenen Tab schalten.
+    await tester.tapAt(const Offset(20, 20));
+    await tester.pumpAndSettle();
+    // Waschraum: Bewegungslicht direkt schalten.
     final row = find.ancestor(
       of: find.text('Waschraum'),
       matching: find.byType(RoomRow),
     );
     await tester.ensureVisible(row);
     await tester.pumpAndSettle();
-    await tester.tap(
-      find.descendant(of: row, matching: find.bySemanticsLabel('Bewegung')),
+    final chip = find.descendant(
+      of: row,
+      matching: find.bySemanticsLabel('Bewegungslicht'),
     );
+    expect(tester.getSemantics(chip).value, 'an');
+    await tester.tap(chip);
     await tester.pumpAndSettle();
-    expect(find.text('Licht vom Melder'), findsOneWidget);
-    await tester.tap(find.bySemanticsLabel('Bewegungslicht'));
-    await tester.pumpAndSettle();
-    expect(find.text('Aus'), findsWidgets);
+    expect(tester.getSemantics(chip).value, 'aus');
   });
 }

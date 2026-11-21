@@ -25,6 +25,11 @@ class HomeWidgetCard extends ConsumerWidget {
       HavenWidgetType.entityToggle => _ToggleCard(config: config),
       HavenWidgetType.lowBattery => _BatteryCard(config: config),
       HavenWidgetType.weather => _WeatherCard(config: config),
+      // Kopf, Hinweise, Szenen und Räume baut die Startseite selbst.
+      HavenWidgetType.header ||
+      HavenWidgetType.notices ||
+      HavenWidgetType.scenes ||
+      HavenWidgetType.room => const SizedBox.shrink(),
     };
   }
 }
@@ -36,6 +41,10 @@ String widgetTitle(HavenWidgetConfig c) => switch (c.type) {
     (c.options['label'] as String?) ?? c.entityIds.firstOrNull ?? 'Schalter',
   HavenWidgetType.lowBattery => 'Batterien niedrig',
   HavenWidgetType.weather => 'Wetter draußen',
+  HavenWidgetType.header => 'Kopf: Gruß und Lichter',
+  HavenWidgetType.notices => 'Hinweise und Updates',
+  HavenWidgetType.scenes => 'Schnellaktionen und Szenen',
+  HavenWidgetType.room => (c.options['name'] as String?) ?? 'Raum',
 };
 
 IconData widgetIcon(HavenWidgetConfig c) => switch (c.type) {
@@ -47,6 +56,10 @@ IconData widgetIcon(HavenWidgetConfig c) => switch (c.type) {
   },
   HavenWidgetType.lowBattery => Icons.battery_alert_rounded,
   HavenWidgetType.weather => Icons.wb_sunny_outlined,
+  HavenWidgetType.header => Icons.waving_hand_outlined,
+  HavenWidgetType.notices => Icons.campaign_outlined,
+  HavenWidgetType.scenes => Icons.auto_awesome_outlined,
+  HavenWidgetType.room => Icons.meeting_room_outlined,
 };
 
 class _Label extends StatelessWidget {
@@ -469,6 +482,14 @@ class _AddWidgetSheetState extends ConsumerState<_AddWidgetSheet> {
           e,
     ]..sort((a, b) => a.name.compareTo(b.name));
 
+    final current = ref.watch(widgetsProvider);
+    bool has(HavenWidgetType t) => current.any((w) => w.type == t);
+    final onPage = {for (final w in current) ?w.roomId};
+    final missingRooms = [
+      for (final r in ref.watch(orderedRoomsProvider))
+        if (!onPage.contains(r.id)) r,
+    ];
+
     Widget option(
       IconData icon,
       String title,
@@ -544,6 +565,41 @@ class _AddWidgetSheetState extends ConsumerState<_AddWidgetSheet> {
               ),
               const SizedBox(height: 8),
               if (!_pickEntity) ...[
+                // Räume, die noch nicht auf der Startseite sind.
+                for (final r in missingRooms)
+                  option(
+                    Icons.meeting_room_outlined,
+                    r.name,
+                    'Raum mit Bild, Licht und Szenen',
+                    () {
+                      ref.read(widgetsProvider.notifier).addRoom(r.id);
+                      Navigator.of(context).pop();
+                    },
+                  ),
+                if (!has(HavenWidgetType.notices))
+                  option(
+                    Icons.campaign_outlined,
+                    'Hinweise und Updates',
+                    'Verbindung, verfügbare Updates',
+                    () => _add(
+                      HavenWidgetConfig(
+                        id: _newId('notices'),
+                        type: HavenWidgetType.notices,
+                      ),
+                    ),
+                  ),
+                if (!has(HavenWidgetType.scenes))
+                  option(
+                    Icons.auto_awesome_outlined,
+                    'Schnellaktionen und Szenen',
+                    'Alles aus und Szenen-Vorschläge',
+                    () => _add(
+                      HavenWidgetConfig(
+                        id: _newId('scenes'),
+                        type: HavenWidgetType.scenes,
+                      ),
+                    ),
+                  ),
                 option(
                   Icons.bolt_rounded,
                   'Strom',

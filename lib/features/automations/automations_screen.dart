@@ -20,6 +20,7 @@ import 'knob_logic.dart';
 import 'knob_widgets.dart';
 import 'motion_editor_screen.dart';
 import 'motion_widgets.dart';
+import '../search/search_sheet.dart';
 
 /// Pfad der Liste der Home-Assistant-Automationen.
 const haAutomationsPath = '/automations/home-assistant';
@@ -51,7 +52,7 @@ class AutomationsScreen extends ConsumerWidget {
         ScreenHeader(
           title: 'Abläufe',
           subtitle: subtitle,
-          actions: const [SettingsButton()],
+          actions: const [SearchButton(), SettingsButton()],
         ),
         const SizedBox(height: 18),
         const SectionHeader(

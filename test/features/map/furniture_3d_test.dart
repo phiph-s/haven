@@ -173,6 +173,33 @@ void main() {
       await tester.pumpAndSettle();
       expect(repo.plan!.furnitureById(sofa.id)!.rotation, 180);
 
+      // Farben: Knopf in der Leiste öffnet die Farbwahl, eine Palettenfarbe
+      // färbt das erste Teil; rückgängig nimmt sie wieder weg.
+      await tester.tap(
+        find.descendant(
+          of: find.byKey(const ValueKey('furniture-toolbar-3d')),
+          matching: find.bySemanticsLabel('Farben'),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final sheet = find.byKey(ValueKey('fcolors-sheet${sofa.id}'));
+      expect(sheet, findsOneWidget);
+      await tester.tap(
+        find.descendant(of: sheet, matching: find.byTooltip('Salbei')),
+      );
+      await tester.pumpAndSettle();
+      final zone = h3.furnitureSpec('sofa').zones.first.id;
+      expect(
+        repo.plan!.furnitureById(sofa.id)!.colors[zone]?.toARGB32(),
+        0xFF93A68A,
+      );
+      Navigator.of(tester.element(sheet)).pop();
+      await tester.pumpAndSettle();
+      await tester.tap(find.bySemanticsLabel('Rückgängig').first);
+      await tester.pumpAndSettle();
+      expect(repo.plan!.furnitureById(sofa.id)!.colors, isEmpty);
+      expect(repo.plan!.furnitureById(sofa.id)!.rotation, 180);
+
       // Löschen, dann zweimal rückgängig: wieder da, wie vor dem Knopf.
       await tester.tap(find.bySemanticsLabel('Löschen').last);
       await tester.pumpAndSettle();
@@ -182,6 +209,7 @@ void main() {
       await tester.tap(find.bySemanticsLabel('Rückgängig').first);
       await tester.pumpAndSettle();
       expect(repo.plan!.furnitureById(sofa.id), sofa);
+
       expect(tester.takeException(), isNull);
     });
   }

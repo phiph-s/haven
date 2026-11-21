@@ -487,7 +487,9 @@ void main() {
         }, DateTime.now().millisecondsSinceEpoch + 10000);
         await _settle();
         expect(c.read(homeLayoutProvider).roomOrder, ['kochbereich']);
-        expect(c.read(widgetsProvider), hasLength(1));
+        expect(c.read(homeLayoutProvider).widgets, hasLength(1));
+        // Altes Format: Kopf, Hinweise, Szenen und Räume kommen dazu.
+        expect(c.read(widgetsProvider).where((w) => !w.isMain), hasLength(1));
         expect(c.read(orderedRoomsProvider).first.id, 'kochbereich');
       },
     );

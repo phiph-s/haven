@@ -28,6 +28,7 @@ import 'zigbee_selection.dart';
 import 'zigbee_model.dart';
 import 'zigbee_providers.dart';
 import '../../core/widgets/horizontal_scroller.dart';
+import '../search/search_sheet.dart';
 
 String zigbeeDevicePath(String ieee) => '/zigbee/device/$ieee';
 const zigbeePairPath = '/zigbee/pair';
@@ -143,7 +144,7 @@ class _ZigbeeScreenState extends ConsumerState<ZigbeeScreen> {
               title: 'Zigbee',
               subtitle: z.loaded ? _subtitle(z, views.length) : 'Lädt',
               large: false,
-              actions: const [SettingsButton()],
+              actions: const [SearchButton(), SettingsButton()],
             ),
           ),
           SliverPadding(

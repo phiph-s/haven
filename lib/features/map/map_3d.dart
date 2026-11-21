@@ -210,6 +210,13 @@ const double kMapTiltYaw = -0.42;
 const double kMapFocusPitch = 0.82;
 const double kMapFocusYaw = -0.3;
 
+/// Blickrichtung, mit der die Karte öffnet (wie `Map3DView.initState`).
+h3.OrbitCamera mapStartCamera(Map3DSettings s) => h3.OrbitCamera(
+  yaw: s.tilt ? kMapTiltYaw : 0,
+  pitch: s.tilt ? kMapTiltPitch : 0,
+  fov: s.tilt && s.perspective ? h3.OrbitCamera.perspectiveFov : 0,
+);
+
 /// Übersicht in der gewählten Ansicht einpassen, animiert.
 Future<void> showMapOverview(
   h3.SceneController c,
@@ -1117,7 +1124,7 @@ class Map3DControls extends ConsumerWidget {
 /// Solange die 3D-Karte entsteht: die Raumumrisse als feine Linien, auf
 /// denen ein Lichtstreif umläuft, darunter ein kurzer Hinweis. Die Szene
 /// blendet darüber ein, sobald sie ihre ersten Bilder hat.
-class Map3DLoader extends StatefulWidget {
+class Map3DLoader extends ConsumerStatefulWidget {
   const Map3DLoader({
     super.key,
     required this.plan,
@@ -1130,10 +1137,10 @@ class Map3DLoader extends StatefulWidget {
   final EdgeInsets insets;
 
   @override
-  State<Map3DLoader> createState() => _Map3DLoaderState();
+  ConsumerState<Map3DLoader> createState() => _Map3DLoaderState();
 }
 
-class _Map3DLoaderState extends State<Map3DLoader>
+class _Map3DLoaderState extends ConsumerState<Map3DLoader>
     with SingleTickerProviderStateMixin {
   late final AnimationController _t = AnimationController(
     vsync: this,
@@ -1171,7 +1178,10 @@ class _Map3DLoaderState extends State<Map3DLoader>
                 child: RepaintBoundary(
                   child: CustomPaint(
                     painter: _TracePainter(
-                      plan: widget.plan,
+                      scene: sceneOfPlan(widget.plan),
+                      // Dieselbe Blickrichtung wie gleich die Karte (2D
+                      // gedreht, 3D schräg oder perspektivisch).
+                      camera: mapStartCamera(ref.watch(map3dSettingsProvider)),
                       area: area,
                       t: _t,
                       line: hv.tx3,
@@ -1200,14 +1210,16 @@ class _Map3DLoaderState extends State<Map3DLoader>
 
 class _TracePainter extends CustomPainter {
   _TracePainter({
-    required this.plan,
+    required this.scene,
+    required this.camera,
     required this.area,
     required this.t,
     required this.line,
     required this.glow,
   }) : super(repaint: t);
 
-  final HavenFloorPlan plan;
+  final h3.Scene scene;
+  final h3.OrbitCamera camera;
   final Rect area;
   final Animation<double> t;
   final Color line;
@@ -1215,18 +1227,27 @@ class _TracePainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final pts = [for (final r in plan.rooms) ...r.offsets];
-    if (pts.isEmpty || area.isEmpty) return;
-    var b = Rect.fromPoints(pts.first, pts.first);
-    for (final p in pts) {
-      b = b.expandToInclude(Rect.fromPoints(p, p));
-    }
-    final box = area.deflate(28);
-    final k = math.min(
-      box.width / math.max(b.width, 1e-6),
-      box.height / math.max(b.height, 1e-6),
-    );
-    final o = box.center - b.center * k;
+    final rooms = [
+      for (final r in scene.rooms)
+        if (r.outline.length >= 3) r,
+    ];
+    if (rooms.isEmpty || area.isEmpty) return;
+    // Wände nur, wenn die Kamera schräg schaut; von oben wären sie Striche.
+    final tilted = camera.pitch > 0.08;
+    final pts = [
+      for (final r in rooms)
+        for (final o in r.outline) ...[
+          h3.V3(o.dx, o.dy, 0),
+          if (tilted) h3.V3(o.dx, o.dy, r.wallHeight),
+        ],
+    ];
+    final cam = h3.OrbitCamera(
+      yaw: camera.yaw,
+      pitch: camera.pitch,
+      fov: camera.fov,
+    ).fit(pts, area.size, padding: 28);
+    Offset at(Offset o, double z) =>
+        area.topLeft + cam.project(h3.V3(o.dx, o.dy, z), area.size).offset;
     final base = Paint()
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1.2
@@ -1238,13 +1259,8 @@ class _TracePainter extends CustomPainter {
       ..strokeCap = StrokeCap.round
       ..strokeJoin = StrokeJoin.round
       ..color = glow.withValues(alpha: 0.9);
-    for (var i = 0; i < plan.rooms.length; i++) {
-      final r = plan.rooms[i];
-      final path = Path()
-        ..addPolygon([for (final p in r.offsets) o + p * k], true);
+    void trace(Path path, double phase) {
       canvas.drawPath(path, base);
-      // Je Raum versetzt, damit die Streifen nicht im Gleichschritt laufen.
-      final phase = (t.value + i * 0.37) % 1.0;
       for (final m in path.computeMetrics()) {
         final len = m.length * 0.28;
         final start = phase * m.length;
@@ -1255,11 +1271,32 @@ class _TracePainter extends CustomPainter {
         }
       }
     }
+
+    for (var i = 0; i < rooms.length; i++) {
+      final r = rooms[i];
+      // Je Raum versetzt, damit die Streifen nicht im Gleichschritt laufen.
+      final phase = (t.value + i * 0.37) % 1.0;
+      trace(
+        Path()..addPolygon([for (final o in r.outline) at(o, 0)], true),
+        phase,
+      );
+      if (!tilted) continue;
+      // Senkrechte Kanten und Wandoberkante: das Haus steht wie gleich.
+      for (final o in r.outline) {
+        canvas.drawLine(at(o, 0), at(o, r.wallHeight), base);
+      }
+      trace(
+        Path()
+          ..addPolygon([for (final o in r.outline) at(o, r.wallHeight)], true),
+        (phase + 0.5) % 1.0,
+      );
+    }
   }
 
   @override
   bool shouldRepaint(_TracePainter old) =>
-      old.plan != plan ||
+      old.scene != scene ||
+      old.camera != camera ||
       old.area != area ||
       old.line != line ||
       old.glow != glow;

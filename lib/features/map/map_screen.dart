@@ -62,8 +62,10 @@ import 'plan_cleanup.dart';
 import 'map_thermostat.dart';
 import 'map_routes.dart';
 import 'map_sky.dart';
+import 'map_jump.dart';
 import '../../core/widgets/system_bars.dart';
 import '../../core/theme/theme.dart';
+import '../search/search_sheet.dart';
 
 /// Karte: Grundriss mit Kartenarten (Licht, Temperatur, Luftfeuchte,
 /// Bewegung, Funknetz, Batterie). Die Lichtfarbe der Wohnung färbt Akzent
@@ -241,6 +243,7 @@ class _MapHeader extends ConsumerWidget {
       subtitle: sub,
       large: false,
       actions: [
+        const SearchButton(),
         if (plan != null)
           RoundIconButton(
             icon: Icons.edit_outlined,
@@ -294,6 +297,10 @@ class _MapBodyState extends ConsumerState<_MapBody> {
   Timer? _powerTimer;
   Timer? _startTapTimer;
 
+  /// Gerät, das gerade pulsiert (Sprung aus der Suche).
+  String? _pulse;
+  Timer? _pulseTimer;
+
   /// Handy: Höhe von Kopf und unterer Leiste (Legende plus Navigation). Der
   /// Grundriss wird dazwischen eingepasst, gezeichnet wird bis an den Rand.
   double _topH = 96;
@@ -326,6 +333,11 @@ class _MapBodyState extends ConsumerState<_MapBody> {
   @override
   void initState() {
     super.initState();
+    // Auftrag von vor dem Aufbau (Suche hat die Karte erst geöffnet).
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final j = mounted ? ref.read(mapJumpProvider) : null;
+      if (j != null) _jump(j);
+    });
     final tap = widget.startTap;
     if (tap != null) {
       // Nur für Screenshots: nach dem Einblenden antippen.
@@ -343,6 +355,7 @@ class _MapBodyState extends ConsumerState<_MapBody> {
 
   @override
   void dispose() {
+    _pulseTimer?.cancel();
     _startTapTimer?.cancel();
     _infoTimer?.cancel();
     _powerTimer?.cancel();
@@ -505,6 +518,45 @@ class _MapBodyState extends ConsumerState<_MapBody> {
   String _nameOf(String id) {
     final zb = zbDeviceForEntity(ref.read(zigbeeProvider).devices, id);
     return zb?.friendlyName ?? ref.read(entityProvider(id))?.name ?? id;
+  }
+
+  /// Sprung aus der Suche: Kartenart, Raum in den Blick, Gerät pulsiert.
+  void _jump(MapJump j) {
+    ref.read(mapJumpProvider.notifier).done(j);
+    final layer = j.layer;
+    if (layer != null) ref.read(mapLayerProvider.notifier).set(layer);
+    final node = j.nodeId;
+    final roomId =
+        j.roomId ??
+        (node == null ? null : widget.plan.entityPoint(node)?.roomId);
+    final r = roomId == null ? null : widget.plan.room(roomId);
+    if (r != null) {
+      if (context.isDesktopLayout) {
+        setState(() {
+          _inspect = r.id;
+          _panel = null;
+        });
+      } else if (_use3d) {
+        setState(() => _focusRoom = r.id);
+        _focus3d(r.id);
+      }
+    }
+    if (node != null) {
+      Haptics.tick();
+      setState(() => _pulse = node);
+      _pulseTimer?.cancel();
+      _pulseTimer = Timer(const Duration(milliseconds: 3600), () {
+        if (mounted) setState(() => _pulse = null);
+      });
+    }
+  }
+
+  /// Knoten mit Ring, solange er pulsiert.
+  FloorNodeBuilder? _pulsed(FloorNodeBuilder? b) {
+    final id = _pulse;
+    if (b == null || id == null) return b;
+    return (context, n) =>
+        n.id == id ? PulseRing(child: b(context, n)) : b(context, n);
   }
 
   void _tapNode(FloorNode n) {
@@ -819,6 +871,9 @@ class _MapBodyState extends ConsumerState<_MapBody> {
     final hv = context.hv;
     final plan = widget.plan;
     final layer = ref.watch(mapLayerProvider);
+    ref.listen(mapJumpProvider, (_, j) {
+      if (j != null) _jump(j);
+    });
     ref.listen(zigbeeMeshProvider.select((d) => d.noticeId), (_, _) {
       // Das Vollbild meldet selbst, solange es oben liegt.
       final n = ref.read(zigbeeMeshProvider).notice;
@@ -924,7 +979,7 @@ class _MapBodyState extends ConsumerState<_MapBody> {
                             key: const ValueKey('map3d'),
                             plan: v.plan,
                             nodes: v.nodes,
-                            nodeBuilder: v.nodeBuilder,
+                            nodeBuilder: _pulsed(v.nodeBuilder),
                             heatmap: v.heatmap3d,
                             deviceTints: v.tints3d,
                             controller: v.controller,
@@ -1173,7 +1228,7 @@ class _MapBodyState extends ConsumerState<_MapBody> {
                           key: const ValueKey('map3d'),
                           plan: v.plan,
                           nodes: v.nodes,
-                          nodeBuilder: v.nodeBuilder,
+                          nodeBuilder: _pulsed(v.nodeBuilder),
                           heatmap: v.heatmap3d,
                           deviceTints: v.tints3d,
                           controller: v.controller,

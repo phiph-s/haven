@@ -30,6 +30,7 @@ import 'floor_editor_ops.dart';
 import 'floor_plan_store.dart';
 import 'floor_geometry.dart';
 import 'furniture_3d_overlay.dart';
+import 'furniture_colors.dart';
 import 'furniture_library.dart';
 import 'furniture_ops.dart';
 import 'furniture_painter.dart';
@@ -1260,6 +1261,34 @@ class _FloorEditorScreenState extends ConsumerState<FloorEditorScreen> {
             onReset: () => _setDevice(p.copyWith(clearHeight: true)),
             apply: (q, v) => q.copyWith(height: v),
           ),
+          if (spec.sizing case final sz?)
+            ...slider(
+              key: 'device-size',
+              label: '${sz.label} ${sz.clamp(p.size).round()}${sz.unit}',
+              value: sz.clamp(p.size),
+              min: sz.min,
+              max: sz.max,
+              divisions: ((sz.max - sz.min) / sz.step).round(),
+              show: (v) => '${v.round()}${sz.unit}',
+              isDefault: p.size == null,
+              reset: 'Standard (${sz.standard.round()}${sz.unit})',
+              onReset: () => _setDevice(p.copyWith(clearSize: true)),
+              apply: (q, v) => q.copyWith(size: v),
+            ),
+          if (spec.zones.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            Text('Farben', style: HavenText.caption.copyWith(color: hv.tx2)),
+            const SizedBox(height: 6),
+            FurnitureColorPicker(
+              key: const ValueKey('device-colors'),
+              zones: spec.zones,
+              colors: p.colors,
+              onChanged: (zone, c) {
+                final plan = _plan!;
+                _commit(plan, plan.withPlacementColor(p.entityId, zone, c));
+              },
+            ),
+          ],
           if (spec.canRotate(how))
             ...slider(
               key: 'device-rotation',
@@ -1433,6 +1462,12 @@ class _FloorEditorScreenState extends ConsumerState<FloorEditorScreen> {
             icon: Icons.sensors_rounded,
             onSelected: () => _linkSensor(hit),
           ),
+        if (_zonesOf(hit).isNotEmpty)
+          HavenMenuItem(
+            label: 'Farben …',
+            icon: Icons.palette_outlined,
+            onSelected: () => _editColors(hit),
+          ),
         HavenMenuItem(
           label: 'Duplizieren',
           icon: Icons.copy_all_rounded,
@@ -1605,6 +1640,75 @@ class _FloorEditorScreenState extends ConsumerState<FloorEditorScreen> {
     Haptics.tick();
     final plan = _plan!;
     _commit(plan, plan.withFurniture(rotateFurnitureBy(f, deg)));
+  }
+
+  /// Einfärbbare Teile eines Möbelstücks (leer: keine Farbwahl).
+  List<h3.ColorZone> _zonesOf(FloorFurniture f) => furnitureZones(f.kind);
+
+  void _setFurnitureColor(String id, String zone, Color? color) {
+    final plan = _plan!;
+    _commit(plan, plan.withFurnitureColor(id, zone, color));
+  }
+
+  Widget _colorPicker(FloorFurniture f) => FurnitureColorPicker(
+    key: ValueKey('fcolors${f.id}'),
+    zones: _zonesOf(f),
+    colors: f.colors,
+    onChanged: (zone, c) => _setFurnitureColor(f.id, zone, c),
+  );
+
+  /// Farben als Blatt (Handy, 3D-Werkzeugleiste, Rechtsklick): bleibt offen,
+  /// die Szene dahinter färbt sich gleich mit.
+  Future<void> _editColors(FloorFurniture f) async {
+    if (_zonesOf(f).isEmpty) return;
+    Haptics.tick();
+    await showZbSheet<void>(
+      context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setSheet) {
+          final hv = context.hv;
+          final cur = _plan?.furnitureById(f.id);
+          if (cur == null) return const SizedBox.shrink();
+          return Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Farben: ${cur.type?.name ?? 'Möbelstück'}',
+                style: HavenText.section.copyWith(color: hv.tx, fontSize: 20),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Teil wählen, dann Farbe. Der erste Punkt ist die Standardfarbe.',
+                style: HavenText.caption.copyWith(color: hv.tx2),
+              ),
+              const SizedBox(height: 14),
+              FurnitureColorPicker(
+                key: ValueKey('fcolors-sheet${cur.id}'),
+                zones: _zonesOf(cur),
+                colors: cur.colors,
+                onChanged: (zone, c) {
+                  _setFurnitureColor(cur.id, zone, c);
+                  setSheet(() {});
+                },
+              ),
+              if (cur.colors.isNotEmpty) ...[
+                const SizedBox(height: 10),
+                TextButton.icon(
+                  onPressed: () {
+                    final plan = _plan!;
+                    _commit(plan, plan.withFurniture(cur.withoutColors()));
+                    setSheet(() {});
+                  },
+                  icon: const Icon(Icons.restart_alt_rounded, size: 18),
+                  label: const Text('Alle Farben zurücksetzen'),
+                ),
+              ],
+            ],
+          );
+        },
+      ),
+    );
   }
 
   /// Tür oder Fenster mit einem Kontaktsensor verknüpfen (oder lösen).
@@ -2115,6 +2219,9 @@ class _FloorEditorScreenState extends ConsumerState<FloorEditorScreen> {
               onRotateRight: () => _rotateSel(90),
               onDuplicate: _duplicateSel,
               onDelete: _deleteFurnitureSel,
+              onColors: _zonesOf(item).isNotEmpty
+                  ? () => _editColors(item)
+                  : null,
             ),
     );
   }
@@ -2338,6 +2445,14 @@ class _FloorEditorScreenState extends ConsumerState<FloorEditorScreen> {
         ),
         const SizedBox(width: 4),
       ],
+      if (!vertical && _zonesOf(f).isNotEmpty) ...[
+        _ToolButton(
+          label: 'Farben',
+          icon: Icons.palette_outlined,
+          onTap: () => _editColors(f),
+        ),
+        const SizedBox(width: 4),
+      ],
       _ToolButton(
         label: 'Duplizieren',
         shortcut: '${ctrl}D',
@@ -2370,6 +2485,8 @@ class _FloorEditorScreenState extends ConsumerState<FloorEditorScreen> {
               ),
               Text(
                 _furnInfo(f),
+                maxLines: vertical ? 3 : 1,
+                overflow: TextOverflow.ellipsis,
                 style: HavenText.caption.copyWith(color: hv.tx2),
               ),
             ],
@@ -2393,6 +2510,12 @@ class _FloorEditorScreenState extends ConsumerState<FloorEditorScreen> {
         title,
         const SizedBox(height: 10),
         Row(children: tools),
+        if (_zonesOf(f).isNotEmpty) ...[
+          const SizedBox(height: 14),
+          Text('Farben', style: HavenText.caption.copyWith(color: hv.tx2)),
+          const SizedBox(height: 6),
+          _colorPicker(f),
+        ],
         const SizedBox(height: 8),
         Text(
           _furniture3d

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/services.dart';
@@ -26,6 +27,11 @@ import 'weather_text.dart';
 import 'widgets/home_widgets.dart';
 import 'widgets/room_row.dart';
 import '../../core/widgets/horizontal_scroller.dart';
+import '../search/search_sheet.dart';
+import '../../core/widgets/haven_switch.dart';
+import '../../core/widgets/segmented.dart';
+import '../settings/settings_widgets.dart';
+import '../zigbee/widgets/zb_common.dart' show showZbSheet;
 
 /// Zuhause: Raumkacheln, darunter konfigurierbare Widgets.
 class HomeScreen extends ConsumerStatefulWidget {
@@ -93,6 +99,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final snap = ref.watch(snapshotProvider);
     final repo = ref.read(repositoryProvider);
     final widgets = ref.watch(widgetsProvider);
+    final newRooms = ref.watch(newRoomsProvider);
     final palette = house.palette(dark: hv.isDark);
 
     // Schnellaktionen: alles aus plus bekannte Szenen.
@@ -131,6 +138,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             title: 'Zuhause',
             subtitle: _subtitle(),
             actions: [
+              const SearchButton(),
               RoundIconButton(
                 icon: _editing ? Icons.check_rounded : Icons.edit_outlined,
                 label: _editing ? 'Bearbeiten beenden' : 'Übersicht bearbeiten',
@@ -161,102 +169,167 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               ),
             ),
           );
-          final detailed = desktop || ref.watch(homeRoomsDetailedProvider);
-          final roomsHeader = SectionHeader(
-            'Räume',
-            padding: EdgeInsets.fromLTRB(pad, 12, pad, 10),
-            // Handy: ausführlich (einer je Zeile) oder kompakt (zwei).
-            trailing: desktop || _editing
-                ? null
-                : _LayoutToggle(
-                    detailed: detailed,
-                    onChanged: (v) {
-                      Haptics.tick();
-                      ref.read(homeRoomsDetailedProvider.notifier).set(v);
-                    },
-                  ),
-          );
-          final roomGrid = Padding(
-            padding: EdgeInsets.symmetric(horizontal: pad),
-            child: LayoutBuilder(
-              builder: (context, c) {
-                final half = (c.maxWidth - 12) / 2;
-                if (rooms.isEmpty &&
-                    snap.status != ConnectionStatus.connected) {
-                  return _RoomSkeleton(half: half);
-                }
-                if (_editing) return _RoomOrderList(rooms: rooms);
-                // Ohne Karten direkt auf dem Hintergrund: ausführlich einer
-                // je Zeile (Desktop: zwei, wenn es breit genug ist),
-                // kompakt zwei.
-                final n = desktop
-                    ? (c.maxWidth >= 900 ? 2 : 1)
-                    : (detailed ? 1 : 2);
-                const gap = 28.0;
-                final w = (c.maxWidth - gap * (n - 1)) / n;
-                return Wrap(
-                  spacing: gap,
-                  runSpacing: detailed ? 30 : 22,
-                  children: [
-                    for (var i = 0; i < rooms.length; i++)
-                      SizedBox(
-                        width: w,
-                        child: EntryAnimation(
-                          index: i,
-                          child: RoomRow(
-                            key: ValueKey(rooms[i].id),
-                            roomId: rooms[i].id,
-                            detailed: detailed,
-                            large: desktop,
-                          ),
-                        ),
-                      ),
-                  ],
-                );
-              },
-            ),
-          );
-          final roomHint = Padding(
-            padding: EdgeInsets.fromLTRB(pad, 14, pad, 0),
-            child: Text(
-              _editing
-                  ? 'Halten und ziehen sortiert die Räume, auf allen Geräten.'
-                  : desktop
-                  ? 'Klick aufs Bild öffnet den Raum, der runde Knopf schaltet '
-                        'das Licht. Szene gedrückt halten zeigt sie vorab.'
-                  : detailed
-                  ? 'Bild öffnet den Raum, der Knopf schaltet, waagrecht '
-                        'ziehen dimmt. Szene halten zeigt sie vorab.'
-                  : 'Bild öffnet den Raum, der Knopf schaltet, waagrecht '
-                        'ziehen dimmt.',
-              style: HavenText.caption.copyWith(color: hv.tx3),
-            ),
-          );
-          final widgetsHeader = SectionHeader(
-            'Widgets',
-            padding: EdgeInsets.fromLTRB(
-              desktop ? 0 : pad,
-              14,
-              desktop ? 0 : pad,
-              6,
-            ),
-            trailing: TextLink(
-              _editing ? 'Fertig' : 'Bearbeiten',
-              onTap: () => setState(() => _editing = !_editing),
-            ),
-          );
-          final widgetList = _editing
-              ? _EditList(widgets: widgets)
-              : _WidgetGrid(widgets: widgets);
-
           Future<void> refresh() async {
             Haptics.tick();
             await repo.refresh();
           }
 
+          void toggleEdit() => setState(() => _editing = !_editing);
+
+          // Ein Widget der Hauptspalte (Kopf, Hinweise, Szenen).
+          Widget single(HavenWidgetConfig w) => switch (w.type) {
+            HavenWidgetType.header => header,
+            HavenWidgetType.notices => Column(
+              children: [
+                _Notices(snap: snap, fake: repo.isFake),
+                const UpdateNotices(),
+              ],
+            ),
+            HavenWidgetType.scenes => quickChips,
+            _ => const SizedBox.shrink(),
+          };
+
+          // Folgen gleicher Art zusammen: Räume (kompakte paarweise) und
+          // kleine Karten (nebeneinander, breite über die ganze Zeile).
+          List<Widget> stream(
+            List<HavenWidgetConfig> ws, {
+            required bool wideRooms,
+          }) {
+            final out = <Widget>[];
+            var i = 0;
+            var roomIndex = 0;
+            while (i < ws.length) {
+              final w = ws[i];
+              if (w.type == HavenWidgetType.room) {
+                final run = <HavenWidgetConfig>[];
+                while (i < ws.length && ws[i].type == HavenWidgetType.room) {
+                  run.add(ws[i++]);
+                }
+                out.add(_SectionLabel('Räume', count: run.length, pad: pad));
+                out.add(
+                  Padding(
+                    padding: EdgeInsets.fromLTRB(pad, 0, pad, 8),
+                    child: LayoutBuilder(
+                      builder: (context, c) {
+                        const gap = 14.0;
+                        // Desktop: ausführliche zwei je Zeile (breit
+                        // genug), sonst eine, aber nicht endlos breit
+                        // (die Bedienung bleibt beim Bild); kompakte drei.
+                        // Handy: eins bzw. zwei.
+                        final full = wideRooms && c.maxWidth >= 900
+                            ? (c.maxWidth - gap) / 2
+                            : wideRooms
+                            ? math.min(c.maxWidth, 760.0)
+                            : c.maxWidth;
+                        final small = wideRooms
+                            ? (c.maxWidth - gap * 2) / 3
+                            : (c.maxWidth - gap) / 2;
+                        return Wrap(
+                          spacing: gap,
+                          runSpacing: gap,
+                          children: [
+                            for (final r in run)
+                              SizedBox(
+                                key: ValueKey(r.id),
+                                width: r.compact ? small : full,
+                                child: EntryAnimation(
+                                  index: roomIndex++,
+                                  child: RoomPlate(
+                                    roomId: r.roomId!,
+                                    child: RoomRow(
+                                      roomId: r.roomId!,
+                                      config: r,
+                                      detailed: !r.compact,
+                                      large: desktop && !r.compact,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                          ],
+                        );
+                      },
+                    ),
+                  ),
+                );
+                continue;
+              }
+              if (!w.isMain) {
+                final run = <HavenWidgetConfig>[];
+                while (i < ws.length && !ws[i].isMain) {
+                  run.add(ws[i++]);
+                }
+                out.add(
+                  Padding(
+                    padding: EdgeInsets.fromLTRB(pad, 14, pad, 6),
+                    child: _SmallCards(widgets: run),
+                  ),
+                );
+                continue;
+              }
+              out.add(single(w));
+              i++;
+            }
+            return out;
+          }
+
+          final hasRooms = widgets.any((w) => w.type == HavenWidgetType.room);
+          final loading =
+              !hasRooms && snap.status != ConnectionStatus.connected;
+          final prompts = _NewRoomPrompts(rooms: newRooms, pad: pad);
+          final skeleton = loading
+              ? Padding(
+                  padding: EdgeInsets.fromLTRB(pad, 16, pad, 0),
+                  child: LayoutBuilder(
+                    builder: (context, c) =>
+                        _RoomSkeleton(half: (c.maxWidth - 12) / 2),
+                  ),
+                )
+              : null;
+          // Kopf (falls vorhanden) zuerst, dann die Frage nach neuen Räumen.
+          List<Widget> withPrompts(List<Widget> items) {
+            final head = widgets.firstOrNull?.type == HavenWidgetType.header;
+            return [
+              if (head) items.first,
+              prompts,
+              ...head ? items.skip(1) : items,
+              ?skeleton,
+            ];
+          }
+
           final Widget content;
-          if (desktop) {
-            // Desktop: Räume im Raster links, Widgets in einer Seitenspalte.
+          if (_editing) {
+            final list = ListView(
+              controller: _scroll,
+              padding: EdgeInsets.only(
+                top: desktop ? 0 : top,
+                bottom: context.navClearance,
+              ),
+              children: [
+                header,
+                Padding(
+                  padding: EdgeInsets.symmetric(horizontal: pad),
+                  child: _HomeEditList(widgets: widgets, onDone: toggleEdit),
+                ),
+              ],
+            );
+            content = desktop
+                ? Center(
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 720),
+                      child: list,
+                    ),
+                  )
+                : list;
+          } else if (desktop) {
+            // Desktop: Hauptspalte links, kleine Karten rechts (ohne Titel).
+            final main = [
+              for (final w in widgets)
+                if (w.isMain) w,
+            ];
+            final side = [
+              for (final w in widgets)
+                if (!w.isMain) w,
+            ];
             content = Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -264,30 +337,23 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   child: ListView(
                     controller: _scroll,
                     padding: EdgeInsets.only(bottom: context.navClearance),
-                    children: [
-                      header,
-                      _Notices(snap: snap, fake: repo.isFake),
-                      const UpdateNotices(),
-                      quickChips,
-                      roomsHeader,
-                      roomGrid,
-                      roomHint,
-                    ],
+                    children: withPrompts(stream(main, wideRooms: true)),
                   ),
                 ),
-                Container(
-                  width: DesktopMetrics.sideColumn + 24,
-                  margin: const EdgeInsets.fromLTRB(0, 16, 20, 16),
-                  decoration: BoxDecoration(
-                    color: hv.s1.withValues(alpha: hv.isDark ? 0.35 : 0.5),
-                    borderRadius: BorderRadius.circular(HavenRadii.l),
-                    border: Border.all(color: hv.ln),
+                if (side.isNotEmpty)
+                  Container(
+                    width: DesktopMetrics.sideColumn + 24,
+                    margin: const EdgeInsets.fromLTRB(0, 16, 20, 16),
+                    decoration: BoxDecoration(
+                      color: hv.s1.withValues(alpha: hv.isDark ? 0.35 : 0.5),
+                      borderRadius: BorderRadius.circular(HavenRadii.l),
+                      border: Border.all(color: hv.ln),
+                    ),
+                    child: ListView(
+                      padding: const EdgeInsets.fromLTRB(16, 16, 16, 20),
+                      children: [_SmallCards(widgets: side)],
+                    ),
                   ),
-                  child: ListView(
-                    padding: const EdgeInsets.fromLTRB(16, 4, 16, 20),
-                    children: [widgetsHeader, widgetList],
-                  ),
-                ),
               ],
             );
           } else {
@@ -305,20 +371,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   top: top,
                   bottom: HavenSpace.navClearance,
                 ),
-                children: [
-                  header,
-                  _Notices(snap: snap, fake: repo.isFake),
-                  const UpdateNotices(),
-                  quickChips,
-                  roomsHeader,
-                  roomGrid,
-                  roomHint,
-                  widgetsHeader,
-                  Padding(
-                    padding: EdgeInsets.symmetric(horizontal: pad),
-                    child: widgetList,
-                  ),
-                ],
+                children: withPrompts(stream(widgets, wideRooms: false)),
               ),
             );
           }
@@ -546,20 +599,13 @@ class _Notices extends StatelessWidget {
   }
 }
 
-class _WidgetGrid extends StatelessWidget {
-  const _WidgetGrid({required this.widgets});
+/// Kleine Karten nebeneinander (breite über die ganze Zeile).
+class _SmallCards extends StatelessWidget {
+  const _SmallCards({required this.widgets});
   final List<HavenWidgetConfig> widgets;
 
   @override
   Widget build(BuildContext context) {
-    if (widgets.isEmpty) {
-      return HavenCard(
-        child: Text(
-          'Keine Widgets. Tippe auf Bearbeiten, um welche hinzuzufügen.',
-          style: HavenText.body.copyWith(color: context.hv.tx2),
-        ),
-      );
-    }
     return LayoutBuilder(
       builder: (context, c) {
         final half = (c.maxWidth - 12) / 2;
@@ -580,128 +626,176 @@ class _WidgetGrid extends StatelessWidget {
   }
 }
 
-/// Bearbeiten: Räume als Liste, per langem Drücken (oder am Griff sofort)
-/// sortierbar. Die Reihenfolge liegt im geteilten Übersichts-Dokument.
-class _RoomOrderList extends ConsumerWidget {
-  const _RoomOrderList({required this.rooms});
+/// Frage nach neuen Räumen: auf die Startseite oder nicht.
+class _NewRoomPrompts extends ConsumerWidget {
+  const _NewRoomPrompts({required this.rooms, required this.pad});
   final List<Room> rooms;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    return ReorderableListView(
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      buildDefaultDragHandles: false,
-      onReorderStart: (_) => Haptics.tick(),
-      onReorderItem: (from, to) {
-        final ids = [for (final r in rooms) r.id];
-        final id = ids.removeAt(from);
-        ids.insert(to, id);
-        HapticFeedback.selectionClick();
-        ref.read(homeLayoutProvider.notifier).setRoomOrder(ids);
-      },
-      proxyDecorator: (child, _, a) => AnimatedBuilder(
-        animation: a,
-        builder: (context, child) => Transform.scale(
-          scale: 1 + 0.03 * Curves.easeOut.transform(a.value),
-          child: child,
-        ),
-        child: Material(color: const Color(0x00000000), child: child),
-      ),
-      children: [
-        for (var i = 0; i < rooms.length; i++)
-          ReorderableDelayedDragStartListener(
-            key: ValueKey('room-${rooms[i].id}'),
-            index: i,
-            child: _RoomOrderRow(room: rooms[i], index: i),
-          ),
-      ],
-    );
-  }
-}
-
-class _RoomOrderRow extends ConsumerWidget {
-  const _RoomOrderRow({required this.room, required this.index});
-  final Room room;
-  final int index;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final hv = context.hv;
-    final view = ref.watch(roomViewProvider(room.id));
-    final palette = view?.palette(dark: hv.isDark);
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Semantics(
-        label:
-            '${room.name}, Position ${index + 1}. Halten und ziehen zum Sortieren.',
-        child: HavenCard(
-          padding: const EdgeInsets.fromLTRB(16, 0, 4, 0),
-          radius: HavenRadii.m,
-          child: SizedBox(
-            height: 56,
-            child: Row(
-              children: [
-                Container(
-                  width: 14,
-                  height: 14,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: palette != null && palette.isOn
-                        ? palette.primary
-                        : hv.s3,
-                  ),
-                ),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: Text(
-                    room.name,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: HavenText.label.copyWith(color: hv.tx, fontSize: 15),
-                  ),
-                ),
-                ReorderableDragStartListener(
-                  index: index,
-                  child: SizedBox(
-                    width: HavenSpace.touch,
-                    height: HavenSpace.touch,
-                    child: Icon(Icons.drag_handle_rounded, color: hv.tx3),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _EditList extends ConsumerWidget {
-  const _EditList({required this.widgets});
-  final List<HavenWidgetConfig> widgets;
+  final double pad;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final hv = context.hv;
     final ctl = ref.read(widgetsProvider.notifier);
+    return AnimatedSize(
+      duration: context.motion(HavenMotion.d3),
+      curve: HavenMotion.out,
+      alignment: Alignment.topCenter,
+      child: Column(
+        children: [
+          for (final r in rooms)
+            Padding(
+              key: ValueKey('new-room-${r.id}'),
+              padding: EdgeInsets.fromLTRB(pad, 12, pad, 0),
+              child: HavenCard(
+                padding: const EdgeInsets.fromLTRB(14, 12, 8, 12),
+                radius: HavenRadii.m,
+                child: Row(
+                  children: [
+                    Container(
+                      width: 36,
+                      height: 36,
+                      decoration: BoxDecoration(
+                        color: hv.acc.withValues(alpha: 0.16),
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(
+                        Icons.meeting_room_outlined,
+                        size: 19,
+                        color: hv.acc,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            'Neuer Raum: ${r.name}',
+                            style: HavenText.label.copyWith(
+                              color: hv.tx,
+                              fontSize: 14.5,
+                            ),
+                          ),
+                          Text(
+                            'Zur Startseite hinzufügen?',
+                            style: HavenText.caption.copyWith(color: hv.tx2),
+                          ),
+                          const SizedBox(height: 6),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.end,
+                            children: [
+                              TextButton(
+                                onPressed: () {
+                                  Haptics.tick();
+                                  ctl.hideRoom(r.id);
+                                },
+                                child: Text(
+                                  'Nein',
+                                  style: HavenText.label.copyWith(
+                                    color: hv.tx2,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 4),
+                              FilledButton(
+                                style: FilledButton.styleFrom(
+                                  backgroundColor: hv.acc,
+                                  foregroundColor: hv.ai,
+                                  visualDensity: VisualDensity.compact,
+                                ),
+                                onPressed: () {
+                                  Haptics.tap();
+                                  ctl.addRoom(r.id);
+                                },
+                                child: const Text('Hinzufügen'),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Bearbeiten: alle Widgets der Startseite in einer Liste. Halten oder der
+/// Griff sortiert, Räume haben Einstellungen, der Kopf bleibt (er trägt den
+/// Bearbeiten-Knopf).
+class _HomeEditList extends ConsumerWidget {
+  const _HomeEditList({required this.widgets, required this.onDone});
+  final List<HavenWidgetConfig> widgets;
+  final VoidCallback onDone;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final hv = context.hv;
+    final ctl = ref.read(widgetsProvider.notifier);
+    final rooms = {for (final r in ref.watch(roomsProvider)) r.id: r};
+    String title(HavenWidgetConfig w) => w.type == HavenWidgetType.room
+        ? rooms[w.roomId]?.name ?? 'Raum'
+        : widgetTitle(w);
+    String? subtitle(HavenWidgetConfig w) {
+      if (w.type != HavenWidgetType.room) return null;
+      final shown = [
+        for (final k in RoomWidgetOptions.all)
+          if (w.shows(k)) RoomWidgetOptions.label(k),
+      ];
+      return '${w.compact ? 'Kompakt' : 'Ausführlich'} · '
+          '${shown.isEmpty ? 'nur Name' : shown.join(', ')}';
+    }
+
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(4, 8, 4, 12),
+          child: Text(
+            'Halten und ziehen sortiert. Die Startseite gilt auf allen '
+            'Geräten.',
+            style: HavenText.caption.copyWith(color: hv.tx3),
+          ),
+        ),
         ReorderableListView(
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
           buildDefaultDragHandles: false,
+          onReorderStart: (_) => Haptics.tick(),
           onReorderItem: ctl.reorder,
-          proxyDecorator: (child, _, _) =>
-              Material(color: const Color(0x00000000), child: child),
+          proxyDecorator: (child, _, a) => AnimatedBuilder(
+            animation: a,
+            builder: (context, child) => Transform.scale(
+              scale: 1 + 0.03 * Curves.easeOut.transform(a.value),
+              child: child,
+            ),
+            child: Material(color: const Color(0x00000000), child: child),
+          ),
           children: [
             for (var i = 0; i < widgets.length; i++)
-              EditRow(
-                key: ValueKey(widgets[i].id),
-                config: widgets[i],
+              ReorderableDelayedDragStartListener(
+                key: ValueKey('edit-${widgets[i].id}'),
                 index: i,
-                onRemove: () => ctl.remove(widgets[i].id),
+                child: _EditItem(
+                  icon: widgetIcon(widgets[i]),
+                  title: title(widgets[i]),
+                  subtitle: subtitle(widgets[i]),
+                  index: i,
+                  onRemove: widgets[i].type == HavenWidgetType.header
+                      ? null
+                      : () {
+                          Haptics.tick();
+                          ctl.remove(widgets[i].id);
+                        },
+                  onSettings: widgets[i].type == HavenWidgetType.room
+                      ? () => showRoomWidgetSettings(context, widgets[i].id)
+                      : null,
+                ),
               ),
           ],
         ),
@@ -729,57 +823,238 @@ class _EditList extends ConsumerWidget {
             ),
           ),
         ),
+        const SizedBox(height: 12),
+        Center(child: TextLink('Fertig', onTap: onDone)),
       ],
     );
   }
 }
 
-/// Ausführlich / kompakt umschalten (Handy).
-class _LayoutToggle extends StatelessWidget {
-  const _LayoutToggle({required this.detailed, required this.onChanged});
-  final bool detailed;
-  final ValueChanged<bool> onChanged;
+class _EditItem extends StatelessWidget {
+  const _EditItem({
+    required this.icon,
+    required this.title,
+    required this.index,
+    this.subtitle,
+    this.onRemove,
+    this.onSettings,
+  });
+
+  final IconData icon;
+  final String title;
+  final String? subtitle;
+  final int index;
+  final VoidCallback? onRemove;
+  final VoidCallback? onSettings;
 
   @override
   Widget build(BuildContext context) {
     final hv = context.hv;
-    Widget seg(bool value, IconData icon, String label) {
-      final on = detailed == value;
-      return Semantics(
-        button: true,
-        selected: on,
-        label: label,
-        excludeSemantics: true,
-        onTap: () => onChanged(value),
-        child: GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTap: () => onChanged(value),
-          child: AnimatedContainer(
-            duration: context.motion(HavenMotion.d2),
-            width: 38,
-            height: 30,
-            decoration: BoxDecoration(
-              color: on ? hv.s2 : Colors.transparent,
-              borderRadius: BorderRadius.circular(15),
-            ),
-            child: Icon(icon, size: 17, color: on ? hv.tx : hv.tx3),
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: HavenCard(
+        padding: const EdgeInsets.symmetric(horizontal: 4),
+        radius: HavenRadii.m,
+        child: SizedBox(
+          height: subtitle == null ? 56 : 64,
+          child: Row(
+            children: [
+              SizedBox(
+                width: HavenSpace.touch,
+                height: HavenSpace.touch,
+                child: onRemove == null
+                    ? Icon(Icons.lock_outline_rounded, size: 16, color: hv.tx3)
+                    : Semantics(
+                        button: true,
+                        label: '$title entfernen',
+                        excludeSemantics: true,
+                        onTap: onRemove,
+                        child: GestureDetector(
+                          behavior: HitTestBehavior.opaque,
+                          onTap: onRemove,
+                          child: Center(
+                            child: Container(
+                              width: 26,
+                              height: 26,
+                              decoration: BoxDecoration(
+                                color: hv.bad,
+                                shape: BoxShape.circle,
+                              ),
+                              child: const Icon(
+                                Icons.remove_rounded,
+                                size: 18,
+                                color: Color(0xFFFFFFFF),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+              ),
+              Icon(icon, size: 20, color: hv.tx2),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: HavenText.label.copyWith(
+                        color: hv.tx,
+                        fontSize: 15,
+                      ),
+                    ),
+                    if (subtitle != null)
+                      Text(
+                        subtitle!,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: HavenText.caption.copyWith(color: hv.tx3),
+                      ),
+                  ],
+                ),
+              ),
+              if (onSettings != null)
+                IconButton(
+                  tooltip: 'Einstellen',
+                  icon: Icon(Icons.tune_rounded, color: hv.tx2),
+                  onPressed: onSettings,
+                ),
+              ReorderableDragStartListener(
+                index: index,
+                child: SizedBox(
+                  width: HavenSpace.touch,
+                  height: HavenSpace.touch,
+                  child: Icon(Icons.drag_handle_rounded, color: hv.tx3),
+                ),
+              ),
+            ],
           ),
         ),
-      );
-    }
-
-    return Container(
-      padding: const EdgeInsets.all(2),
-      decoration: BoxDecoration(
-        color: hv.s1.withValues(alpha: hv.isDark ? 0.6 : 0.8),
-        borderRadius: BorderRadius.circular(17),
-        border: Border.all(color: hv.ln),
       ),
+    );
+  }
+}
+
+/// Einstellungen eines Raum-Widgets: Größe und was es zeigt.
+Future<void> showRoomWidgetSettings(BuildContext context, String widgetId) =>
+    showZbSheet<void>(
+      context,
+      builder: (context) => Consumer(
+        builder: (context, ref, _) {
+          final hv = context.hv;
+          final w = ref
+              .watch(widgetsProvider)
+              .where((w) => w.id == widgetId)
+              .firstOrNull;
+          if (w == null) return const SizedBox.shrink();
+          final room = ref
+              .watch(roomsProvider)
+              .where((r) => r.id == w.roomId)
+              .firstOrNull;
+          final ctl = ref.read(widgetsProvider.notifier);
+          void set(String key, Object v) => ctl.update(w.withOptions({key: v}));
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                room?.name ?? 'Raum',
+                style: HavenText.section.copyWith(color: hv.tx, fontSize: 22),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Was das Widget auf der Startseite zeigt.',
+                style: HavenText.caption.copyWith(color: hv.tx2),
+              ),
+              const SizedBox(height: 14),
+              HavenSegmented<bool>(
+                options: const [(false, 'Ausführlich'), (true, 'Kompakt')],
+                selected: w.compact,
+                onChanged: (v) {
+                  Haptics.tick();
+                  set(RoomWidgetOptions.size, v ? 'compact' : 'detailed');
+                },
+              ),
+              const SizedBox(height: 6),
+              Text(
+                w.compact
+                    ? 'Schmal, zwei nebeneinander: Bild, Name und Lichtknopf.'
+                    : 'Eine Zeile: Bild, Lichtknopf, Szenen, Heizung und '
+                          'Bewegungslicht.',
+                style: HavenText.caption.copyWith(color: hv.tx3),
+              ),
+              const SizedBox(height: 14),
+              SettingsGroup(
+                children: [
+                  for (final k in RoomWidgetOptions.all)
+                    if (!w.compact ||
+                        k == RoomWidgetOptions.picture ||
+                        k == RoomWidgetOptions.light)
+                      SettingsRow(
+                        key: ValueKey('room-widget-$k'),
+                        icon: switch (k) {
+                          RoomWidgetOptions.picture =>
+                            Icons.view_in_ar_outlined,
+                          RoomWidgetOptions.light =>
+                            Icons.lightbulb_outline_rounded,
+                          RoomWidgetOptions.scenes => Icons.palette_outlined,
+                          RoomWidgetOptions.heat => Icons.thermostat_rounded,
+                          _ => Icons.directions_walk_rounded,
+                        },
+                        title: RoomWidgetOptions.label(k),
+                        trailing: HavenSwitch(
+                          value: w.shows(k),
+                          onChanged: (v) => set(k, v),
+                          semanticLabel: RoomWidgetOptions.label(k),
+                        ),
+                        onTap: () => set(k, !w.shows(k)),
+                      ),
+                ],
+              ),
+            ],
+          );
+        },
+      ),
+    );
+
+/// Kleiner Abschnittskopf mit Trennlinie (z. B. „Räume · 5“).
+class _SectionLabel extends StatelessWidget {
+  const _SectionLabel(this.text, {this.count, required this.pad});
+  final String text;
+  final int? count;
+  final double pad;
+
+  @override
+  Widget build(BuildContext context) {
+    final hv = context.hv;
+    return Padding(
+      padding: EdgeInsets.fromLTRB(pad + 2, 18, pad, 10),
       child: Row(
-        mainAxisSize: MainAxisSize.min,
         children: [
-          seg(true, Icons.view_agenda_outlined, 'Ausführlich'),
-          seg(false, Icons.grid_view_rounded, 'Kompakt'),
+          Text(
+            text.toUpperCase(),
+            style: HavenText.caption.copyWith(
+              color: hv.tx2,
+              fontSize: 11.5,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 1.2,
+            ),
+          ),
+          if (count != null) ...[
+            const SizedBox(width: 6),
+            Text(
+              '$count',
+              style: HavenText.caption.copyWith(
+                color: hv.tx3,
+                fontSize: 11.5,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
+          const SizedBox(width: 12),
+          Expanded(child: Container(height: 1, color: hv.ln)),
         ],
       ),
     );

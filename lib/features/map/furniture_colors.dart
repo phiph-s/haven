@@ -86,8 +86,8 @@ class _FurnitureColorPickerState extends State<FurnitureColorPicker> {
         Tooltip(
           message: tooltip ?? '',
           child: Container(
-            width: 26,
-            height: 26,
+            width: 30,
+            height: 30,
             decoration: BoxDecoration(
               color: c,
               shape: BoxShape.circle,
@@ -108,13 +108,11 @@ class _FurnitureColorPickerState extends State<FurnitureColorPicker> {
             runSpacing: 6,
             children: [
               for (final z in widget.zones)
-                ChoiceChip(
-                  label: Text(z.label),
+                _ZoneChip(
+                  label: z.label,
+                  color: widget.colors[z.id] ?? defaultZoneColor(z),
                   selected: z.id == zone.id,
-                  avatar: CircleAvatar(
-                    backgroundColor: widget.colors[z.id] ?? defaultZoneColor(z),
-                  ),
-                  onSelected: (_) => setState(() => _zone = z.id),
+                  onTap: () => setState(() => _zone = z.id),
                 ),
             ],
           ),
@@ -149,6 +147,74 @@ class _FurnitureColorPickerState extends State<FurnitureColorPicker> {
           ],
         ),
       ],
+    );
+  }
+}
+
+/// Teil eines Möbelstücks als Pille mit seiner aktuellen Farbe.
+class _ZoneChip extends StatelessWidget {
+  const _ZoneChip({
+    required this.label,
+    required this.color,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final Color color;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final hv = context.hv;
+    return Semantics(
+      button: true,
+      selected: selected,
+      label: label,
+      excludeSemantics: true,
+      onTap: onTap,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () {
+          Haptics.tick();
+          onTap();
+        },
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 140),
+          padding: const EdgeInsets.fromLTRB(6, 5, 12, 5),
+          decoration: BoxDecoration(
+            color: selected ? hv.acc.withValues(alpha: 0.12) : hv.s1,
+            borderRadius: BorderRadius.circular(HavenRadii.pill),
+            border: Border.all(
+              color: selected ? hv.acc : hv.ln2,
+              width: selected ? 1.5 : 1,
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 18,
+                height: 18,
+                decoration: BoxDecoration(
+                  color: color,
+                  shape: BoxShape.circle,
+                  border: Border.all(color: hv.tx3.withValues(alpha: 0.35)),
+                ),
+              ),
+              const SizedBox(width: 7),
+              Text(
+                label,
+                style: HavenText.caption.copyWith(
+                  color: hv.tx,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

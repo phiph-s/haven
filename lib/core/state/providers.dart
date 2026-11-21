@@ -195,16 +195,53 @@ final syncRegistryProvider = Provider<SyncRegistry>((ref) {
 /// lokal im `SettingsStore` als Cache.
 @immutable
 class HomeLayout {
-  const HomeLayout({required this.widgets, this.roomOrder = const []});
+  const HomeLayout({
+    required this.widgets,
+    this.roomOrder = const [],
+    this.hiddenRooms = const [],
+  });
   final List<HavenWidgetConfig> widgets;
 
   /// Raum-IDs in der gewünschten Reihenfolge. Leer: wie aus HA.
   final List<String> roomOrder;
 
+  /// Räume, die nicht auf die Startseite sollen (bei „Nein“ auf die Frage
+  /// nach einem neuen Raum).
+  final List<String> hiddenRooms;
+
   Map<String, dynamic> toDoc() => {
     'widgets': [for (final w in widgets) w.toJson()],
-    'layout': {'room_order': roomOrder},
+    'layout': {'room_order': roomOrder, 'hidden_rooms': hiddenRooms},
   };
+}
+
+/// Ist [widgets] noch im alten Format (nur kleine Karten, Räume fest)?
+bool isLegacyHome(List<HavenWidgetConfig> widgets) =>
+    !widgets.any((w) => w.isMain);
+
+/// Startseite als Widgets: Ein altes Layout wird zu Kopf, Hinweisen,
+/// Szenen, allen Räumen ([rooms], in bisheriger Reihenfolge) und danach den
+/// bisherigen Karten. Räume, die es nicht mehr gibt, fallen weg.
+List<HavenWidgetConfig> effectiveHome(
+  List<HavenWidgetConfig> widgets,
+  List<Room> rooms,
+) {
+  final ids = {for (final r in rooms) r.id};
+  if (isLegacyHome(widgets)) {
+    return [
+      const HavenWidgetConfig(id: 'header', type: HavenWidgetType.header),
+      const HavenWidgetConfig(id: 'notices', type: HavenWidgetType.notices),
+      const HavenWidgetConfig(id: 'scenes', type: HavenWidgetType.scenes),
+      for (final r in rooms) HavenWidgetConfig.forRoom(r.id),
+      ...widgets,
+    ];
+  }
+  return [
+    for (final w in widgets)
+      // Räume erst prüfen, wenn es welche gibt (sonst verschwänden sie beim
+      // Verbindungsaufbau kurz).
+      if (w.roomId == null || ids.isEmpty || ids.contains(w.roomId)) w,
+  ];
 }
 
 class HomeLayoutController extends Notifier<HomeLayout> {
@@ -223,8 +260,14 @@ class HomeLayoutController extends Notifier<HomeLayout> {
             ? Duration.zero
             : const Duration(milliseconds: 800),
         // Nur Eigenes zählt als lokaler Stand, nicht die Voreinstellung.
+        // Aus dem Speicher, nicht aus `state`: beim Start ist der Provider
+        // noch nicht fertig gebaut.
         readLocal: () => store.hasWidgets || store.roomOrder.isNotEmpty
-            ? state.toDoc()
+            ? HomeLayout(
+                widgets: store.widgets,
+                roomOrder: store.roomOrder,
+                hiddenRooms: store.hiddenRooms,
+              ).toDoc()
             : null,
         applyRemote: (data) async {
           final List<HavenWidgetConfig> widgets;
@@ -241,9 +284,17 @@ class HomeLayoutController extends Notifier<HomeLayout> {
           final order = layout is Map && layout['room_order'] is List
               ? [for (final id in layout['room_order'] as List) '$id']
               : state.roomOrder;
+          final hidden = layout is Map && layout['hidden_rooms'] is List
+              ? [for (final id in layout['hidden_rooms'] as List) '$id']
+              : state.hiddenRooms;
           await store.setWidgets(widgets);
           await store.setRoomOrder(order);
-          state = HomeLayout(widgets: widgets, roomOrder: order);
+          await store.setHiddenRooms(hidden);
+          state = HomeLayout(
+            widgets: widgets,
+            roomOrder: order,
+            hiddenRooms: hidden,
+          );
           return true;
         },
         onError: (m) => ref.read(syncNoticeProvider.notifier).show(m),
@@ -261,7 +312,11 @@ class HomeLayoutController extends Notifier<HomeLayout> {
       });
       sync.start();
     }
-    return HomeLayout(widgets: store.widgets, roomOrder: store.roomOrder);
+    return HomeLayout(
+      widgets: store.widgets,
+      roomOrder: store.roomOrder,
+      hiddenRooms: store.hiddenRooms,
+    );
   }
 
   Future<void> _changed(HomeLayout next) async {
@@ -271,14 +326,33 @@ class HomeLayoutController extends Notifier<HomeLayout> {
     final store = ref.read(settingsStoreProvider);
     await store.setWidgets(next.widgets);
     await store.setRoomOrder(next.roomOrder);
+    await store.setHiddenRooms(next.hiddenRooms);
     await _sync?.changed();
   }
 
-  void setWidgets(List<HavenWidgetConfig> l) =>
-      unawaited(_changed(HomeLayout(widgets: l, roomOrder: state.roomOrder)));
+  /// Widgets setzen; die Reihenfolge der Räume folgt ihren Widgets.
+  void setWidgets(List<HavenWidgetConfig> l, {List<String>? hiddenRooms}) {
+    final order = [for (final w in l) ?w.roomId];
+    unawaited(
+      _changed(
+        HomeLayout(
+          widgets: l,
+          roomOrder: order.isEmpty ? state.roomOrder : order,
+          hiddenRooms: hiddenRooms ?? state.hiddenRooms,
+        ),
+      ),
+    );
+  }
 
-  void setRoomOrder(List<String> ids) =>
-      unawaited(_changed(HomeLayout(widgets: state.widgets, roomOrder: ids)));
+  void setRoomOrder(List<String> ids) => unawaited(
+    _changed(
+      HomeLayout(
+        widgets: state.widgets,
+        roomOrder: ids,
+        hiddenRooms: state.hiddenRooms,
+      ),
+    ),
+  );
 }
 
 final homeLayoutProvider = NotifierProvider<HomeLayoutController, HomeLayout>(
@@ -307,15 +381,46 @@ final orderedRoomsProvider = Provider<List<Room>>((ref) {
   return sortRooms(rooms, order);
 });
 
-/// Konfigurierbare Widgets der Zuhause-Seite (Teil von [homeLayoutProvider]).
+/// Die Startseite als Widgets (Teil von [homeLayoutProvider]): Kopf,
+/// Hinweise, Szenen, Räume und kleine Karten, in dieser gespeicherten
+/// Reihenfolge (siehe [effectiveHome]).
 class WidgetsController extends Notifier<List<HavenWidgetConfig>> {
   @override
-  List<HavenWidgetConfig> build() =>
-      ref.watch(homeLayoutProvider.select((l) => l.widgets));
+  List<HavenWidgetConfig> build() => effectiveHome(
+    ref.watch(homeLayoutProvider.select((l) => l.widgets)),
+    ref.watch(orderedRoomsProvider),
+  );
 
-  void _save(List<HavenWidgetConfig> l) {
+  void _save(List<HavenWidgetConfig> l, {List<String>? hiddenRooms}) {
     state = l;
-    ref.read(homeLayoutProvider.notifier).setWidgets(l);
+    ref
+        .read(homeLayoutProvider.notifier)
+        .setWidgets(l, hiddenRooms: hiddenRooms);
+  }
+
+  /// Einstellungen eines Widgets ändern.
+  void update(HavenWidgetConfig c) =>
+      _save([for (final w in state) w.id == c.id ? c : w]);
+
+  /// Neuen Raum auf die Startseite (nach dem letzten Raum).
+  void addRoom(String roomId) {
+    final l = [...state];
+    final last = l.lastIndexWhere((w) => w.type == HavenWidgetType.room);
+    l.insert(last < 0 ? l.length : last + 1, HavenWidgetConfig.forRoom(roomId));
+    final hidden = ref.read(homeLayoutProvider).hiddenRooms;
+    _save(
+      l,
+      hiddenRooms: [
+        for (final h in hidden)
+          if (h != roomId) h,
+      ],
+    );
+  }
+
+  /// Neuen Raum nicht auf die Startseite (nicht wieder fragen).
+  void hideRoom(String roomId) {
+    final hidden = ref.read(homeLayoutProvider).hiddenRooms;
+    _save(state, hiddenRooms: {...hidden, roomId}.toList());
   }
 
   void reorder(int from, int to) {
@@ -339,3 +444,15 @@ final widgetsProvider =
     NotifierProvider<WidgetsController, List<HavenWidgetConfig>>(
       WidgetsController.new,
     );
+
+/// Räume, die es neu gibt: weder auf der Startseite noch abgelehnt. Die
+/// Startseite fragt, ob sie dazukommen sollen.
+final newRoomsProvider = Provider<List<Room>>((ref) {
+  final widgets = ref.watch(widgetsProvider);
+  final hidden = ref.watch(homeLayoutProvider.select((l) => l.hiddenRooms));
+  final shown = {for (final w in widgets) ?w.roomId};
+  return [
+    for (final r in ref.watch(orderedRoomsProvider))
+      if (!shown.contains(r.id) && !hidden.contains(r.id)) r,
+  ];
+});

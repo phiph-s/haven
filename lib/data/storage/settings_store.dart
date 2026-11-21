@@ -69,6 +69,7 @@ class SettingsStore implements LocalPrefs {
   static const _kMap3dTransparentWalls = 'map_3d_transparent_walls';
   static const _kMap3dEnvironment = 'map_3d_environment';
   static const _kHomeRoomsDetailed = 'home_rooms_detailed';
+  static const _kHiddenRooms = 'home_hidden_rooms';
   static const _kMap3dLightReach = 'map_3d_light_reach';
   static const _kGhostIgnored = 'ghost_ignored';
   static const _kGhostHint = 'ghost_hint_dismissed';
@@ -202,6 +203,11 @@ class SettingsStore implements LocalPrefs {
   String? get map3dLightReach => _p.getString(_kMap3dLightReach);
   Future<void> setMap3dLightReach(String v) =>
       _p.setString(_kMap3dLightReach, v);
+
+  /// Räume, die nicht auf die Startseite sollen.
+  List<String> get hiddenRooms => _p.getStringList(_kHiddenRooms) ?? const [];
+  Future<void> setHiddenRooms(List<String> v) =>
+      _p.setStringList(_kHiddenRooms, v);
 
   /// Räume auf Zuhause (Handy): ausführlich (einer je Zeile, mit Szenen)
   /// oder kompakt (zwei je Zeile).

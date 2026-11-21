@@ -341,6 +341,7 @@ class FurnitureToolbar3d extends StatelessWidget {
     required this.onRotateRight,
     required this.onDuplicate,
     required this.onDelete,
+    this.onColors,
     this.duplicateShortcut,
   });
 
@@ -348,6 +349,9 @@ class FurnitureToolbar3d extends StatelessWidget {
   final VoidCallback onRotateRight;
   final VoidCallback onDuplicate;
   final VoidCallback onDelete;
+
+  /// Farben wählen; `null`: Möbelstück ohne einfärbbare Teile.
+  final VoidCallback? onColors;
   final String? duplicateShortcut;
 
   @override
@@ -382,6 +386,8 @@ class FurnitureToolbar3d extends StatelessWidget {
             margin: const EdgeInsets.symmetric(horizontal: 2),
             color: hv.ln2,
           ),
+          if (onColors case final c?)
+            MiniTool(label: 'Farben', icon: Icons.palette_outlined, onTap: c),
           MiniTool(
             label: 'Duplizieren',
             shortcut: duplicateShortcut,

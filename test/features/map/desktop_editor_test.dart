@@ -147,7 +147,9 @@ void main() {
     await _pump(tester, '/home', size: _desk);
     expect(find.byType(DesktopSidebar), findsOneWidget);
     expect(find.byType(HavenNavBar), findsNothing);
-    expect(find.text('Widgets'), findsOneWidget);
+    // Rechts die kleinen Widgets, ohne Überschrift.
+    expect(find.text('Strom jetzt'), findsOneWidget);
+    expect(find.text('Widgets'), findsNothing);
   });
 
   testWidgets('Handy: untere Leiste wie bisher', (tester) async {

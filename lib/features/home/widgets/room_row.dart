@@ -16,10 +16,11 @@ import '../../../core/state/providers.dart';
 import '../../../core/theme/tokens.dart';
 import '../../../core/widgets/animated_palette.dart';
 import '../../../core/widgets/haptics.dart';
-import '../../../core/widgets/haven_switch.dart';
 import '../../../core/widgets/press_scale.dart';
 import '../../../data/models/haven_automation.dart';
 import '../../../data/models/room.dart';
+import '../../../data/models/widget_config.dart';
+import '../../zigbee/widgets/zb_common.dart' show showZbSheet;
 import '../../../data/room_view.dart';
 import '../../../data/scene_look.dart' show sceneOffColor;
 import '../../automations/haven_automations_provider.dart';
@@ -85,9 +86,6 @@ final roomMotionProvider = Provider.family<HavenAutomation?, String>((
       .firstOrNull;
 });
 
-/// Tabs rechts vom Raum.
-enum RoomTab { light, heat, motion }
-
 /// Ein Raum auf Zuhause. [detailed]: Bild und Tabs nebeneinander; sonst
 /// schmal (Bild, darunter Name und Lichtknopf) für zwei je Zeile.
 class RoomRow extends ConsumerStatefulWidget {
@@ -96,10 +94,14 @@ class RoomRow extends ConsumerStatefulWidget {
     required this.roomId,
     this.detailed = true,
     this.large = false,
+    this.config,
   });
 
   final String roomId;
   final bool detailed;
+
+  /// Einstellungen des Raum-Widgets (was es zeigt), `null`: alles.
+  final HavenWidgetConfig? config;
 
   /// Mehr Platz (Desktop): größeres Bild, breitere Tabs.
   final bool large;
@@ -117,7 +119,7 @@ class _RoomRowState extends ConsumerState<RoomRow> {
   /// Gehaltene Szene (Vorschau im Bild).
   RoomScene? _preview;
 
-  RoomTab _tab = RoomTab.light;
+  bool _shows(String key) => widget.config?.shows(key) ?? true;
 
   String get roomId => widget.roomId;
 
@@ -138,15 +140,16 @@ class _RoomRowState extends ConsumerState<RoomRow> {
         ? ref.watch(roomLayersProvider((roomId: roomId, dark: hv.isDark))).value
         : null;
     final climate = tileClimateOf(ref, roomId, view.temperature);
-    final motion = widget.detailed
+    final heatShown = _shows(RoomWidgetOptions.heat) ? climate : null;
+    final motion = widget.detailed && _shows(RoomWidgetOptions.motion)
         ? ref.watch(roomMotionProvider(roomId))
         : null;
 
     final dim = _dim;
     final preview = _preview;
     final current = climate?.current ?? view.temperature;
-    // Ausführlich steht die Temperatur im Heizungs-Tab, sonst im Status.
-    final temp = current == null || (widget.detailed && climate != null)
+    // Ausführlich steht die Temperatur am Heizungsknopf, sonst im Status.
+    final temp = current == null || (widget.detailed && heatShown != null)
         ? null
         : view.humidity == null || climate != null
         ? '${num1(current)}°'
@@ -253,12 +256,14 @@ class _RoomRowState extends ConsumerState<RoomRow> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         mainAxisSize: MainAxisSize.min,
         children: [
-          SizedBox(height: 120, child: picture),
-          const SizedBox(height: 8),
+          if (_shows(RoomWidgetOptions.picture)) ...[
+            SizedBox(height: 120, child: picture),
+            const SizedBox(height: 8),
+          ],
           Row(
             children: [
               Expanded(child: title),
-              if (view.lamps.isNotEmpty) ...[
+              if (view.lamps.isNotEmpty && _shows(RoomWidgetOptions.light)) ...[
                 const SizedBox(width: 6),
                 LightButton(
                   palette: palette,
@@ -274,82 +279,108 @@ class _RoomRowState extends ConsumerState<RoomRow> {
       );
     }
 
-    final tabs = [
-      if (view.lamps.isNotEmpty) RoomTab.light,
-      if (climate != null) RoomTab.heat,
-      if (motion != null) RoomTab.motion,
+    final showPicture = _shows(RoomWidgetOptions.picture);
+    final light = view.lamps.isNotEmpty && _shows(RoomWidgetOptions.light);
+    final scenes = _shows(RoomWidgetOptions.scenes)
+        ? view.room.scenes
+        : const <RoomScene>[];
+    final chips = <Widget>[
+      if (heatShown != null)
+        _MiniChip(
+          icon: heatShown.heating
+              ? Icons.local_fire_department_rounded
+              : Icons.thermostat_rounded,
+          label: heatShown.current == null
+              ? (heatShown.off ? 'aus' : '${num1(heatShown.target)}°')
+              : '${num1(heatShown.current!)}°',
+          color: heatShown.heating ? const Color(0xFFFF8A3D) : null,
+          semantics: 'Heizung ${view.name}',
+          onTap: () => showRoomHeatSheet(context, roomId, view.name),
+        ),
+      if (motion != null)
+        _MiniChip(
+          icon: Icons.directions_walk_rounded,
+          label: motion.enabled ? 'an' : 'aus',
+          color: motion.enabled ? hv.acc : null,
+          semantics: 'Bewegungslicht',
+          toggled: motion.enabled,
+          onTap: () async {
+            Haptics.tap();
+            try {
+              await ref
+                  .read(havenAutomationsProvider.notifier)
+                  .setEnabled(motion.id!, !motion.enabled);
+            } catch (e) {
+              if (context.mounted) {
+                ScaffoldMessenger.maybeOf(
+                  context,
+                )?.showSnackBar(SnackBar(content: Text('$e')));
+              }
+            }
+          },
+        ),
     ];
-    final tab = tabs.contains(_tab) ? _tab : (tabs.isEmpty ? null : tabs.first);
-    final h = widget.large ? 200.0 : 156.0;
+    final hasPanel = light || scenes.isNotEmpty;
+    final h = showPicture ? (widget.large ? 172.0 : 144.0) : 96.0;
     final panelW = widget.large ? 250.0 : 152.0;
-
-    final Widget? panel = switch (tab) {
-      null => null,
-      RoomTab.light => _LightPanel(
-        view: view,
-        palette: palette,
-        preview: preview,
-        large: widget.large,
-        onToggle: toggle,
-        onScene: (s) {
-          HapticFeedback.selectionClick();
-          repo.applyScene(roomId, s.id);
-        },
-        onHold: (s) {
-          if (s != null) Haptics.tick();
-          setState(() => _preview = s);
-        },
-      ),
-      RoomTab.heat => TempStepper(climate: climate!, name: view.name),
-      RoomTab.motion => _MotionPanel(automation: motion!),
-    };
+    final panel = !hasPanel
+        ? null
+        : _ControlPanel(
+            view: view,
+            palette: palette,
+            preview: preview,
+            large: widget.large,
+            light: light,
+            scenes: scenes,
+            onToggle: toggle,
+            onScene: (s) {
+              HapticFeedback.selectionClick();
+              repo.applyScene(roomId, s.id);
+            },
+            onHold: (s) {
+              if (s != null) Haptics.tick();
+              setState(() => _preview = s);
+            },
+          );
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       mainAxisSize: MainAxisSize.min,
       children: [
-        title,
-        const SizedBox(height: 6),
-        SizedBox(
-          height: h,
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
+        // Kleine Knöpfe (Heizung, Bewegungslicht) rechts neben dem Namen:
+        // gehören zum Raum, nicht zum Licht.
+        if (chips.isEmpty)
+          title
+        else
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Expanded(child: picture),
-              if (panel != null) ...[
-                const SizedBox(width: 12),
-                SizedBox(
-                  width: panelW,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      if (tabs.length > 1)
-                        _Tabs(
-                          tabs: tabs,
-                          selected: tab!,
-                          heating: climate?.heating ?? false,
-                          motionOn: motion?.enabled ?? false,
-                          onSelect: (t) {
-                            Haptics.tick();
-                            setState(() => _tab = t);
-                          },
-                        ),
-                      // Ohne Leiste derselbe Abstand: die Knöpfe aller
-                      // Räume stehen auf einer Höhe.
-                      SizedBox(height: tabs.length > 1 ? 10 : 44),
-                      Expanded(
-                        child: AnimatedSwitcher(
-                          duration: context.motion(HavenMotion.d2),
-                          child: KeyedSubtree(key: ValueKey(tab), child: panel),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
+              Expanded(child: title),
+              const SizedBox(width: 8),
+              Padding(
+                padding: const EdgeInsets.only(top: 2),
+                child: Wrap(spacing: 6, runSpacing: 6, children: chips),
+              ),
             ],
           ),
-        ),
+        const SizedBox(height: 4),
+        if (showPicture || panel != null)
+          SizedBox(
+            height: h,
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                if (showPicture) Expanded(child: picture),
+                if (panel != null) ...[
+                  if (showPicture) const SizedBox(width: 12),
+                  if (showPicture)
+                    SizedBox(width: panelW, child: panel)
+                  else
+                    Expanded(child: panel),
+                ],
+              ],
+            ),
+          ),
       ],
     );
   }
@@ -430,88 +461,54 @@ class _Title extends StatelessWidget {
   }
 }
 
-/// Tab-Leiste: nur Symbole, das gewählte hinterlegt. Heizung und Bewegung
-/// zeigen ihren Zustand in der Farbe des Symbols.
-class _Tabs extends StatelessWidget {
-  const _Tabs({
-    required this.tabs,
-    required this.selected,
-    required this.heating,
-    required this.motionOn,
-    required this.onSelect,
-  });
-
-  final List<RoomTab> tabs;
-  final RoomTab selected;
-  final bool heating;
-  final bool motionOn;
-  final ValueChanged<RoomTab> onSelect;
-
-  @override
-  Widget build(BuildContext context) {
-    final hv = context.hv;
-    return Container(
-      height: 34,
-      padding: const EdgeInsets.all(2),
-      decoration: BoxDecoration(
-        color: hv.s1.withValues(alpha: hv.isDark ? 0.55 : 0.75),
-        borderRadius: BorderRadius.circular(17),
-        border: Border.all(color: hv.ln),
-      ),
-      child: Row(
+/// Heizung des Raums als Blatt: Raumtemperatur und Ziel mit Plus/Minus,
+/// live aus HA.
+Future<void> showRoomHeatSheet(
+  BuildContext context,
+  String roomId,
+  String name,
+) => showZbSheet<void>(
+  context,
+  builder: (context) => Consumer(
+    builder: (context, ref, _) {
+      final hv = context.hv;
+      final view = ref.watch(roomViewProvider(roomId));
+      final c = tileClimateOf(ref, roomId, view?.temperature);
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          for (final t in tabs)
-            Expanded(
-              child: Semantics(
-                button: true,
-                selected: t == selected,
-                label: switch (t) {
-                  RoomTab.light => 'Licht',
-                  RoomTab.heat => 'Heizung',
-                  RoomTab.motion => 'Bewegung',
-                },
-                excludeSemantics: true,
-                onTap: () => onSelect(t),
-                child: GestureDetector(
-                  behavior: HitTestBehavior.opaque,
-                  onTap: () => onSelect(t),
-                  child: AnimatedContainer(
-                    duration: context.motion(HavenMotion.d2),
-                    decoration: BoxDecoration(
-                      color: t == selected ? hv.s2 : Colors.transparent,
-                      borderRadius: BorderRadius.circular(15),
-                    ),
-                    child: Icon(
-                      switch (t) {
-                        RoomTab.light => Icons.lightbulb_outline_rounded,
-                        RoomTab.heat => Icons.thermostat_rounded,
-                        RoomTab.motion => Icons.directions_walk_rounded,
-                      },
-                      size: 18,
-                      color: switch (t) {
-                        RoomTab.heat when heating => const Color(0xFFFF8A3D),
-                        RoomTab.motion when motionOn => hv.acc,
-                        _ => t == selected ? hv.tx : hv.tx3,
-                      },
-                    ),
-                  ),
-                ),
+          Text(
+            'Heizung $name',
+            style: HavenText.section.copyWith(color: hv.tx, fontSize: 22),
+          ),
+          if (c != null) ...[
+            const SizedBox(height: 4),
+            Text(c.label, style: HavenText.caption.copyWith(color: hv.tx2)),
+            const SizedBox(height: 18),
+            Center(
+              child: SizedBox(
+                width: 220,
+                height: 150,
+                child: TempStepper(climate: c, name: name),
               ),
             ),
+          ],
         ],
-      ),
-    );
-  }
-}
+      );
+    },
+  ),
+);
 
-/// Licht-Tab: runder Knopf und die Szenen als Farbpunkte (Tippen ruft sie
-/// auf, Halten zeigt sie im Bild).
-class _LightPanel extends StatelessWidget {
-  const _LightPanel({
+/// Rechts vom Raumbild: runder Lichtknopf, daneben die Szenen als
+/// Farbpunkte (Tippen ruft sie auf, Halten zeigt sie im Bild).
+class _ControlPanel extends StatelessWidget {
+  const _ControlPanel({
     required this.view,
     required this.palette,
     required this.preview,
     required this.large,
+    required this.light,
+    required this.scenes,
     required this.onToggle,
     required this.onScene,
     required this.onHold,
@@ -521,13 +518,14 @@ class _LightPanel extends StatelessWidget {
   final RoomPalette palette;
   final RoomScene? preview;
   final bool large;
+  final bool light;
+  final List<RoomScene> scenes;
   final VoidCallback onToggle;
   final ValueChanged<RoomScene> onScene;
   final ValueChanged<RoomScene?> onHold;
 
   @override
   Widget build(BuildContext context) {
-    final scenes = view.room.scenes;
     final button = LightButton(
       palette: palette,
       on: view.anyOn,
@@ -536,20 +534,17 @@ class _LightPanel extends StatelessWidget {
       brightness: view.anyOn ? view.brightness : null,
       onTap: onToggle,
     );
-    if (scenes.isEmpty) return Center(child: button);
-    return Row(
-      children: [
-        button,
-        const SizedBox(width: 10),
-        Expanded(
-          child: LayoutBuilder(
+    final dots = scenes.isEmpty
+        ? null
+        : LayoutBuilder(
             builder: (context, c) {
               const dot = 30.0, gap = 8.0;
               final cols = ((c.maxWidth + gap) / (dot + gap)).floor().clamp(
                 1,
                 8,
               );
-              return Center(
+              return Align(
+                alignment: Alignment.centerLeft,
                 child: SingleChildScrollView(
                   child: Wrap(
                     spacing: gap,
@@ -572,9 +567,83 @@ class _LightPanel extends StatelessWidget {
                 ),
               );
             },
+          );
+    // Lichtknopf und daneben die Szenen, mittig zum Bild.
+    final Widget body = !light
+        ? (dots ?? const SizedBox.shrink())
+        : dots == null
+        ? Center(child: button)
+        : Row(
+            children: [
+              button,
+              const SizedBox(width: 10),
+              Expanded(child: dots),
+            ],
+          );
+    return Align(alignment: Alignment.centerLeft, child: body);
+  }
+}
+
+/// Kleiner Knopf über den Szenen (Heizung, Bewegungslicht).
+class _MiniChip extends StatelessWidget {
+  const _MiniChip({
+    required this.icon,
+    required this.label,
+    required this.semantics,
+    required this.onTap,
+    this.color,
+    this.toggled,
+  });
+
+  final IconData icon;
+  final String label;
+  final String semantics;
+  final VoidCallback onTap;
+  final Color? color;
+  final bool? toggled;
+
+  @override
+  Widget build(BuildContext context) {
+    final hv = context.hv;
+    final c = color;
+    return Semantics(
+      button: true,
+      toggled: toggled,
+      label: semantics,
+      value: label,
+      excludeSemantics: true,
+      onTap: onTap,
+      child: PressScale(
+        onTap: onTap,
+        pressedScale: 0.92,
+        child: AnimatedContainer(
+          duration: context.motion(HavenMotion.d2),
+          height: 30,
+          padding: const EdgeInsets.fromLTRB(8, 0, 10, 0),
+          decoration: BoxDecoration(
+            color: c != null
+                ? c.withValues(alpha: hv.isDark ? 0.2 : 0.16)
+                : hv.s1.withValues(alpha: hv.isDark ? 0.7 : 0.85),
+            borderRadius: BorderRadius.circular(15),
+            border: Border.all(color: c?.withValues(alpha: 0.6) ?? hv.ln),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 16, color: c ?? hv.tx2),
+              const SizedBox(width: 4),
+              Text(
+                label,
+                style: HavenText.label.copyWith(
+                  color: hv.tx,
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
           ),
         ),
-      ],
+      ),
     );
   }
 }
@@ -658,75 +727,6 @@ class _SceneDot extends StatelessWidget {
           ),
         ),
       ),
-    );
-  }
-}
-
-/// Bewegungs-Tab: Bewegungslicht an/aus und was es gerade tut.
-class _MotionPanel extends ConsumerWidget {
-  const _MotionPanel({required this.automation});
-  final HavenAutomation automation;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final hv = context.hv;
-    final on = automation.enabled;
-    final phase = automation.motionStatus?.phase;
-    final what = !on
-        ? 'Aus'
-        : switch (phase) {
-            MotionPhase.motion => 'Licht vom Melder',
-            MotionPhase.warn => 'Dimmt gleich aus',
-            MotionPhase.manual => 'Von Hand übernommen',
-            _ => 'Wartet auf Bewegung',
-          };
-    Future<void> set(bool v) async {
-      Haptics.tap();
-      try {
-        await ref
-            .read(havenAutomationsProvider.notifier)
-            .setEnabled(automation.id!, v);
-      } catch (e) {
-        if (context.mounted) {
-          ScaffoldMessenger.maybeOf(
-            context,
-          )?.showSnackBar(SnackBar(content: Text('$e')));
-        }
-      }
-    }
-
-    return Column(
-      mainAxisAlignment: MainAxisAlignment.center,
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            Icon(
-              Icons.directions_walk_rounded,
-              size: 22,
-              color: on ? hv.acc : hv.tx3,
-            ),
-            const Spacer(),
-            HavenSwitch(
-              key: ValueKey('motion-${automation.id}'),
-              value: on,
-              onChanged: set,
-              semanticLabel: 'Bewegungslicht',
-            ),
-          ],
-        ),
-        const SizedBox(height: 4),
-        Text(
-          'Bewegungslicht',
-          style: HavenText.label.copyWith(color: hv.tx, fontSize: 14),
-        ),
-        Text(
-          what,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: HavenText.caption.copyWith(color: hv.tx2),
-        ),
-      ],
     );
   }
 }
@@ -846,6 +846,52 @@ class _NoPicture extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// Leise Fläche hinter einem Raum der Startseite: fast durchsichtig mit
+/// Haarlinie, bei Licht oben links ein Schein in der Lichtfarbe. Gibt der
+/// Seite Halt, ohne schwere Karte.
+class RoomPlate extends ConsumerWidget {
+  const RoomPlate({super.key, required this.roomId, required this.child});
+  final String roomId;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final hv = context.hv;
+    final view = ref.watch(roomViewProvider(roomId));
+    final palette = view?.palette(dark: hv.isDark);
+    final radius = BorderRadius.circular(HavenRadii.l + 2);
+    Widget plate(Color glow, double k) => DecoratedBox(
+      decoration: BoxDecoration(
+        borderRadius: radius,
+        color: hv.s1.withValues(alpha: hv.isDark ? 0.42 : 0.6),
+        border: Border.all(color: hv.ln),
+      ),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          borderRadius: radius,
+          gradient: RadialGradient(
+            center: const Alignment(-0.85, -1),
+            radius: 1.25,
+            colors: [
+              glow.withValues(alpha: (hv.isDark ? 0.2 : 0.16) * k),
+              glow.withValues(alpha: 0),
+            ],
+          ),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+          child: child,
+        ),
+      ),
+    );
+    if (palette == null) return plate(hv.acc, 0);
+    return AnimatedPalette(
+      palette: palette,
+      builder: (context, p) => plate(p.primary, p.intensity),
     );
   }
 }
