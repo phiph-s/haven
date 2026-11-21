@@ -75,9 +75,7 @@ class GpuScene {
       // Flächen behalten den gebakenen Kanal: Sonne und Mond (Kanal 0xFF)
       // erreichen sie trotzdem in Echtzeit, Lampen nur gebaken. Mit allen
       // Kanälen fiele Lampenlicht ungehindert auf die Böden der Nachbarräume.
-      for (final r in _receivers) {
-        _dirty.add(r);
-      }
+      _dirty.addAll(_surfaces);
       for (final o in _objects.values) {
         o.node.shadowCastingMode = on
             ? fs.ShadowCastingMode.on
@@ -140,8 +138,8 @@ class GpuScene {
     final old = _groundSpec;
     _groundSpec = g;
     if ((old == null) != (g == null)) {
-      for (final r in _receivers) {
-        _paintReceiver(r);
+      for (final s in _surfaces) {
+        _paintSurface(s);
       }
     }
     if (g == null) {
@@ -299,7 +297,7 @@ class GpuScene {
           final t = _sunTask(r, occ.objects);
           _jobs.add(() {
             _applyBake(runBakeTask(t));
-            _dirty.add(r);
+            _dirty.add(r.surface);
           });
         }
       }
@@ -307,7 +305,7 @@ class GpuScene {
   }
 
   SunBakeTask _sunTask(_Receiver r, LightOccluders occ) => SunBakeTask(
-    _receivers.indexOf(r),
+    r.index,
     r.bake,
     quality.bakeSamples,
     toSun: -_sunDir,
@@ -380,6 +378,10 @@ class GpuScene {
   /// Gebakenes Lampenlicht: Empfangsflächen (Böden, Möbel-Oberseiten) und
   /// je Fläche die Beleuchtung jeder Lampe im Raum.
   final List<_Receiver> _receivers = [];
+
+  /// Was davon gezeichnet wird: je Boden eine Fläche, je Möbelstück alle
+  /// Oberseiten zusammen (siehe [_Surface]).
+  final List<_Surface> _surfaces = [];
   final Map<String, fs.Node> _bulbs = {};
   final Map<String, int> _lampMask = {};
   final Map<String, String?> _bulbRoom = {};
@@ -576,8 +578,8 @@ class GpuScene {
       roomNode.add(
         _receiverNode(
           'floor:${r.id}',
-          floor,
-          (s) => s.floor.withValues(alpha: s.floorOpacity),
+          [floor],
+          [(s) => s.floor.withValues(alpha: s.floorOpacity)],
         ),
       );
       _roomReceivers[r.id] = [firstReceiver];
@@ -704,7 +706,7 @@ class GpuScene {
       if (deferBake) {
         // Erst die Geometrie zeigen, Licht folgt aus dem Hintergrund.
         _bakePending = true;
-        _dirty.addAll(_receivers);
+        _dirty.addAll(_surfaces);
         return;
       }
       // Je Lichtzone: Lampen leuchten in alle Räume der Zone, Wände halten
@@ -831,14 +833,21 @@ class GpuScene {
     );
     node.mesh = mesh;
     final topPolys = <List<V3>>[];
+    final topColors = <Color Function(SceneStyle)>[];
     for (final f in tops) {
       final c = o.colorOf(f);
       final z =
           f.points.map((p) => p.z).reduce((a, b) => a + b) / f.points.length;
-      final poly = [for (final p in f.points) V3(p.x, p.y, z)];
-      topPolys.add(poly);
-      _roomReceivers[roomId]!.add(_receivers.length);
-      node.add(_receiverNode('top:${o.id}', poly, (s) => s.colorOf(f.mat, c)));
+      topPolys.add([for (final p in f.points) V3(p.x, p.y, z)]);
+      topColors.add((s) => s.colorOf(f.mat, c));
+    }
+    if (topPolys.isNotEmpty) {
+      final first = _receivers.length;
+      // Alle Oberseiten zusammen: ein Draw-Call je Möbelstück.
+      node.add(_receiverNode('top:${o.id}', topPolys, topColors));
+      _roomReceivers[roomId]!.addAll([
+        for (var i = first; i < _receivers.length; i++) i,
+      ]);
     }
     // Keine Echtzeit-Schatten: Sonne und Lampen sind auf Böden und
     // Oberseiten gebaken (mit voller Möbelhöhe, auch in flachen Räumen).
@@ -933,7 +942,7 @@ class GpuScene {
         for (final r in e.value) {
           _jobs.add(() {
             _bakePair(m, r, own: e.key == home, occ: occ);
-            _dirty.add(r);
+            _dirty.add(r.surface);
           });
         }
       }
@@ -967,14 +976,14 @@ class GpuScene {
     _lampState[id] = s;
     _applyLamp(id, s);
     for (final r in _receivers) {
-      if (r.lamps.containsKey(id)) _dirty.add(r);
+      if (r.lamps.containsKey(id)) _dirty.add(r.surface);
     }
     // Raumlicht: der ganze Raum der Lampe.
     final room = _bulbRoom[id];
     if (room != null) {
       _applyRoomLight(room);
       for (final i in _roomReceivers[room] ?? const <int>[]) {
-        _dirty.add(_receivers[i]);
+        _dirty.add(_receivers[i].surface);
       }
     }
   }
@@ -1272,14 +1281,14 @@ class GpuScene {
       _applyRoomLight(room);
     }
     // Nur neu mischen (in Scheiben), gebacken ist schon alles.
-    _dirty.addAll(_receivers);
+    _dirty.addAll(_surfaces);
   }
 
   late final fs.Geometry _bulbGeometry = fs.SphereGeometry(radius: 0.07);
 
   /// Vorgemerkte Flächen, die neu gemischt werden müssen (Reihenfolge der
   /// Anmeldung).
-  final Set<_Receiver> _dirty = <_Receiver>{};
+  final Set<_Surface> _dirty = <_Surface>{};
 
   /// Gibt es noch vorgemerkte Flächen?
   bool get lightPending => _dirty.isNotEmpty || _jobs.isNotEmpty;
@@ -1294,16 +1303,77 @@ class GpuScene {
       if (sw.elapsed >= budget) return true;
     }
     while (_dirty.isNotEmpty) {
-      final r = _dirty.first;
-      _dirty.remove(r);
-      _relight(r);
+      final s = _dirty.first;
+      _dirty.remove(s);
+      _relight(s);
       if (sw.elapsed >= budget) break;
     }
     return _dirty.isNotEmpty;
   }
 
-  /// Gebakene Beleuchtung einer Fläche neu zusammensetzen.
-  void _relight(_Receiver r) {
+  /// Gebakene Beleuchtung einer Fläche neu zusammensetzen: eine Textur,
+  /// bei mehreren Flächen ([_Surface.atlas]) alle nebeneinander, auf den
+  /// hellsten Wert aller normiert.
+  void _relight(_Surface s) {
+    final Uint8List px;
+    var max = 0.0;
+    if (!s.atlas) {
+      final b = s.members.first.bake;
+      (px, max) = combineLamps(
+        b.width * b.height,
+        _lightParts(s.members.first),
+      );
+    } else {
+      final sums = [
+        for (final r in s.members)
+          sumLamps(r.bake.width * r.bake.height, _lightParts(r)),
+      ];
+      for (final rgb in sums) {
+        max = math.max(max, peakOf(rgb));
+      }
+      px = Uint8List(max <= 0 ? 0 : s.width * s.height * 4);
+      if (max > 0) {
+        for (var i = 0; i < sums.length; i++) {
+          final r = s.members[i];
+          encodeLight(
+            sums[i],
+            max,
+            px,
+            r.bake.width,
+            r.bake.height,
+            stride: s.width,
+            x: r.atlasX,
+            y: r.atlasY,
+            gutter: r.gutter,
+          );
+        }
+      }
+    }
+    if (max <= 0) {
+      s.material
+        ..emissiveTexture = null
+        ..emissiveFactor = vm.Vector4.zero();
+      return;
+    }
+    s.material
+      ..emissiveTexture = fs.Texture2D.fromPixels(
+        px,
+        s.width,
+        s.height,
+        // Im Atlas ohne Mip-Stufen: kleinere Stufen mischten die Flächen
+        // ineinander. Die Lichtkarte ist weich und liegt fast immer
+        // vergrößert im Bild.
+        sampling: s.atlas
+            ? const fs.TextureSampling(mipmaps: false)
+            : const fs.TextureSampling(),
+      )
+      ..emissiveFactor = vm.Vector4(1, 1, 1, 1)
+      ..emissiveStrength = max;
+  }
+
+  /// Lichtanteile einer Fläche: (Beleuchtung, lineare Farbe × Stärke) je
+  /// Quelle, für [combineLamps] und [sumLamps].
+  List<(Float32List, double, double, double)> _lightParts(_Receiver r) {
     // Wie das Echtzeitlicht: diffuse Reflexion albedo/π · Intensität · E.
     final k = 40.0 * style.lampGlow / math.pi;
     final albedo = linearColor(r.color(style));
@@ -1362,21 +1432,7 @@ class GpuScene {
         ));
       }
     }
-    final (px, max) = combineLamps(r.bake.width * r.bake.height, parts);
-    if (max <= 0) {
-      r.material
-        ..emissiveTexture = null
-        ..emissiveFactor = vm.Vector4.zero();
-      return;
-    }
-    r.material
-      ..emissiveTexture = fs.Texture2D.fromPixels(
-        px,
-        r.bake.width,
-        r.bake.height,
-      )
-      ..emissiveFactor = vm.Vector4(1, 1, 1, 1)
-      ..emissiveStrength = max;
+    return parts;
   }
 
   /// Heatmap-Flächen neu aufbauen: je Raum mit Messwerten eine eingefärbte,
@@ -1486,34 +1542,73 @@ class GpuScene {
       ..shadowCastingMode = fs.ShadowCastingMode.off;
   }
 
-  /// Fläche als eigener Knoten mit UVs und eigenem Material (für die
-  /// Emissive-Textur), nur vom Sonnenlicht erreicht.
+  /// Flächen als ein Knoten mit UVs und eigenem Material (für die
+  /// Emissive-Textur), nur vom Sonnenlicht erreicht. Mehrere Flächen (die
+  /// Oberseiten eines Möbelstücks) teilen sich Geometrie, Material und
+  /// Textur: ein Draw-Call statt einem je Fläche. Gebacken wird je Fläche.
   fs.Node _receiverNode(
     String name,
-    List<V3> polygon,
-    Color Function(SceneStyle) color,
+    List<List<V3>> polygons,
+    List<Color Function(SceneStyle)> colors,
   ) {
-    final bake = LightReceiver(polygon, texel: quality.bakeTexel);
     final mat = fs.PhysicallyBasedMaterial()
       ..metallicFactor = 0
       ..roughnessFactor = 1;
-    final r = _Receiver(bake, mat, color);
-    _paintReceiver(r);
-    _receivers.add(r);
-    return r
-        .node = fs.Node(name: name, mesh: fs.Mesh(_receiverGeometry(bake), mat))
+    final s = _Surface(mat, fs.Node(name: name));
+    for (var i = 0; i < polygons.length; i++) {
+      final r = _Receiver(
+        LightReceiver(polygons[i], texel: quality.bakeTexel),
+        s,
+        colors[i],
+        _receivers.length,
+      );
+      _receivers.add(r);
+      s.members.add(r);
+    }
+    s.pack();
+    if (!s.atlas) {
+      s.node.mesh = fs.Mesh(_receiverGeometry(s.members.first.bake), mat);
+    }
+    _surfaces.add(s);
+    _paintSurface(s);
+    return s.node
       // Lampen nur gebaken (Wände halten ihr Licht auf). Ohne Baking
       // (Entwurf) alles in Echtzeit. Mit Himmel (`setSky`) erreicht die
       // Sonne die Fläche trotzdem in Echtzeit (sie leuchtet in alle Kanäle).
       ..lightChannelMask = quality.bakes ? kBakedChannel : 0xFF;
   }
 
-  void _paintReceiver(_Receiver r) {
-    var c = r.color(style);
-    // Mit Boden darunter deckend: sonst schienen Wiese und Schnee durch.
-    if (_groundSpec != null) c = c.withValues(alpha: 1);
-    r.material.baseColorFactor = linearColor(c, c.a);
-    r.material.alphaMode = c.a < 1 ? fs.AlphaMode.blend : fs.AlphaMode.opaque;
+  void _paintSurface(_Surface s) {
+    vm.Vector4 colorOf(_Receiver r) {
+      var c = r.color(style);
+      // Mit Boden darunter deckend: sonst schienen Wiese und Schnee durch.
+      if (_groundSpec != null) c = c.withValues(alpha: 1);
+      return linearColor(c, c.a);
+    }
+
+    if (!s.atlas) {
+      final c = colorOf(s.members.first);
+      s.material.baseColorFactor = c;
+      s.material.alphaMode = c.w < 1 ? fs.AlphaMode.blend : fs.AlphaMode.opaque;
+      return;
+    }
+    // Je Fläche eine eigene Farbe: an den Ecken statt im Material.
+    final colors = [for (final r in s.members) colorOf(r)];
+    final flat = Float32List(colors.length * 4);
+    var blend = false, same = s.colors != null;
+    for (var i = 0; i < colors.length; i++) {
+      colors[i].copyIntoArray(flat, i * 4);
+      if (colors[i].w < 1) blend = true;
+    }
+    for (var i = 0; same && i < flat.length; i++) {
+      same = s.colors![i] == flat[i];
+    }
+    if (!same) {
+      s.colors = flat;
+      s.node.mesh = fs.Mesh(_atlasGeometry(s, colors), s.material);
+    }
+    s.material.baseColorFactor = vm.Vector4(1, 1, 1, 1);
+    s.material.alphaMode = blend ? fs.AlphaMode.blend : fs.AlphaMode.opaque;
   }
 
   /// Bake aller Lampen eines Raums auf seine Flächen.
@@ -1576,7 +1671,7 @@ class GpuScene {
       gain = 0.35;
     }
     return LampBakeTask(
-      _receivers.indexOf(r),
+      r.index,
       r.bake,
       quality.bakeSamples,
       lampId: m.id,
@@ -1663,7 +1758,7 @@ class GpuScene {
       for (final t in tasks) {
         _jobs.add(() {
           _applyBake(runBakeTask(t));
-          _dirty.add(_receivers[t.receiver]);
+          _dirty.add(_receivers[t.receiver].surface);
         });
       }
       return;
@@ -1683,7 +1778,7 @@ class GpuScene {
       for (final b in results) {
         _applyBake(b);
       }
-      _dirty.addAll(_receivers);
+      _dirty.addAll(_surfaces);
     } finally {
       _baking = false;
     }
@@ -1706,10 +1801,11 @@ class GpuScene {
     for (final t in _zoneTasks(byRoom)) {
       _applyBake(runBakeTask(t));
     }
-    for (final l in byRoom.values) {
-      for (final r in l) {
-        _relight(r);
-      }
+    for (final s in {
+      for (final l in byRoom.values)
+        for (final r in l) r.surface,
+    }) {
+      _relight(s);
     }
   }
 
@@ -1780,9 +1876,9 @@ class GpuScene {
     _lastFadeKey = null;
     _mat.update(s);
     _applyLighting();
-    for (final r in _receivers) {
-      _paintReceiver(r);
-      _dirty.add(r);
+    for (final s in _surfaces) {
+      _paintSurface(s);
+      _dirty.add(s);
     }
     // Aktuellen Lampenzustand behalten (nicht den aus der Szene: sonst
     // ginge eine ausgeschaltete Lampe bei jeder Stiländerung wieder an).
@@ -2698,13 +2794,83 @@ double _distToOutline(Offset p, List<Offset> poly) {
   return inside ? 0 : best;
 }
 
+/// Rand um jede Fläche im Atlas, in Metern (in Texeln: mindestens einer,
+/// höchstens acht). Kantenglättung tastet an den Kanten bis zu einem Pixel
+/// neben der Fläche ab; das darf nicht in der Nachbarfläche landen, auch
+/// nicht bei winzigen Flächen (viele Texel je Pixel) oder weit herausgezoomt.
+const double kAtlasMargin = 0.06;
+
+/// Was von den gebakenen Flächen gezeichnet wird: ein Knoten mit einem
+/// Material und einer Emissive-Textur. Ein Boden ist eine Fläche für sich;
+/// die Oberseiten eines Möbelstücks liegen zusammen in einem Atlas (jede mit
+/// Rand, in dem sie sich wiederholt), sonst kostete jede einen eigenen
+/// Draw-Call.
+class _Surface {
+  _Surface(this.material, this.node);
+  final fs.PhysicallyBasedMaterial material;
+  final fs.Node node;
+  final List<_Receiver> members = [];
+
+  /// Mehrere Flächen in einer Textur (Farbe je Fläche an den Ecken).
+  bool get atlas => members.length > 1;
+
+  /// Größe der Textur in Texeln.
+  int width = 0, height = 0;
+
+  /// Zuletzt gesetzte Eckenfarben (RGBA je Fläche), nur im Atlas.
+  Float32List? colors;
+
+  /// Flächen in Reihen in die Textur legen (hohe zuerst).
+  void pack() {
+    if (!atlas) {
+      width = members.first.bake.width;
+      height = members.first.bake.height;
+      return;
+    }
+    for (final r in members) {
+      final b = r.bake;
+      final texel = math.min(b.sizeX / b.width, b.sizeY / b.height);
+      r.gutter = (kAtlasMargin / texel).ceil().clamp(1, 8);
+    }
+    int cellW(_Receiver r) => r.bake.width + 2 * r.gutter;
+    int cellH(_Receiver r) => r.bake.height + 2 * r.gutter;
+    final order = [...members]..sort((a, b) => cellH(b).compareTo(cellH(a)));
+    var area = 0, widest = 0;
+    for (final r in order) {
+      area += cellW(r) * cellH(r);
+      widest = math.max(widest, cellW(r));
+    }
+    final limit = math.max(widest, math.sqrt(area).ceil());
+    var x = 0, y = 0, rowHeight = 0;
+    width = 0;
+    for (final r in order) {
+      final w = cellW(r), h = cellH(r);
+      if (x > 0 && x + w > limit) {
+        y += rowHeight;
+        x = 0;
+        rowHeight = 0;
+      }
+      r.atlasX = x + r.gutter;
+      r.atlasY = y + r.gutter;
+      x += w;
+      rowHeight = math.max(rowHeight, h);
+      width = math.max(width, x);
+    }
+    height = y + rowHeight;
+  }
+}
+
 class _Receiver {
-  _Receiver(this.bake, this.material, this.color);
+  _Receiver(this.bake, this.surface, this.color, this.index);
   final LightReceiver bake;
 
-  /// Knoten der Fläche (Lichtkanäle umschalten, siehe `setSky`).
-  fs.Node? node;
-  final fs.PhysicallyBasedMaterial material;
+  /// Worin die Fläche gezeichnet wird, ihr erster Texel dort und wie viele
+  /// Texel Rand sie ringsum hat (siehe [kAtlasMargin]).
+  final _Surface surface;
+  int atlasX = 0, atlasY = 0, gutter = 0;
+
+  /// Stelle in `GpuScene._receivers`.
+  final int index;
   final Color Function(SceneStyle) color;
   final Map<String, Float32List> lamps = {};
 
@@ -2736,6 +2902,42 @@ fs.Geometry _receiverGeometry(LightReceiver r) {
     positions: Float32List.fromList(pos),
     normals: Float32List.fromList(nrm),
     texCoords: Float32List.fromList(uv),
+  );
+}
+
+/// Alle Flächen von [s] in einer Geometrie: UVs in den Atlas, die Farbe
+/// jeder Fläche ([colors], linear) an ihren Ecken.
+fs.Geometry _atlasGeometry(_Surface s, List<vm.Vector4> colors) {
+  final pos = <double>[], nrm = <double>[], uv = <double>[], col = <double>[];
+  final up = toFs(V3.up);
+  for (var m = 0; m < s.members.length; m++) {
+    final r = s.members[m];
+    final b = r.bake;
+    final pts = b.polygon;
+    final c = colors[m];
+    for (final (i0, i1, i2) in triangulate(pts, V3.up)) {
+      final fa = toFs(pts[i0]), fb = toFs(pts[i1]), fc = toFs(pts[i2]);
+      final order = (fb - fa).cross(fc - fa).dot(up) >= 0
+          ? [i0, i1, i2]
+          : [i0, i2, i1];
+      for (final i in order) {
+        final q = toFs(pts[i]);
+        pos.addAll([q.x, q.y, q.z]);
+        nrm.addAll([up.x, up.y, up.z]);
+        final (u, v) = b.uv(pts[i]);
+        uv.addAll([
+          (r.atlasX + u * b.width) / s.width,
+          (r.atlasY + v * b.height) / s.height,
+        ]);
+        col.addAll([c.x, c.y, c.z, c.w]);
+      }
+    }
+  }
+  return fs.MeshGeometry.fromArrays(
+    positions: Float32List.fromList(pos),
+    normals: Float32List.fromList(nrm),
+    texCoords: Float32List.fromList(uv),
+    colors: Float32List.fromList(col),
   );
 }
 
