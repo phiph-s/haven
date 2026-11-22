@@ -379,7 +379,7 @@ class FakeRepository extends BaseRepository {
           {'id': sc['id'], 'name': sc['name'], 'look': null},
       ];
     }
-    _rooms = FakeRooms(inventory).derive(scenes: _sceneDefs);
+    _rooms = FakeRooms(_inventory).derive(scenes: _sceneDefs);
     _initSceneSync();
     for (final t in _thermostats.entries) {
       _entities.addAll(
@@ -788,7 +788,7 @@ class FakeRepository extends BaseRepository {
 
   void _rebuildRooms() {
     _refreshSync();
-    _rooms = FakeRooms(inventory).derive(scenes: _sceneDefs);
+    _rooms = FakeRooms(_inventory).derive(scenes: _sceneDefs);
     _push();
   }
 
@@ -903,6 +903,58 @@ class FakeRepository extends BaseRepository {
   @override
   bool get knobLightActions => true;
 
+  @override
+  bool get canCreateRoomGroups => true;
+
+  /// Im Fake angelegte Gruppen (wie `z2m_groups` in den Beispieldaten).
+  final List<Map<String, dynamic>> _newGroups = [];
+
+  /// Beispieldaten samt angelegter Gruppen.
+  Map<String, dynamic> get _inventory => _newGroups.isEmpty
+      ? inventory
+      : {
+          ...inventory,
+          'z2m_groups': [...inventory['z2m_groups'] as List, ..._newGroups],
+        };
+
+  @override
+  Future<String> createRoomGroup(String roomId) async {
+    final r = _room(roomId);
+    if (r == null) throw HavenException('Unbekannter Raum', code: 'not_found');
+    if (r.zigbeeGroupId != null) {
+      throw HavenException(
+        '${r.name} hat schon eine Gruppe',
+        code: 'group_exists',
+      );
+    }
+    final members = [
+      for (final d in inventory['z2m_devices'] as List)
+        if ((d as Map)['room'] == roomId && d['device_type'] == 'light')
+          '${d['friendly_name']}',
+    ];
+    if (members.isEmpty) {
+      throw HavenException(
+        'In ${r.name} gibt es keine Zigbee-Lampen',
+        code: 'no_lights',
+      );
+    }
+    await _sceneDelay();
+    final ids = [
+      for (final g in _inventory['z2m_groups'] as List) (g as Map)['id'] as int,
+    ];
+    final id = ids.fold(0, (a, b) => a > b ? a : b) + 1;
+    _newGroups.add({
+      'id': id,
+      'name': r.name,
+      'room': roomId,
+      'members': members,
+      'scenes': const <Map<String, dynamic>>[],
+    });
+    _sceneDefs[id] = [];
+    _rebuildRooms();
+    return r.name;
+  }
+
   List<String> _groupLamps(Room r) => [
     for (final l in r.lightIds)
       if (_mem.containsKey(l)) l,
@@ -975,7 +1027,7 @@ class FakeRepository extends BaseRepository {
       }
     }
     _refreshSync();
-    _rooms = FakeRooms(inventory).derive(scenes: _sceneDefs);
+    _rooms = FakeRooms(_inventory).derive(scenes: _sceneDefs);
   }
 
   /// Schreibt `sync` und `checked_at` in die Szenen der Gruppen.

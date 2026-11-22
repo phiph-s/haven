@@ -86,6 +86,14 @@ abstract class HavenRepository
   /// (Integration mit Feature `knob_lights`).
   bool get knobLightActions;
 
+  /// Kann für Räume ohne Zigbee-Gruppe eine anlegen (Feature `room_groups`).
+  bool get canCreateRoomGroups;
+
+  /// Legt in Zigbee2MQTT eine Gruppe für den Raum an, mit allen
+  /// Zigbee-Lampen des Raums (Szenen brauchen eine Gruppe). Liefert den
+  /// Namen der Gruppe. Wirft [HavenException], z. B. ohne Zigbee-Lampen.
+  Future<String> createRoomGroup(String roomId);
+
   /// Ruft die Szene [number] der Raumgruppe auf, misst jede Lampe und stellt
   /// das vorherige Licht wieder her. Dauert einige Sekunden.
   Future<SceneCheck> checkScene(String roomId, int number);

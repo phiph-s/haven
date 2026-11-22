@@ -27,6 +27,7 @@ import 'lamp_calibration_screen.dart';
 import 'render_settings.dart';
 import 'settings_widgets.dart';
 import 'sync_section.dart';
+import '../room/room_group.dart';
 import '../room/widgets/light_control_list.dart';
 import 'weather_settings.dart';
 import '../../core/widgets/haven_logo.dart';
@@ -442,6 +443,7 @@ class _RoomsSheet extends ConsumerWidget {
                 ),
             ],
           ),
+        const MissingRoomGroupsCard(),
       ],
     );
   }

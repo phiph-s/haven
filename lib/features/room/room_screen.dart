@@ -15,6 +15,7 @@ import '../../core/widgets/section_header.dart';
 import '../home/room_render.dart';
 import '../../data/room_view.dart';
 import '../climate/thermostat_widgets.dart';
+import 'room_group.dart';
 import 'room_hero.dart';
 import 'widgets/brightness_slider.dart';
 import 'widgets/lamp_row.dart';
@@ -161,6 +162,9 @@ class _RoomBody extends ConsumerWidget {
     // Liest den Snapshot mit, damit die Karte nach dem Verbinden erscheint.
     ref.watch(snapshotProvider.select((s) => s.rooms));
     final canEditScenes = repo.canEditScenes(room.id);
+    final canCreateGroup = ref.watch(
+      snapshotProvider.select((s) => canCreateGroupFor(repo, s, room)),
+    );
     final canCheck = canCheckScenes(repo, room);
     final excludedCount = ref.watch(
       snapshotProvider.select((s) => s.excludedLampsOf(room).length),
@@ -311,7 +315,12 @@ class _RoomBody extends ConsumerWidget {
                 : null,
           ),
           const SizedBox(height: 10),
-          if (room.scenes.isEmpty && !canEditScenes)
+          if (room.scenes.isEmpty && !canEditScenes && canCreateGroup)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: RoomGroupCard(room: room),
+            )
+          else if (room.scenes.isEmpty && !canEditScenes)
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 20),
               child: HavenCard(

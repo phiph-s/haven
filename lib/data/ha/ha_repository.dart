@@ -858,18 +858,20 @@ class HaRepository extends BaseRepository {
         code: 'not_found',
       );
     }
-    final res = await client.send({
-      'type': 'haven/zigbee/scene_store',
-      'group_id': r!.zigbeeGroupId,
-      'scene_id': ?number,
-      'name': ?name,
-      'look': sceneLookOf(_sceneLamps(r)).toJson(),
-    }) as Map;
+    final res =
+        await client.send({
+              'type': 'haven/zigbee/scene_store',
+              'group_id': r!.zigbeeGroupId,
+              'scene_id': ?number,
+              'name': ?name,
+              'look': sceneLookOf(_sceneLamps(r)).toJson(),
+            })
+            as Map;
     final stored = (res['scene_id'] as num).toInt();
     await reloadRooms();
-    final scene = _room(roomId)?.scenes
-        .where((s) => s.number == stored)
-        .firstOrNull;
+    final scene = _room(
+      roomId,
+    )?.scenes.where((s) => s.number == stored).firstOrNull;
     if (scene != null) {
       _activeScenes[roomId] = scene.id;
       _pushNow();
@@ -908,6 +910,32 @@ class HaRepository extends BaseRepository {
 
   @override
   bool get knobLightActions => _features.contains('knob_lights');
+
+  @override
+  bool get canCreateRoomGroups => _features.contains('room_groups');
+
+  @override
+  Future<String> createRoomGroup(String roomId) async {
+    final r = _room(roomId);
+    if (r == null) {
+      throw HavenException('Unbekannter Raum', code: 'not_found');
+    }
+    final res =
+        await client.send({
+              'type': 'haven/zigbee/create_room_group',
+              'area_id': r.areaId ?? r.id,
+            })
+            as Map;
+    final name = '${(res['group'] as Map?)?['friendly_name'] ?? r.name}';
+    // Z2M meldet die neue Gruppe samt Mitgliedern kurz danach: neu laden,
+    // bis der Raum sie hat.
+    for (var i = 0; i < 6; i++) {
+      await reloadRooms();
+      if (_room(roomId)?.zigbeeGroupId != null) break;
+      await Future<void>.delayed(const Duration(milliseconds: 500));
+    }
+    return name;
+  }
 
   /// Messen und Abgleichen schalten Lampen und warten auf sie: mehr Zeit als
   /// die übliche Frist.

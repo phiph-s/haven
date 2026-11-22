@@ -84,6 +84,15 @@ abstract class BaseRepository implements HavenRepository {
   bool get knobLightActions => false;
 
   @override
+  bool get canCreateRoomGroups => false;
+
+  @override
+  Future<String> createRoomGroup(String roomId) => throw HavenException(
+    'Gruppen lassen sich hier nicht anlegen',
+    code: 'not_supported',
+  );
+
+  @override
   Future<SceneCheck> checkScene(String roomId, int number) =>
       throw HavenException(
         'Szenen lassen sich hier nicht prüfen',
