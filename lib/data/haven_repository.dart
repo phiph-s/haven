@@ -82,6 +82,10 @@ abstract class HavenRepository
   /// Braucht wie das Ändern Admin-Rechte in HA.
   bool get canSyncScenes;
 
+  /// Drehregler-Automationen können Lampen auf einen festen Zustand setzen
+  /// (Integration mit Feature `knob_lights`).
+  bool get knobLightActions;
+
   /// Ruft die Szene [number] der Raumgruppe auf, misst jede Lampe und stellt
   /// das vorherige Licht wieder her. Dauert einige Sekunden.
   Future<SceneCheck> checkScene(String roomId, int number);

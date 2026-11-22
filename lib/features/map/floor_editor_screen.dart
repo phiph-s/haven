@@ -22,6 +22,7 @@ import '../../core/widgets/press_scale.dart';
 import '../../core/widgets/segmented.dart';
 import '../../data/models/floor_plan.dart';
 import '../../data/sync/app_data.dart' show sameDoc;
+import '../climate/heating_providers.dart';
 import '../zigbee/widgets/device_icon.dart';
 import '../zigbee/widgets/zb_common.dart' show showZbSheet;
 import '../zigbee/zigbee_providers.dart';
@@ -716,10 +717,16 @@ class _FloorEditorScreenState extends ConsumerState<FloorEditorScreen> {
   /// Bauform eines (vielleicht noch nicht platzierten) Geräts.
   String _modelOf(String? entityId, FloorKind kind) {
     final old = entityId == null ? null : _plan!.placementOf(entityId);
-    return old != null
-        ? deviceModelOf(old)
-        : defaultDeviceModel(kind, entityId ?? '');
+    if (old?.model != null) return deviceModelOf(old!);
+    return _poolModels[entityId] ??
+        (old != null
+            ? deviceModelOf(old)
+            : defaultDeviceModel(kind, entityId ?? ''));
   }
+
+  /// Bauform je Entity aus dem Pool (Thermostat-Displays an der Wand statt
+  /// Heizkörper).
+  Map<String, String> _poolModels = const {};
 
   /// Montage eines Geräts, wenn es in [cell] landet: Was an Decke und Wand
   /// kann (Deckenleuchte, Spot, Bewegungsmelder), rastet an der Wand ein,
@@ -895,7 +902,7 @@ class _FloorEditorScreenState extends ConsumerState<FloorEditorScreen> {
       // Bauform zieht mit um; Montage und Höhe rasten neu ein (Wand, Decke,
       // Boden oder das Möbelstück darunter) und werden nur gespeichert, wenn
       // sie vom Standard der Bauform abweichen.
-      model: old?.model == null ? null : deviceModelOf(old!),
+      model: old?.model != null ? deviceModelOf(old!) : _poolModels[entityId],
       mount: how == spec.mountOf(null) ? null : how?.name,
       height: (z - std).abs() < 1e-6 ? null : z,
       // Drehung und Licht ziehen mit um.
@@ -927,6 +934,7 @@ class _FloorEditorScreenState extends ConsumerState<FloorEditorScreen> {
           y: cells[i].y,
           kind: g.devices[i].kind,
           deviceId: g.devices[i].id,
+          model: g.devices[i].model,
         ),
     ];
     Haptics.tap();
@@ -953,6 +961,7 @@ class _FloorEditorScreenState extends ConsumerState<FloorEditorScreen> {
           y: cells[i].y,
           kind: g.devices[i].kind,
           deviceId: g.devices[i].id,
+          model: g.devices[i].model,
         ),
     ];
     Haptics.tap();
@@ -968,10 +977,31 @@ class _FloorEditorScreenState extends ConsumerState<FloorEditorScreen> {
     if (_migrated || pool.all.isEmpty) return;
     _migrated = true;
     final plan = _plan!;
-    final next = plan.migrateDevices(
+    var next = plan.migrateDevices(
       [for (final d in pool.all) d.floorDevice],
       kinds: {for (final d in pool.all) d.id: d.kind},
     );
+    // Thermostat-Displays, die noch als Heizkörperthermostat (Standard)
+    // stehen, bekommen ihre Bauform an der Wand. Das gilt auch für die
+    // Karte, deshalb gespeichert.
+    String? wallModel(FloorPlacement p) =>
+        p.model == null ? _poolModels[p.entityId] : null;
+    if (next.placements.any((p) => wallModel(p) != null)) {
+      next = next.copyWith(
+        placements: [
+          for (final p in next.placements)
+            switch (wallModel(p)) {
+              final m? => p.copyWith(model: m),
+              null => p,
+            },
+        ],
+      );
+      final save = next;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        unawaited(ref.read(floorPlanProvider.notifier).save(save));
+      });
+    }
     if (identical(next, plan)) return;
     // Nur anzeigen, nicht speichern: Das Öffnen des Editors ist keine
     // Änderung des Nutzers. Gespeichert wird mit der ersten echten Änderung.
@@ -1211,7 +1241,15 @@ class _FloorEditorScreenState extends ConsumerState<FloorEditorScreen> {
         children: [
           Row(
             children: [
-              MapMarker(entityId: p.entityId, kind: kind),
+              // Thermostate zeigen eine Pille mit Werten (OverflowBox): sie
+              // braucht feste Maße, in der Zeile wäre sie sonst unendlich.
+              p.entityId.startsWith('climate.')
+                  ? SizedBox(
+                      width: 112,
+                      height: 30,
+                      child: MapMarker(entityId: p.entityId, kind: kind),
+                    )
+                  : MapMarker(entityId: p.entityId, kind: kind),
               const SizedBox(width: 10),
               Expanded(
                 child: Text(
@@ -3365,7 +3403,19 @@ class _FloorEditorScreenState extends ConsumerState<FloorEditorScreen> {
       ),
     );
     final zb = ref.watch(zigbeeProvider.select((z) => z.devices));
-    final pool = buildDevicePool(ref.read(snapshotProvider), zb, plan);
+    final displays = ref.watch(
+      heatingProvider.select((h) => h.value?.displays ?? const <String>{}),
+    );
+    final pool = buildDevicePool(
+      ref.read(snapshotProvider),
+      zb,
+      plan,
+      displays: displays,
+    );
+    _poolModels = {
+      for (final d in pool.all)
+        if (d.model != null) d.mainEntityId: d.model!,
+    };
     _migrate(pool);
     final open = pool.open;
     final dsel = _dsel == null ? null : plan.placementOf(_dsel!);

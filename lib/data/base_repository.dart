@@ -81,6 +81,9 @@ abstract class BaseRepository implements HavenRepository {
   bool get canSyncScenes => false;
 
   @override
+  bool get knobLightActions => false;
+
+  @override
   Future<SceneCheck> checkScene(String roomId, int number) =>
       throw HavenException(
         'Szenen lassen sich hier nicht prüfen',

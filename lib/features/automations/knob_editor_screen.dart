@@ -22,6 +22,7 @@ import 'haven_automations_provider.dart';
 import 'knob_live_test.dart';
 import 'knob_logic.dart';
 import 'knob_widgets.dart';
+import 'light_targets_editor.dart';
 
 const _steps = [
   'Raum',
@@ -776,7 +777,7 @@ class FieldLabel extends StatelessWidget {
 
 // ---- 3. Gesten ----------------------------------------------------------------
 
-class KnobGestureStep extends StatelessWidget {
+class KnobGestureStep extends ConsumerWidget {
   const KnobGestureStep({
     super.key,
     required this.draft,
@@ -787,13 +788,24 @@ class KnobGestureStep extends StatelessWidget {
   final AutomationRoom? room;
   final ValueChanged<HavenAutomation> onChanged;
 
-  Future<void> _pick(BuildContext context, KnobGesture g) async {
+  Future<void> _pick(
+    BuildContext context,
+    KnobGesture g, {
+    required bool lightActions,
+  }) async {
     final scenes = room?.scenes ?? const <GroupScene>[];
     final current = draft.options.binding(g);
     final options = <GestureBinding>[
       for (final a in GestureAction.forGesture(g))
         if (a == GestureAction.scene)
           for (final s in scenes) GestureBinding(a, scene: s.id)
+        else if (a == GestureAction.lights)
+          if (lightActions)
+            current.action == GestureAction.lights ? current : GestureBinding(a)
+          else if (current.action == GestureAction.lights)
+            current
+          else
+            ...[]
         else if (a != GestureAction.nextScene || room?.group != null)
           GestureBinding(a),
     ];
@@ -826,9 +838,26 @@ class KnobGestureStep extends StatelessWidget {
         );
       },
     );
-    if (picked != null) {
-      onChanged(draft.copyWith(options: draft.options.withBinding(g, picked)));
+    if (picked == null || !context.mounted) return;
+    if (picked.action == GestureAction.lights) {
+      // Lampen und Zustand festlegen; abgebrochen bleibt es, wie es war.
+      final lights = await showLightTargetsEditor(
+        context,
+        title: '${gestureLabel(g)}: Lampen einstellen',
+        initial: picked.lights,
+      );
+      if (lights == null || lights.isEmpty) return;
+      onChanged(
+        draft.copyWith(
+          options: draft.options.withBinding(
+            g,
+            GestureBinding(GestureAction.lights, lights: lights),
+          ),
+        ),
+      );
+      return;
     }
+    onChanged(draft.copyWith(options: draft.options.withBinding(g, picked)));
   }
 
   static String? _hint(GestureBinding b) => switch (b.action) {
@@ -836,13 +865,17 @@ class KnobGestureStep extends StatelessWidget {
     GestureAction.toggle => 'An, wenn alles aus ist, sonst aus',
     GestureAction.nextScene => 'Szenen der Reihe nach',
     GestureAction.off => 'Alle Lichter im Raum aus',
+    GestureAction.lights => 'Bestimmte Lampen auf einen festen Zustand',
     _ => null,
   };
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final hv = context.hv;
     final scenes = room?.scenes ?? const <GroupScene>[];
+    final lightActions = ref.watch(
+      repositoryProvider.select((r) => r.knobLightActions),
+    );
     return StepScroll(
       title: 'Was soll passieren?',
       lead: 'Tipp auf eine Geste, um sie zu belegen.',
@@ -857,7 +890,7 @@ class KnobGestureStep extends StatelessWidget {
               excludeSemantics: true,
               child: PressScale(
                 pressedScale: 0.985,
-                onTap: () => _pick(context, g),
+                onTap: () => _pick(context, g, lightActions: lightActions),
                 child: HavenCard(
                   padding: const EdgeInsets.fromLTRB(14, 14, 10, 14),
                   child: Row(

@@ -43,6 +43,11 @@ String bindingLabel(
   GestureAction.toggle => 'Ein/Aus',
   GestureAction.nextScene => 'Nächste Szene',
   GestureAction.off => 'Alles aus im Raum',
+  GestureAction.lights => switch (b.lights.length) {
+    0 => 'Lampen wählen',
+    1 => '1 Lampe einstellen',
+    final n => '$n Lampen einstellen',
+  },
   GestureAction.scene =>
     'Szene ${scenes.where((s) => s.id == b.scene).firstOrNull?.name ?? 'wählen'}',
 };
@@ -82,6 +87,10 @@ Map<int, String> validateKnobDraft(
     if (b.action == GestureAction.scene &&
         !scenes.any((s) => s.id == b.scene)) {
       errors[2] = '${gestureLabel(g)}: Szene wählen';
+      break;
+    }
+    if (b.action == GestureAction.lights && b.lights.isEmpty) {
+      errors[2] = '${gestureLabel(g)}: Lampen wählen';
       break;
     }
   }

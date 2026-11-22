@@ -57,19 +57,64 @@ List<h3.LayerView> mapLayerViews(HavenFloorPlan plan) => [
       ),
 ];
 
-/// Render-Schlüssel: ändert sich mit Plan, Perspektiven und Format. HA merkt
-/// ihn sich mit den Bildern, so sieht jedes Gerät, ob sie aktuell sind.
-String mapRenderKey(HavenFloorPlan plan, List<h3.LayerView> views) {
-  final text = jsonEncode(
-    canonicalJson({
-      'format': h3.kLayerFormat,
-      'look': h3.kLayerLook,
-      'plan': plan.toJson(),
-      'views': [for (final v in views) v.toJson()],
-    }),
-  );
+/// Render-Schlüssel: ändert sich mit allem, was man auf den Bildern sieht
+/// (Plan, Perspektiven, Format). HA merkt ihn sich mit den Bildern, so sieht
+/// jedes Gerät, ob sie aktuell sind. Nicht darin: Zeitstempel, Zuordnung zu
+/// HA-Bereichen und Geräte-IDs (ändern nichts am Bild).
+String mapRenderKey(HavenFloorPlan plan, List<h3.LayerView> views) =>
+    _renderKey(_visible(plan.toJson()), views, canonical: true);
+
+/// Schlüssel, zu denen Bilder in HA als aktuell gelten: der heutige und die
+/// älterer App-Versionen für denselben Plan. Sonst rendern Geräte mit
+/// verschiedenen Versionen abwechselnd neu (bis 0.9.30 schrieb die App
+/// ganze Kommazahlen nativ als `1.0`, im Web als `1`; bis 0.9.32 zählten
+/// Zeitstempel und Bereiche mit).
+Set<String> acceptedRenderKeys(HavenFloorPlan plan, List<h3.LayerView> views) {
+  final full = plan.toJson();
+  return {
+    mapRenderKey(plan, views),
+    _renderKey(full, views, canonical: true),
+    _renderKey(full, views, canonical: false),
+  };
+}
+
+String _renderKey(
+  Map<String, dynamic> plan,
+  List<h3.LayerView> views, {
+  required bool canonical,
+}) {
+  final doc = {
+    'format': h3.kLayerFormat,
+    'look': h3.kLayerLook,
+    'plan': plan,
+    'views': [for (final v in views) v.toJson()],
+  };
+  final text = jsonEncode(canonical ? canonicalJson(doc) : doc);
   return '${h3.kLayerFormat}-${_fnv(utf8.encode(text))}';
 }
+
+/// Plan-JSON ohne das, was man auf den Bildern nicht sieht.
+Map<String, dynamic> _visible(Map<String, dynamic> plan) => {
+  for (final e in plan.entries)
+    if (e.key != 'updatedAt')
+      e.key: switch (e.key) {
+        'rooms' => [
+          for (final r in e.value as List)
+            {
+              for (final f in (r as Map).entries)
+                if (f.key != 'areaId') '${f.key}': f.value,
+            },
+        ],
+        'placements' => [
+          for (final p in e.value as List)
+            {
+              for (final f in (p as Map).entries)
+                if (f.key != 'deviceId') '${f.key}': f.value,
+            },
+        ],
+        _ => e.value,
+      },
+};
 
 /// [value] so, dass `jsonEncode` nativ und im Web denselben Text liefert:
 /// Ganzzahlige Kommazahlen werden zu ganzen Zahlen (im Web schreibt
@@ -89,6 +134,10 @@ Object? canonicalJson(Object? value) => switch (value) {
 };
 
 /// Zwei FNV-1a-Hashes (32 Bit, im Web wie nativ gleich gerechnet).
+/// Für Tests: der Hash hinter dem Schlüssel.
+@visibleForTesting
+String fnvForTest(List<int> bytes) => _fnv(bytes);
+
 String _fnv(List<int> bytes) {
   var a = 0x811c9dc5, b = 0x01000193 ^ 0x5bd1e995;
   int mul(int h) => (((h << 24) & 0xFFFFFFFF) + h * 403) & 0xFFFFFFFF;
@@ -235,7 +284,8 @@ class _MapRenderGateState extends ConsumerState<MapRenderGate> {
       final status = await repo.renderStatus();
       if (!mounted) return;
       // Ohne Unterstützung oder schon aktuell: nicht wieder fragen.
-      if (status == null || status.key == key) {
+      if (status == null ||
+          acceptedRenderKeys(plan, views).contains(status.key)) {
         ref.read(mapRenderHandledProvider.notifier).add(key);
         return;
       }

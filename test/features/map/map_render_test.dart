@@ -10,7 +10,9 @@ import 'package:haven/data/haven_repository.dart';
 import 'package:haven/data/render_api.dart';
 import 'package:haven/dev/fake_floor_plan.dart';
 import 'package:haven/dev/fake_repository.dart';
+import 'package:haven/data/models/floor_plan.dart';
 import 'package:haven/features/map/map_render.dart';
+import 'package:haven_3d/haven_3d.dart' as h3;
 import 'package:material_ui/material_ui.dart';
 
 import '../../support/fake_ha.dart';
@@ -69,6 +71,60 @@ void main() {
         'c': 0,
       });
     });
+  });
+
+  group('Bilder aktuell trotz verschiedener App-Versionen', () {
+    test('Bereich, Geräte-ID und Zeitstempel ändern den Schlüssel nicht', () {
+      final plan = kFakeFloorPlan;
+      final views = mapLayerViews(plan);
+      final key = mapRenderKey(plan, views);
+      final relinked = plan.copyWith(
+        rooms: [
+          for (final r in plan.rooms) r.copyWith(areaId: 'anders_${r.id}'),
+        ],
+        placements: [
+          for (final p in plan.placements) p.copyWith(deviceId: 'x'),
+        ],
+      );
+      expect(mapRenderKey(relinked, views), key);
+      final stamped = HavenFloorPlan.fromJson({
+        ...plan.toJson(),
+        'updatedAt': 1234,
+      });
+      expect(mapRenderKey(stamped, views), key);
+    });
+
+    test(
+      'Schlüssel alter Versionen gelten als aktuell, fremde Pläne nicht',
+      () {
+        final plan = kFakeFloorPlan;
+        final views = mapLayerViews(plan);
+        final accepted = acceptedRenderKeys(plan, views);
+        // Bis 0.9.30 (nativ): Plan samt Bereichen, Kommazahlen wie `1.0`.
+        String legacy(Object? doc) =>
+            '${h3.kLayerFormat}-${fnvForTest(utf8.encode(jsonEncode(doc)))}';
+        final doc = {
+          'format': h3.kLayerFormat,
+          'look': h3.kLayerLook,
+          'plan': plan.toJson(),
+          'views': [for (final v in views) v.toJson()],
+        };
+        expect(accepted, contains(legacy(doc)));
+        // 0.9.31 und 0.9.32: wie heute im Web, aber mit Bereichen.
+        expect(accepted, contains(legacy(canonicalJson(doc))));
+        expect(accepted, contains(mapRenderKey(plan, views)));
+        final moved = plan.copyWith(
+          placements: [
+            for (final p in plan.placements)
+              p == plan.placements.first ? p.copyWith(x: p.x + 1) : p,
+          ],
+        );
+        expect(
+          accepted.intersection(acceptedRenderKeys(moved, views)),
+          isEmpty,
+        );
+      },
+    );
   });
 
   group('Upload in Stücken', () {

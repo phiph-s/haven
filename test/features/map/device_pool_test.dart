@@ -245,4 +245,35 @@ void main() {
       expect(cx, closeTo(5, 2.5));
     }
   });
+
+  test(
+    'Thermostat-Displays stehen an der Wand, Heizkörperthermostate nicht',
+    () {
+      ZbDevice d(String ieee, String description, {String? model}) =>
+          ZbDevice.fromJson({
+            'ieee': ieee,
+            'friendly_name': ieee,
+            'type': 'EndDevice',
+            'device_type': 'thermostat',
+            'description': description,
+            'model': ?model,
+          });
+      expect(isWallThermostat(d('a', 'Wall thermostat with display.')), isTrue);
+      expect(isWallThermostat(d('b', 'Thermostatic radiator valve')), isFalse);
+      expect(
+        isWallThermostat(d('c', 'Smart thermostat', model: 'TRV06')),
+        isFalse,
+      );
+      // In der Heizungsregelung als Display eingetragen.
+      expect(
+        isWallThermostat(d('c', 'Smart thermostat'), displays: {'c'}),
+        isTrue,
+      );
+      final pool = buildDevicePool(snap, zigbee, plan);
+      for (final p in pool.all.where((p) => p.zigbee)) {
+        final z = zigbee.firstWhere((z) => z.ieee == p.id);
+        expect(p.model, isWallThermostat(z) ? kWallThermostatModel : isNull);
+      }
+    },
+  );
 }

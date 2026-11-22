@@ -81,6 +81,23 @@ Future<ProviderContainer> _pump(
   return container;
 }
 
+/// Marker [id] auf der Karte (nicht der im Panel).
+Finder _markerOf(String id) =>
+    find.byWidgetPredicate((w) => w is MapMarker && w.entityId == id).first;
+
+/// Ein Marker, der frei liegt: Ein Klick auf seine Mitte trifft ihn und
+/// keinen anderen, der darüber liegt.
+String _freeMarkerId(WidgetTester tester) {
+  final e = find.byType(MapMarker).evaluate().firstWhere((e) {
+    final at = tester.getCenter(find.byWidget(e.widget));
+    return tester
+        .hitTestOnBinding(at)
+        .path
+        .any((h) => h.target == e.renderObject);
+  });
+  return (e.widget as MapMarker).entityId;
+}
+
 void main() {
   setUp(() {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
@@ -228,8 +245,8 @@ void main() {
     final repo = _MemoryRepo(kFakeFloorPlan);
     await _pump(tester, '/map/editor?mode=devices', repo: repo, size: _desk);
     final before = kFakeFloorPlan.placements.length;
-    final marker = find.byType(MapMarker).first;
-    final id = tester.widget<MapMarker>(marker).entityId;
+    final id = _freeMarkerId(tester);
+    final marker = _markerOf(id);
     await tester.tap(marker);
     await tester.pumpAndSettle();
     expect(find.byKey(ValueKey('dsel-$id')), findsOneWidget);
@@ -279,8 +296,8 @@ void main() {
   ) async {
     final repo = _MemoryRepo(kFakeFloorPlan);
     await _pump(tester, '/map/editor?mode=devices', repo: repo, size: _desk);
-    final marker = find.byType(MapMarker).first;
-    final id = tester.widget<MapMarker>(marker).entityId;
+    final id = _freeMarkerId(tester);
+    final marker = _markerOf(id);
     await tester.tap(marker);
     await tester.pumpAndSettle();
     await tester.sendKeyEvent(LogicalKeyboardKey.delete);
@@ -303,14 +320,42 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets(
+    'Geräte setzen: Thermostat-Display an die Wand, Details ohne Fehler',
+    (tester) async {
+      final repo = _MemoryRepo(kFakeFloorPlan);
+      await _pump(tester, '/map/editor?mode=devices', repo: repo, size: _desk);
+      await tester.tap(find.text('Schnell platzieren').first);
+      await tester.pumpAndSettle();
+      final p = repo.plan!.placementOf('climate.display_ruheraum');
+      expect(p, isNotNull);
+      expect(p!.model, 'wall_thermostat');
+      // Ein Thermostat wählen: die Pille mit Werten im Panel bricht das
+      // Layout nicht.
+      final marker = find.byWidgetPredicate(
+        (w) => w is MapMarker && w.entityId == 'climate.display_ruheraum',
+      );
+      await tester.tap(marker.first);
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      expect(
+        find.byKey(const ValueKey('dsel-climate.display_ruheraum')),
+        findsOneWidget,
+      );
+      expect(find.text('Thermostat-Display'), findsOneWidget);
+    },
+  );
+
   testWidgets('Geräte setzen: Mausklick mit Zittern wählt, Ziehen verschiebt', (
     tester,
   ) async {
     final repo = _MemoryRepo(kFakeFloorPlan);
     await _pump(tester, '/map/editor?mode=devices', repo: repo, size: _desk);
-    final marker = find.byType(MapMarker).first;
-    final id = tester.widget<MapMarker>(marker).entityId;
-    final at = tester.getCenter(marker);
+    final id = _freeMarkerId(tester);
+    final marker = _markerOf(id);
+    // Links oben im Marker (früher war nur das rechte untere Viertel
+    // klickbar).
+    final at = tester.getCenter(marker) - const Offset(6, 6);
     // Ein echter Klick: drücken, ein paar Bilder, 2 px gewackelt, loslassen.
     final m = await tester.createGesture(kind: PointerDeviceKind.mouse);
     await m.addPointer(location: at);
@@ -343,8 +388,8 @@ void main() {
     ) async {
       final repo = _MemoryRepo(kFakeFloorPlan);
       await _pump(tester, '/map/editor?mode=devices', repo: repo, size: size);
-      final marker = find.byType(MapMarker).first;
-      final id = tester.widget<MapMarker>(marker).entityId;
+      final id = _freeMarkerId(tester);
+      final marker = _markerOf(id);
       final before = repo.plan!.placementOf(id)!;
       final start = tester.getCenter(marker);
       // Langsam zur Mitte der Fläche ziehen wie mit Maus bzw. Finger.
@@ -371,8 +416,8 @@ void main() {
           repo: _MemoryRepo(kFakeFloorPlan),
           size: size,
         );
-        final marker = find.byType(MapMarker).first;
-        final id = tester.widget<MapMarker>(marker).entityId;
+        final id = _freeMarkerId(tester);
+        final marker = _markerOf(id);
         for (var i = 0; i < 3; i++) {
           await tester.tap(marker);
           await tester.pumpAndSettle();
@@ -398,11 +443,10 @@ void main() {
     (tester) async {
       final repo = _MemoryRepo(kFakeFloorPlan);
       await _pump(tester, '/map/editor?mode=devices', repo: repo, size: _phone);
-      final marker = find.byType(MapMarker).first;
-      final id = tester.widget<MapMarker>(marker).entityId;
+      final id = _freeMarkerId(tester);
       final before = repo.plan!.placementOf(id)!;
       Future<void> dragTo(Offset to) async {
-        final start = tester.getCenter(find.byType(MapMarker).first);
+        final start = tester.getCenter(_markerOf(id));
         final g = await tester.startGesture(start);
         for (var i = 1; i <= 10; i++) {
           await g.moveTo(Offset.lerp(start, to, i / 10)!);

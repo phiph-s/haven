@@ -906,6 +906,9 @@ class HaRepository extends BaseRepository {
   @override
   bool get canSyncScenes => _features.contains('scene_sync');
 
+  @override
+  bool get knobLightActions => _features.contains('knob_lights');
+
   /// Messen und Abgleichen schalten Lampen und warten auf sie: mehr Zeit als
   /// die übliche Frist.
   static const _syncTimeout = Duration(seconds: 90);

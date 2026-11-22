@@ -30,7 +30,11 @@ enum GestureAction {
   toggle('toggle'),
   nextScene('next_scene'),
   scene('scene'),
-  off('off');
+  off('off'),
+
+  /// Eigene Aktion: bestimmte Lampen auf einen festen Zustand
+  /// (Integration mit Feature `knob_lights`).
+  lights('lights');
 
   const GestureAction(this.wire);
   final String wire;
@@ -51,25 +55,113 @@ enum GestureAction {
           GestureAction.nextScene,
           GestureAction.scene,
           GestureAction.off,
+          GestureAction.lights,
           GestureAction.none,
         ];
 }
 
+/// Eine Lampe in der Aktion [GestureAction.lights]: an oder aus, an mit
+/// Helligkeit (1 bis 100 %) und Weißton ([kelvin]) oder Farbe ([rgb]).
+/// Ohne Angaben behält die Lampe Helligkeit bzw. Farbe.
+@immutable
+class LightTarget {
+  const LightTarget(
+    this.entityId, {
+    this.on = true,
+    this.brightness,
+    this.kelvin,
+    this.rgb,
+  });
+
+  final String entityId;
+  final bool on;
+  final int? brightness;
+  final int? kelvin;
+
+  /// Farbe als `0xRRGGBB`.
+  final int? rgb;
+
+  static LightTarget? fromJson(Object? j) {
+    if (j is! Map) return null;
+    final id = j['entity_id'];
+    if (id is! String || !id.startsWith('light.')) return null;
+    int? n(Object? v) => v is num ? v.toInt() : null;
+    final c = j['rgb'];
+    return LightTarget(
+      id,
+      on: j['on'] != false,
+      brightness: n(j['brightness']),
+      kelvin: n(j['kelvin']),
+      rgb: c is List && c.length == 3 && c.every((x) => x is num)
+          ? ((c[0] as num).toInt().clamp(0, 255) << 16) |
+                ((c[1] as num).toInt().clamp(0, 255) << 8) |
+                (c[2] as num).toInt().clamp(0, 255)
+          : null,
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+    'entity_id': entityId,
+    'on': on,
+    if (on && brightness != null) 'brightness': brightness!.clamp(1, 100),
+    if (on && rgb == null && kelvin != null)
+      'kelvin': kelvin!.clamp(1000, 10000),
+    if (on && rgb != null)
+      'rgb': [(rgb! >> 16) & 0xFF, (rgb! >> 8) & 0xFF, rgb! & 0xFF],
+  };
+
+  /// Weißton und Farbe schließen sich aus: [kelvin] löscht die Farbe,
+  /// [rgb] den Weißton.
+  LightTarget copyWith({
+    bool? on,
+    int? brightness,
+    bool clearBrightness = false,
+    int? kelvin,
+    int? rgb,
+    bool clearColor = false,
+  }) => LightTarget(
+    entityId,
+    on: on ?? this.on,
+    brightness: clearBrightness ? null : (brightness ?? this.brightness),
+    kelvin: clearColor || rgb != null ? null : (kelvin ?? this.kelvin),
+    rgb: clearColor || kelvin != null ? null : (rgb ?? this.rgb),
+  );
+
+  @override
+  bool operator ==(Object other) =>
+      other is LightTarget &&
+      other.entityId == entityId &&
+      other.on == on &&
+      other.brightness == brightness &&
+      other.kelvin == kelvin &&
+      other.rgb == rgb;
+
+  @override
+  int get hashCode => Object.hash(entityId, on, brightness, kelvin, rgb);
+}
+
 @immutable
 class GestureBinding {
-  const GestureBinding(this.action, {this.scene});
+  const GestureBinding(this.action, {this.scene, this.lights = const []});
   final GestureAction action;
 
   /// Szenen-ID der Z2M-Gruppe bei [GestureAction.scene].
   final int? scene;
 
+  /// Lampen bei [GestureAction.lights].
+  final List<LightTarget> lights;
+
   factory GestureBinding.fromJson(Object? j) {
     if (j is String) return GestureBinding(GestureAction.parse(j));
     if (j is Map) {
       final s = j['scene'];
+      final l = j['lights'];
       return GestureBinding(
         GestureAction.parse(j['action']),
         scene: s is num ? s.toInt() : null,
+        lights: l is List
+            ? [for (final x in l) ?LightTarget.fromJson(x)]
+            : const [],
       );
     }
     return const GestureBinding(GestureAction.none);
@@ -78,14 +170,19 @@ class GestureBinding {
   Map<String, dynamic> toJson() => {
     'action': action.wire,
     if (action == GestureAction.scene) 'scene': scene,
+    if (action == GestureAction.lights)
+      'lights': [for (final l in lights) l.toJson()],
   };
 
   @override
   bool operator ==(Object other) =>
-      other is GestureBinding && other.action == action && other.scene == scene;
+      other is GestureBinding &&
+      other.action == action &&
+      other.scene == scene &&
+      listEquals(other.lights, lights);
 
   @override
-  int get hashCode => Object.hash(action, scene);
+  int get hashCode => Object.hash(action, scene, Object.hashAll(lights));
 }
 
 /// Standardbelegung wie bisher in den HA-Automationen.

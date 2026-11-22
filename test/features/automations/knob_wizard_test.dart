@@ -149,6 +149,100 @@ void main() {
     expect(find.text('3 von 3 Haven-Automationen aktiv'), findsOneWidget);
   });
 
+  testWidgets('Halten stellt eigene Lampen ein (an, aus, Farbe)', (
+    tester,
+  ) async {
+    await _pump(
+      tester,
+      '/automations',
+      before: () => _repo.deleteHavenAutomation('demo-salon'),
+    );
+    await tester.tap(find.text('Neue Automation'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Drehregler für einen Raum'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Salon'));
+    await tester.pumpAndSettle();
+    await _next(tester);
+    await _next(tester);
+    // Gesten: Halten auf „Lampen einstellen“
+    await tester.tap(find.text('Halten'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Lampen wählen'));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('light-targets-editor')), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('light-targets-add')));
+    await tester.pumpAndSettle();
+    for (final name in ['Tischlampe Salon', 'Stehleuchte Diele']) {
+      await tester.ensureVisible(find.text(name));
+      await tester.tap(find.text(name));
+      await tester.pumpAndSettle();
+    }
+    await tester.tap(find.byKey(const ValueKey('lamp-picker-done')));
+    await tester.pumpAndSettle();
+    // Die Stehleuchte aus, die Tischlampe an in Orange.
+    final diele = find.byKey(
+      const ValueKey('light-target-light.stehleuchte_diele'),
+    );
+    expect(diele, findsOneWidget);
+    final salon = find.byKey(
+      const ValueKey('light-target-light.tischlampe_salon'),
+    );
+    await tester.ensureVisible(salon);
+    await tester.tap(find.bySemanticsLabel('Tischlampe Salon an'));
+    await tester.pumpAndSettle();
+    final on = _repo.snapshot.lamp('light.tischlampe_salon')!.on;
+    // Schalter steht jetzt auf dem Gegenteil des jetzigen Zustands; einmal
+    // so, dass sie an ist.
+    if (on) {
+      await tester.tap(find.bySemanticsLabel('Tischlampe Salon an'));
+      await tester.pumpAndSettle();
+    }
+    if (find
+        .descendant(of: salon, matching: find.text('Farbe'))
+        .evaluate()
+        .isNotEmpty) {
+      await tester.tap(
+        find.descendant(of: salon, matching: find.text('Farbe')),
+      );
+      await tester.pumpAndSettle();
+    }
+    if (_repo.snapshot.lamp('light.stehleuchte_diele')!.on) {
+      await tester.ensureVisible(diele);
+      await tester.tap(find.bySemanticsLabel('Stehleuchte Diele an'));
+      await tester.pumpAndSettle();
+    }
+    await tester.ensureVisible(
+      find.byKey(const ValueKey('light-targets-done')),
+    );
+    await tester.tap(find.byKey(const ValueKey('light-targets-done')));
+    await tester.pumpAndSettle();
+    expect(find.text('2 Lampen einstellen'), findsOneWidget);
+    for (var i = 0; i < 4; i++) {
+      await _next(tester);
+    }
+    await tester.tap(find.text('Speichern'));
+    await tester.pumpAndSettle();
+
+    final all = await _repo.havenAutomations();
+    final saved = all.automations.firstWhere((a) => a.roomAreaId == 'salon');
+    final b = saved.options.binding(KnobGesture.hold);
+    expect(b.action, GestureAction.lights);
+    final byId = {for (final t in b.lights) t.entityId: t};
+    expect(byId.keys, {'light.tischlampe_salon', 'light.stehleuchte_diele'});
+    expect(byId['light.stehleuchte_diele']!.on, isFalse);
+    expect(byId['light.tischlampe_salon']!.on, isTrue);
+    expect(b.toJson()['lights'], isA<List<dynamic>>());
+
+    // Halten setzt genau diesen Zustand.
+    await tester.runAsync(
+      () => _repo.simulateGesture(FakeAutomations.salonKnob, 'hold'),
+    );
+    await tester.pumpAndSettle();
+    expect(_repo.snapshot.lamp('light.stehleuchte_diele')!.on, isFalse);
+    expect(_repo.snapshot.lamp('light.tischlampe_salon')!.on, isTrue);
+  });
+
   testWidgets(
     'Editor zeigt Hinweis auf doppelte HA-Automation und schaltet sie aus',
     (tester) async {

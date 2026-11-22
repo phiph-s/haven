@@ -394,12 +394,25 @@ final List<DeviceSpec> _devices = [
   ),
   DeviceSpec(
     'wall_thermostat',
-    'Raumthermostat',
+    'Thermostat-Display',
     height: 1.5,
     wall: true,
     build: (b) {
-      b.box(-0.045, -0.025, -0.045, 0.045, 0, 0.045);
-      b.box(-0.03, -0.027, -0.02, 0.03, -0.025, 0.02, mat: Mat.dark);
+      // Flaches Gehäuse an der Wand, großes dunkles Display, darunter drei
+      // Tasten.
+      b.box(-0.05, -0.02, -0.05, 0.05, 0, 0.05);
+      b.box(-0.038, -0.022, -0.012, 0.038, -0.02, 0.038, mat: Mat.dark);
+      for (final x in const [-0.025, 0.0, 0.025]) {
+        b.box(
+          x - 0.008,
+          -0.023,
+          -0.038,
+          x + 0.008,
+          -0.02,
+          -0.026,
+          mat: Mat.soft,
+        );
+      }
     },
   ),
   DeviceSpec(

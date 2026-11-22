@@ -1380,20 +1380,23 @@ class _Scene3DViewState extends State<Scene3DView>
     bool center = true,
     Key? key,
     bool interactive = false,
-  }) => Positioned(
-    key: key,
-    left: p.x,
-    top: p.y,
-    child: IgnorePointer(
-      ignoring: !interactive,
+  }) {
+    final inner = IgnorePointer(ignoring: !interactive, child: child);
+    return Positioned(
+      key: key,
+      left: p.x,
+      top: p.y,
+      // Die Verschiebung außen: Sie prüft beim Treffertest nicht die eigene
+      // Größe. Innen (unter IgnorePointer, das seine Größe prüft) war nur
+      // das rechte untere Viertel eines mittigen Geräts klickbar.
       child: center
           ? FractionalTranslation(
               translation: const Offset(-0.5, -0.5),
-              child: child,
+              child: inner,
             )
-          : child,
-    ),
-  );
+          : inner,
+    );
+  }
 
   Widget _place(BuildContext context, SceneMarker m, Offset at) {
     final b = widget.markerBuilder;

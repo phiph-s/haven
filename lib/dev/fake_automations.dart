@@ -446,6 +446,19 @@ class FakeAutomations {
         final last = _lastScene[roomId];
         final idx = last == null ? -1 : cycle.indexOf(last);
         await recall(cycle[(idx + 1) % cycle.length]);
+      case GestureAction.lights:
+        for (final t in b.lights) {
+          final c = t.rgb;
+          await repo.setLights(
+            [t.entityId],
+            on: t.on,
+            brightness: t.on ? t.brightness : null,
+            kelvin: t.on && c == null ? t.kelvin : null,
+            rgb: t.on && c != null
+                ? ((c >> 16) & 0xFF, (c >> 8) & 0xFF, c & 0xFF)
+                : null,
+          );
+        }
       case GestureAction.none:
         return;
     }

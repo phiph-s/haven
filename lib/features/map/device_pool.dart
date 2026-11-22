@@ -21,6 +21,7 @@ class PoolDevice {
     this.areaId,
     this.zigbee = false,
     this.protocol,
+    this.model,
   });
 
   /// IEEE bei Zigbee, sonst HA-Geräte-ID (oder die Entity, wenn die
@@ -40,6 +41,9 @@ class PoolDevice {
 
   /// Funkprotokoll für das Zeichen am Symbol, `null`: unbekannt.
   final DeviceProtocol? protocol;
+
+  /// Bauform für die Karte (`h3.kDeviceModels`), `null`: Standard der Art.
+  final String? model;
 
   FloorDevice get floorDevice => FloorDevice(id, entityIds, roomId: areaId);
 }
@@ -105,6 +109,20 @@ class DevicePool {
 
 const kNoRoom = 'Ohne Raum';
 
+/// Bauform der Thermostate mit Display an der Wand.
+const kWallThermostatModel = 'wall_thermostat';
+
+/// Thermostat mit Display an der Wand (kein Heizkörperthermostat): in der
+/// Heizungsregelung als Display eingetragen ([displays]) oder laut
+/// Zigbee2MQTT ein Wand- bzw. Raumthermostat.
+bool isWallThermostat(ZbDevice d, {Set<String> displays = const {}}) {
+  if (displays.contains(d.ieee)) return true;
+  if (d.deviceType != ZbType.thermostat) return false;
+  final text = '${d.description ?? ''} ${d.model ?? ''}'.toLowerCase();
+  if (RegExp(r'radiator|valve|trv|heizk').hasMatch(text)) return false;
+  return RegExp(r'wall|display|room thermostat|raumthermostat').hasMatch(text);
+}
+
 /// Baut den Pool aus Zigbee-Geräten ([zigbee], mit `ha_entities`) und den
 /// übrigen HA-Geräten (`snapshot.devices`, ab Integration 0.2.0). Ohne
 /// Geräteliste (Integration 0.1.0) werden die Lampen und Klimasensoren der
@@ -112,8 +130,9 @@ const kNoRoom = 'Ohne Raum';
 DevicePool buildDevicePool(
   HavenSnapshot s,
   List<ZbDevice> zigbee,
-  HavenFloorPlan plan,
-) {
+  HavenFloorPlan plan, {
+  Set<String> displays = const {},
+}) {
   final zb = <PoolDevice>[];
   final taken = <String>{};
   for (final d in zigbee) {
@@ -139,6 +158,9 @@ DevicePool buildDevicePool(
         areaId: d.areaId,
         zigbee: true,
         protocol: DeviceProtocol.zigbee,
+        model: isWallThermostat(d, displays: displays)
+            ? kWallThermostatModel
+            : null,
       ),
     );
   }

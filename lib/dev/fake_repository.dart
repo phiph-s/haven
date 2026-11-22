@@ -900,6 +900,9 @@ class FakeRepository extends BaseRepository {
   @override
   bool get canSyncScenes => true;
 
+  @override
+  bool get knobLightActions => true;
+
   List<String> _groupLamps(Room r) => [
     for (final l in r.lightIds)
       if (_mem.containsKey(l)) l,

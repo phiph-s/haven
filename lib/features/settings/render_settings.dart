@@ -61,10 +61,13 @@ class _MapRenderSettingsRowState extends ConsumerState<MapRenderSettingsRow> {
         repo == null) {
       return const SizedBox.shrink();
     }
-    final key = mapRenderKey(plan, mapLayerViews(plan));
+    final current = acceptedRenderKeys(
+      plan,
+      mapLayerViews(plan),
+    ).contains(status.key);
     final subtitle = status.key == null
         ? 'Noch keine. Tippen zum Erstellen.'
-        : status.key == key
+        : current
         ? 'Aktuell, ${status.sets.length} Bilder in Home Assistant'
         : 'Veraltet. Tippen zum Erneuern.';
     return Padding(
