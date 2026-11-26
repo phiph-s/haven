@@ -423,6 +423,13 @@ void main() {
         (m) => m['type'] == 'haven/automations/test',
       );
       expect(t['action'], 'hold');
+      // `id` ist bei HA die Nummer der Nachricht, die ID muss anders heißen.
+      expect(t['automation_id'], 'neu');
+      await auto.delete('neu');
+      final d = channels.first.server.received.lastWhere(
+        (m) => m['type'] == 'haven/automations/delete',
+      );
+      expect(d['automation_id'], 'neu');
       await auto.dispose();
       await client.close();
     });

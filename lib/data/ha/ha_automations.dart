@@ -78,10 +78,10 @@ class HaAutomations {
   }
 
   Future<void> delete(String id) =>
-      _send('haven/automations/delete', {'id': id});
+      _send('haven/automations/delete', {'automation_id': id});
 
   Future<void> test(String id, String action) =>
-      _send('haven/automations/test', {'id': id, 'action': action});
+      _send('haven/automations/test', {'automation_id': id, 'action': action});
 
   Future<void> dispose() async {
     await _triggers.close();
