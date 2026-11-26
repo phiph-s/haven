@@ -808,11 +808,11 @@ class KnobGestureStep extends ConsumerWidget {
           else
             ...[]
         else if (a == GestureAction.sceneStep)
-          if ((sceneStep && room?.group != null) || current.action == a)
+          if ((sceneStep && room?.canScenes == true) || current.action == a)
             GestureBinding(a)
           else
             ...[]
-        else if (a != GestureAction.nextScene || room?.group != null)
+        else if (a != GestureAction.nextScene || room?.canScenes == true)
           GestureBinding(a),
     ];
     final picked = await showHavenSheet<GestureBinding>(
@@ -981,12 +981,12 @@ class KnobSceneStep extends StatelessWidget {
   Widget build(BuildContext context) {
     final hv = context.hv;
     final all = room?.scenes ?? const <GroupScene>[];
-    if (room?.group == null || all.isEmpty) {
+    if (all.isEmpty) {
       return StepScroll(
         title: 'Szenen',
         lead: room?.group == null
-            ? 'Dieser Raum hat keine Z2M-Gruppe. Szenen gibt es nur mit Gruppe, '
-                  'Helligkeit und Ein/Aus gehen trotzdem.'
+            ? 'Dieser Raum hat noch keine Szenen. Speichere welche in der '
+                  'Raumansicht, Helligkeit und Ein/Aus gehen auch so.'
             : 'Die Gruppe ${room!.group} hat noch keine Szenen.',
         children: const [],
       );
@@ -1461,8 +1461,7 @@ class _SummaryStep extends ConsumerWidget {
               ),
               for (final g in KnobGesture.values)
                 line(gestureLabel(g), bindingLabel(g, o.binding(g), scenes)),
-              if (room?.group != null && cycle.isNotEmpty)
-                line('Szenen', cycle.join(' → ')),
+              if (cycle.isNotEmpty) line('Szenen', cycle.join(' → ')),
               line(
                 'Einschalten',
                 o.onScene == null

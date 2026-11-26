@@ -38,11 +38,24 @@ class FakeRooms {
         final ents = (d['entities'] as Map).keys.cast<String>();
         lights.addAll(ents.where((e) => e.startsWith('light.')));
       }
+      // Matter-Lampen sind in keiner Zigbee-Gruppe: Zusatzgeräte für Szenen
+      final outside = <String>[];
       for (final d in (inventory['matter_devices'] as List? ?? const [])) {
         if (d['room'] != id || d['device_type'] != 'light') continue;
         final ents = (d['entities'] as Map).keys.cast<String>();
         lights.addAll(ents.where((e) => e.startsWith('light.')));
+        outside.addAll(ents.where((e) => e.startsWith('light.')));
       }
+      final switches = [
+        for (final d in devs)
+          // Einstell-Schalter von Thermostaten sind in HA Konfiguration
+          if (!'${d['friendly_name']}'.contains(
+            RegExp('thermostat|display', caseSensitive: false),
+          ))
+            ...(d['entities'] as Map).keys.cast<String>().where(
+              (e) => e.startsWith('switch.'),
+            ),
+      ];
 
       // Klimasensor: bevorzugt „Sensor …“, sonst irgendein Gerät mit Werten.
       String? temp;
@@ -106,6 +119,9 @@ class FakeRooms {
               stored: look != null,
               sync: SceneSync.parse(s['sync']),
               checkedAt: DateTime.tryParse('${s['checked_at'] ?? ''}'),
+              devices: [
+                for (final d in (s['devices'] as List? ?? const [])) '$d',
+              ],
               onlyLightIds: look == null && name == 'Lichtleiste'
                   ? lights.where((l) => l.contains('lichtleiste')).toList()
                   : null,
@@ -126,6 +142,8 @@ class FakeRooms {
           scenes: roomScenes,
           controls: controls,
           zigbeeGroupId: groupId,
+          sceneLightIds: groupId == null ? lights : outside,
+          switchIds: switches,
         ),
       );
     }

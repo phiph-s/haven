@@ -69,7 +69,23 @@ abstract class HavenRepository
   /// Ohne [number] entsteht eine neue Szene (der Name muss frei sein, sonst
   /// [HavenException] mit `name_taken`), mit [number] wird diese überschrieben
   /// (ohne [name] bleibt der Name). Liefert die Szenen-ID.
-  Future<int> storeScene(String roomId, {String? name, int? number});
+  ///
+  /// [devices]: Zusatzgeräte (Lampen außerhalb der Gruppe, Steckdosen,
+  /// Schalter), deren aktueller Zustand mitgespeichert wird (nur mit
+  /// [canSceneDevices]). In Räumen ohne Zigbee-Gruppe ist das die ganze Szene.
+  Future<int> storeScene(
+    String roomId, {
+    String? name,
+    int? number,
+    List<String>? devices,
+  });
+
+  /// Szenen können Zusatzgeräte speichern, Räume ohne Zigbee-Gruppe haben
+  /// eigene Szenen (Feature `room_scenes`).
+  bool get canSceneDevices;
+
+  /// Zusatzgeräte einer Szene ändern: nur [devices] bleiben drin.
+  Future<void> setSceneDevices(String roomId, int number, List<String> devices);
 
   /// Benennt eine Szene der Raumgruppe um.
   Future<void> renameScene(String roomId, int number, String name);

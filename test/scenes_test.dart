@@ -143,6 +143,22 @@ void main() {
       },
     );
 
+    test('Zusatzgeräte: speichern, herausnehmen', () async {
+      Room ruheraum() => repo.snapshot.room('ruheraum')!;
+      // Die Matter-Leselampe ist in keiner Zigbee-Gruppe.
+      expect(ruheraum().sceneLightIds, ['light.leselampe_ruheraum']);
+      expect(repo.canSceneDevices, isTrue);
+      final id = await repo.storeScene(
+        'ruheraum',
+        name: 'Abend',
+        devices: ['light.leselampe_ruheraum'],
+      );
+      RoomScene scene() => ruheraum().scenes.firstWhere((s) => s.number == id);
+      expect(scene().devices, ['light.leselampe_ruheraum']);
+      await repo.setSceneDevices('ruheraum', id, const []);
+      expect(scene().devices, isEmpty);
+    });
+
     test('umbenennen und löschen', () async {
       final s = salon().scenes.first;
       await repo.renameScene('salon', s.number!, 'Neu');
@@ -215,6 +231,83 @@ void main() {
       expect(rot.brightness, 30);
       expect(rot.entityId, isNull);
       expect(r.scenes.first.stored, isFalse);
+    });
+
+    test('mit room_scenes: Zusatzgeräte und Szenen ohne Gruppe', () {
+      final withDevices = {
+        'groups': [
+          {
+            ...(groups['groups'] as List).first as Map<String, dynamic>,
+            'scenes': [
+              {
+                'id': 0,
+                'name': 'Hell',
+                'look': null,
+                'devices': [
+                  {'entity_id': 'light.matter', 'on': true},
+                ],
+              },
+            ],
+          },
+        ],
+      };
+      final all = {
+        'rooms': [
+          {
+            ...(rooms['rooms'] as List).first as Map<String, dynamic>,
+            'lights': ['light.matter'],
+            'outside_lights': ['light.matter'],
+            'switches': ['switch.steckdose'],
+          },
+          {
+            'area_id': 'bad',
+            'name': 'Bad',
+            'lights': ['light.wlan'],
+            'outside_lights': ['light.wlan'],
+            'climate': {},
+            'group': null,
+            'scenes': [
+              {
+                'id': 3,
+                'name': 'Nacht',
+                'look': {
+                  'colors': ['#ff8800'],
+                  'brightness': 10,
+                  'kelvin': null,
+                },
+                'devices': [
+                  {'entity_id': 'light.wlan', 'on': true, 'brightness': 10},
+                ],
+              },
+            ],
+          },
+        ],
+      };
+      final rs = HaRepository.roomsFromHaven(
+        all,
+        withDevices,
+        entities,
+        sceneCommands: true,
+        roomScenes: true,
+      );
+      final salon = rs.firstWhere((r) => r.id == 'salon');
+      expect(salon.scenes.single.devices, ['light.matter']);
+      expect(salon.sceneLightIds, ['light.matter']);
+      expect(salon.switchIds, ['switch.steckdose']);
+      final bad = rs.firstWhere((r) => r.id == 'bad');
+      final nacht = bad.scenes.single;
+      expect((nacht.own, nacht.number, nacht.editable), (true, 3, true));
+      expect(nacht.zigbee, isFalse);
+      expect(nacht.devices, ['light.wlan']);
+      expect(nacht.brightness, 10);
+      // Ohne Feature keine eigenen Szenen
+      final old = HaRepository.roomsFromHaven(
+        all,
+        withDevices,
+        entities,
+        sceneCommands: true,
+      );
+      expect(old.firstWhere((r) => r.id == 'bad').scenes, isEmpty);
     });
   });
 }

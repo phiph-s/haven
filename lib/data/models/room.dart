@@ -19,6 +19,8 @@ class RoomScene {
     this.stored = false,
     this.sync = SceneSync.unknown,
     this.checkedAt,
+    this.devices = const [],
+    this.own = false,
   });
 
   final String id;
@@ -53,7 +55,18 @@ class RoomScene {
   /// Letzte Messung der Szene, `null` = nie gemessen.
   final DateTime? checkedAt;
 
-  bool get editable => groupId != null && number != null;
+  /// Zusatzgeräte der Szene (Entity-IDs), die Haven über HA mitschaltet:
+  /// Lampen außerhalb der Zigbee-Gruppe, Steckdosen, Schalter.
+  final List<String> devices;
+
+  /// Szene eines Raums ohne Zigbee-Gruppe: führt Haven selbst, nur
+  /// Zusatzgeräte (Feature `room_scenes`).
+  final bool own;
+
+  bool get editable => number != null && (groupId != null || own);
+
+  /// Zigbee-Szene einer Gruppe (messen und abgleichen geht nur damit).
+  bool get zigbee => groupId != null && number != null;
 
   /// Die Karte zeigt einen Hinweispunkt: neu prüfen bzw. abgleichen.
   bool get needsSync => sync == SceneSync.stale || sync == SceneSync.differs;
@@ -113,11 +126,20 @@ class Room {
     this.groupEntityId,
     this.lightGroupIds = const [],
     this.zigbeeGroupId,
+    this.sceneLightIds = const [],
+    this.switchIds = const [],
   });
 
   final String id;
   final String name;
   final String? areaId;
+
+  /// Lampen, die nicht in der Zigbee-Gruppe sind (alle, wenn es keine
+  /// gibt): Szenen speichern sie als Zusatzgeräte.
+  final List<String> sceneLightIds;
+
+  /// Steckdosen und Schalter im Raum (für Szenen, nicht vorausgewählt).
+  final List<String> switchIds;
 
   /// Lampen des Raums, ohne Lichtgruppen. Ausgenommene Lampen stehen hier
   /// noch drin, `HavenSnapshot.controlledLightIds` filtert sie.

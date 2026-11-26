@@ -58,11 +58,28 @@ abstract class BaseRepository implements HavenRepository {
   bool canEditScenes(String roomId) => false;
 
   @override
-  Future<int> storeScene(String roomId, {String? name, int? number}) =>
-      throw HavenException(
-        'Szenen lassen sich hier nicht speichern',
-        code: 'not_supported',
-      );
+  bool get canSceneDevices => false;
+
+  @override
+  Future<void> setSceneDevices(
+    String roomId,
+    int number,
+    List<String> devices,
+  ) => throw HavenException(
+    'Szenen lassen sich hier nicht ändern',
+    code: 'not_supported',
+  );
+
+  @override
+  Future<int> storeScene(
+    String roomId, {
+    String? name,
+    int? number,
+    List<String>? devices,
+  }) => throw HavenException(
+    'Szenen lassen sich hier nicht speichern',
+    code: 'not_supported',
+  );
 
   @override
   Future<void> renameScene(String roomId, int number, String name) =>

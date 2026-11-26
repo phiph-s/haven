@@ -22,7 +22,7 @@ import 'scene_editor.dart' show sceneErrorText;
 bool canCheckScenes(HavenRepository repo, Room room) =>
     repo.canSyncScenes &&
     room.zigbeeGroupId != null &&
-    room.scenes.any((s) => s.editable);
+    room.scenes.any((s) => s.zigbee);
 
 Future<void> showSceneSyncSheet(BuildContext context, String roomId) =>
     showZbSheet<void>(context, builder: (_) => SceneSyncSheet(roomId: roomId));
@@ -274,7 +274,7 @@ class _SceneSyncSheetState extends ConsumerState<SceneSyncSheet> {
     if (room == null) return const SizedBox.shrink();
     final scenes = [
       for (final s in room.scenes)
-        if (s.editable) s,
+        if (s.zigbee) s,
     ];
     final checked = [
       for (final s in scenes)

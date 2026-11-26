@@ -101,8 +101,8 @@ Map<int, String> validateKnobDraft(
       GestureAction.sceneStep,
     }.contains(draft.options.binding(g).action),
   );
-  if (usesScenes && room != null && room.group == null) {
-    errors[2] ??= 'Szenen schalten geht nur mit einer Z2M-Gruppe im Raum';
+  if (usesScenes && room != null && !room.canScenes) {
+    errors[2] ??= '${room.name} hat noch keine Szenen';
   }
   final chosen = draft.options.scenes;
   if (usesScenes && chosen != null && chosen.isEmpty) {

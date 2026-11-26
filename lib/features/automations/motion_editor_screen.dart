@@ -1167,7 +1167,7 @@ class MotionLightEditor extends ConsumerWidget {
       for (final e in ref.watch(snapshotProvider).entities.values)
         if (e.domain == 'scene') e,
     ]..sort((a, b) => a.name.compareTo(b.name));
-    final hasGroup = room?.group != null;
+    final hasGroup = room?.canScenes == true;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,

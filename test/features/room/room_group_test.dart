@@ -90,4 +90,28 @@ void main() {
     expect(repo.snapshot.room('waschraum')!.zigbeeGroupId, isNotNull);
     expect(find.byKey(const ValueKey('missing-room-groups')), findsNothing);
   });
+
+  testWidgets('Szene speichern: Lampe außerhalb der Gruppe ist vorgewählt', (
+    tester,
+  ) async {
+    final repo = await _pump(tester, '/home/room/ruheraum');
+    await tester.tap(find.byType(SceneSaveChip));
+    await tester.pumpAndSettle();
+    expect(find.text('Weitere Geräte'), findsOneWidget);
+    final row = find.byKey(
+      const ValueKey('scene-device-light.leselampe_ruheraum'),
+    );
+    await tester.ensureVisible(row);
+    expect(row, findsOneWidget);
+    await tester.enterText(find.byType(TextField).first, 'Kino');
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('Speichern').last);
+    await tester.tap(find.text('Speichern').last);
+    await tester.pumpAndSettle();
+    final kino = repo.snapshot
+        .room('ruheraum')!
+        .scenes
+        .firstWhere((s) => s.name == 'Kino');
+    expect(kino.devices, ['light.leselampe_ruheraum']);
+  });
 }

@@ -286,7 +286,7 @@ void main() {
       final scene = const MotionOptions(
         light: MotionLight(useScene: true, scene: 1),
       );
-      expect(validateMotionDraft(d(o: scene), all)[3], contains('Gruppe'));
+      expect(validateMotionDraft(d(o: scene), all)[3], contains('keine Szenen'));
       final ha = const MotionOptions(
         light: MotionLight(useScene: true, sceneEntity: 'scene.bad_nacht'),
       );

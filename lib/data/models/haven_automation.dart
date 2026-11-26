@@ -547,6 +547,9 @@ class AutomationRoom {
   bool get hasLights =>
       declaredHasLights ?? (group != null || lights.isNotEmpty);
 
+  /// Szenen gehen: Zigbee-Gruppe oder Szenen, die Haven für den Raum führt.
+  bool get canScenes => group != null || scenes.isNotEmpty;
+
   factory AutomationRoom.fromJson(String areaId, Map<String, dynamic> j) =>
       AutomationRoom(
         areaId: areaId,

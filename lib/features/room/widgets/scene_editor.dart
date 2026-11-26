@@ -5,6 +5,7 @@ import 'package:material_ui/material_ui.dart';
 import '../../../core/state/providers.dart';
 import '../../../core/theme/tokens.dart';
 import '../../../core/widgets/haven_button.dart';
+import '../../../core/widgets/haven_switch.dart';
 import '../../../core/widgets/press_scale.dart';
 import '../../../data/haven_repository.dart';
 import '../../../data/models/lamp.dart';
@@ -95,6 +96,7 @@ Future<void> saveSceneFlow(
       room.id,
       name: result.name,
       number: result.replace?.number,
+      devices: result.devices,
     );
     HapticFeedback.lightImpact();
     if (!context.mounted) return;
@@ -134,6 +136,18 @@ Future<void> editSceneFlow(
       try {
         await repo.renameScene(room.id, scene.number!, name);
         if (context.mounted) zbToast(context, 'Umbenannt in $name');
+      } catch (e) {
+        if (context.mounted) zbToast(context, sceneErrorText(e), error: true);
+      }
+    case _EditAction.devices:
+      final keep = await showZbSheet<List<String>>(
+        context,
+        builder: (ctx) => _SceneDevicesForm(scene: scene, own: scene.own),
+      );
+      if (keep == null || !context.mounted) return;
+      try {
+        await repo.setSceneDevices(room.id, scene.number!, keep);
+        if (context.mounted) zbToast(context, '${scene.name} geändert');
       } catch (e) {
         if (context.mounted) zbToast(context, sceneErrorText(e), error: true);
       }
@@ -247,9 +261,37 @@ class SceneSaveChip extends StatelessWidget {
 // ---- Sheets --------------------------------------------------------------------
 
 class _SaveResult {
-  const _SaveResult(this.name, this.replace);
+  const _SaveResult(this.name, this.replace, [this.devices]);
   final String name;
   final RoomScene? replace;
+
+  /// Zusatzgeräte, `null` = die Integration kann keine.
+  final List<String>? devices;
+}
+
+/// Geräte, die eine Szene zusätzlich speichern kann: Lampen außerhalb der
+/// Zigbee-Gruppe, dann Steckdosen und Schalter.
+List<String> sceneDeviceCandidates(Room room) => [
+  ...room.sceneLightIds,
+  ...room.switchIds,
+];
+
+/// Vorauswahl der Zusatzgeräte: beim Ersetzen die der Szene, sonst die
+/// Lampen außerhalb der Gruppe (ohne ausgenommene). Steckdosen und Schalter
+/// nie von selbst.
+Set<String> defaultSceneDevices(
+  Room room,
+  RoomScene? replace,
+  Set<String> excluded,
+) {
+  final candidates = sceneDeviceCandidates(room).toSet();
+  if (replace != null && replace.devices.isNotEmpty) {
+    return replace.devices.where(candidates.contains).toSet();
+  }
+  return {
+    for (final l in room.sceneLightIds)
+      if (!excluded.contains(l)) l,
+  };
 }
 
 class _SaveSceneForm extends ConsumerStatefulWidget {
@@ -266,11 +308,23 @@ class _SaveSceneFormState extends ConsumerState<_SaveSceneForm> {
     text: widget.replace?.name ?? '',
   );
 
+  /// Gewählte Zusatzgeräte, `null` bis zur ersten Auswahl (dann Vorauswahl
+  /// der Szene, die ersetzt würde).
+  Set<String>? _devices;
+
   @override
   void dispose() {
     _c.dispose();
     super.dispose();
   }
+
+  Set<String> _chosen(Room room, RoomScene? target) =>
+      _devices ??
+      defaultSceneDevices(
+        room,
+        target,
+        ref.read(snapshotProvider).excludedLights,
+      );
 
   void _pick(String name) {
     _c.text = name;
@@ -282,9 +336,15 @@ class _SaveSceneFormState extends ConsumerState<_SaveSceneForm> {
     final name = _normalize(_c.text);
     if (name.isEmpty) return;
     final room = ref.read(snapshotProvider).room(widget.roomId);
-    Navigator.of(
-      context,
-    ).pop(_SaveResult(name, sceneNamed(room?.scenes ?? const [], name)));
+    if (room == null) return;
+    final target = sceneNamed(room.scenes, name);
+    final devices = ref.read(repositoryProvider).canSceneDevices
+        ? [
+            for (final d in sceneDeviceCandidates(room))
+              if (_chosen(room, target).contains(d)) d,
+          ]
+        : null;
+    Navigator.of(context).pop(_SaveResult(name, target, devices));
   }
 
   @override
@@ -299,6 +359,16 @@ class _SaveSceneFormState extends ConsumerState<_SaveSceneForm> {
     final name = _normalize(_c.text);
     final target = sceneNamed(room.scenes, name);
     final onCount = lamps.where((l) => l.on).length;
+    final withDevices = ref.watch(
+      repositoryProvider.select((r) => r.canSceneDevices),
+    );
+    final candidates = withDevices
+        ? sceneDeviceCandidates(room)
+        : const <String>[];
+    final chosen = _chosen(room, target);
+    final noGroup = room.zigbeeGroupId == null;
+    // Ohne Gruppe besteht die Szene nur aus Zusatzgeräten
+    final canSave = name.isNotEmpty && (!noGroup || chosen.isNotEmpty);
     final preview = RoomScene(
       id: '_preview',
       name: name.isEmpty ? 'Neue Szene' : name,
@@ -359,6 +429,33 @@ class _SaveSceneFormState extends ConsumerState<_SaveSceneForm> {
             ),
           ],
         ),
+        if (candidates.isNotEmpty) ...[
+          const SizedBox(height: 18),
+          Text(
+            noGroup ? 'Geräte in der Szene' : 'Weitere Geräte',
+            style: HavenText.label.copyWith(color: hv.tx2),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            noGroup
+                ? 'Haven merkt sich ihren Zustand und stellt ihn wieder her.'
+                : 'Nicht in der Zigbee-Gruppe. Haven merkt sich ihren '
+                      'Zustand und schaltet sie mit.',
+            style: HavenText.caption.copyWith(color: hv.tx3),
+          ),
+          const SizedBox(height: 6),
+          for (final id in candidates)
+            _DeviceToggle(
+              key: ValueKey('scene-device-$id'),
+              entityId: id,
+              value: chosen.contains(id),
+              onChanged: (v) => setState(() {
+                final next = {...chosen};
+                v ? next.add(id) : next.remove(id);
+                _devices = next;
+              }),
+            ),
+        ],
         if (room.scenes.isNotEmpty) ...[
           const SizedBox(height: 18),
           Text(
@@ -386,9 +483,61 @@ class _SaveSceneFormState extends ConsumerState<_SaveSceneForm> {
         HavenButton(
           label: target == null ? 'Speichern' : '„${target.name}“ ersetzen',
           primary: true,
-          onTap: name.isEmpty ? null : _done,
+          onTap: canSave ? _done : null,
         ),
       ],
+    );
+  }
+}
+
+/// Ein Zusatzgerät mit Schalter: Name, Zustand jetzt, drin oder nicht.
+class _DeviceToggle extends ConsumerWidget {
+  const _DeviceToggle({
+    super.key,
+    required this.entityId,
+    required this.value,
+    required this.onChanged,
+  });
+  final String entityId;
+  final bool value;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final hv = context.hv;
+    final e = ref.watch(snapshotProvider.select((s) => s.entities[entityId]));
+    final name = e?.name ?? entityId;
+    final light = entityId.startsWith('light.');
+    final state = switch (e?.state) {
+      'on' => 'an',
+      'off' => 'aus',
+      _ => 'nicht erreichbar',
+    };
+    return Padding(
+      padding: const EdgeInsets.only(top: 6),
+      child: Row(
+        children: [
+          Icon(
+            light ? Icons.lightbulb_outline_rounded : Icons.power_outlined,
+            size: 20,
+            color: hv.tx2,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(name, style: HavenText.label.copyWith(color: hv.tx)),
+                Text(
+                  light ? 'Jetzt $state' : 'Steckdose/Schalter, jetzt $state',
+                  style: HavenText.caption.copyWith(color: hv.tx3),
+                ),
+              ],
+            ),
+          ),
+          HavenSwitch(value: value, semanticLabel: name, onChanged: onChanged),
+        ],
+      ),
     );
   }
 }
@@ -435,7 +584,7 @@ class _ChipWrap extends StatelessWidget {
   }
 }
 
-enum _EditAction { overwrite, rename, remove }
+enum _EditAction { overwrite, rename, devices, remove }
 
 class _SceneActions extends StatelessWidget {
   const _SceneActions({required this.scene});
@@ -483,6 +632,17 @@ class _SceneActions extends StatelessWidget {
           icon: Icons.edit_rounded,
           onTap: () => pop(_EditAction.rename),
         ),
+        if (scene.devices.isNotEmpty) ...[
+          const SizedBox(height: 10),
+          HavenButton(
+            key: const ValueKey('scene-edit-devices'),
+            label: scene.devices.length == 1
+                ? '1 Zusatzgerät'
+                : '${scene.devices.length} Zusatzgeräte',
+            icon: Icons.devices_other_rounded,
+            onTap: () => pop(_EditAction.devices),
+          ),
+        ],
         const SizedBox(height: 10),
         HavenButton(
           label: 'Löschen',
@@ -546,6 +706,62 @@ class _RenameSceneFormState extends State<_RenameSceneForm> {
         ],
         const SizedBox(height: 14),
         HavenButton(label: 'Speichern', primary: true, onTap: ok ? done : null),
+      ],
+    );
+  }
+}
+
+/// Zusatzgeräte einer Szene herausnehmen. Neue kommen beim Ersetzen dazu.
+class _SceneDevicesForm extends StatefulWidget {
+  const _SceneDevicesForm({required this.scene, required this.own});
+  final RoomScene scene;
+  final bool own;
+
+  @override
+  State<_SceneDevicesForm> createState() => _SceneDevicesFormState();
+}
+
+class _SceneDevicesFormState extends State<_SceneDevicesForm> {
+  late final Set<String> _keep = widget.scene.devices.toSet();
+
+  @override
+  Widget build(BuildContext context) {
+    final hv = context.hv;
+    final ok = !widget.own || _keep.isNotEmpty;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          'Geräte in ${widget.scene.name}',
+          style: HavenText.headline.copyWith(color: hv.tx),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          'Ausgeschaltete fliegen aus der Szene. Neue Geräte kommen beim '
+          'Ersetzen mit aktuellem Licht dazu.',
+          style: HavenText.body.copyWith(color: hv.tx2, fontSize: 14),
+        ),
+        const SizedBox(height: 8),
+        for (final id in widget.scene.devices)
+          _DeviceToggle(
+            key: ValueKey('scene-keep-$id'),
+            entityId: id,
+            value: _keep.contains(id),
+            onChanged: (v) =>
+                setState(() => v ? _keep.add(id) : _keep.remove(id)),
+          ),
+        const SizedBox(height: 20),
+        HavenButton(
+          key: const ValueKey('scene-devices-save'),
+          label: ok ? 'Übernehmen' : 'Mindestens ein Gerät',
+          primary: true,
+          onTap: ok
+              ? () => Navigator.of(context).pop([
+                  for (final d in widget.scene.devices)
+                    if (_keep.contains(d)) d,
+                ])
+              : null,
+        ),
       ],
     );
   }

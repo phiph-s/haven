@@ -793,7 +793,37 @@ class FakeRepository extends BaseRepository {
   }
 
   @override
-  Future<int> storeScene(String roomId, {String? name, int? number}) async {
+  bool get canSceneDevices => true;
+
+  @override
+  Future<void> setSceneDevices(
+    String roomId,
+    int number,
+    List<String> devices,
+  ) async {
+    final list = _scenesOf(roomId);
+    final i = list.indexWhere((s) => s['id'] == number);
+    if (i < 0) {
+      throw HavenException('Die Szene gibt es nicht mehr', code: 'not_found');
+    }
+    final keep = devices.toSet();
+    list[i] = {
+      ...list[i],
+      'devices': [
+        for (final d in (list[i]['devices'] as List? ?? const []))
+          if (keep.contains(d)) d,
+      ],
+    };
+    _rebuildRooms();
+  }
+
+  @override
+  Future<int> storeScene(
+    String roomId, {
+    String? name,
+    int? number,
+    List<String>? devices,
+  }) async {
     final list = _scenesOf(roomId);
     final gid = _room(roomId)!.zigbeeGroupId!;
     final existing = number == null
@@ -824,6 +854,7 @@ class FakeRepository extends BaseRepository {
       'id': id,
       'name': clean,
       'look': look.toJson(),
+      'devices': [...?devices],
     };
     if (existing != null) {
       list[list.indexOf(existing)] = def;

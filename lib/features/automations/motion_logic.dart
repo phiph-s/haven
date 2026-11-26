@@ -185,8 +185,8 @@ Map<int, String> validateMotionDraft(
   String? lightError(MotionLight l, String prefix) {
     if (!l.isScene) return null;
     if (l.sceneEntity != null) return null;
-    if (room != null && room.group == null) {
-      return '$prefix: Z2M-Szenen brauchen eine Gruppe im Raum, wähl eine HA-Szene';
+    if (room != null && !room.canScenes) {
+      return '$prefix: Der Raum hat keine Szenen, wähl eine HA-Szene';
     }
     return scenes.any((s) => s.id == l.scene) ? null : '$prefix: Szene wählen';
   }

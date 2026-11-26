@@ -94,12 +94,26 @@ class _RoomGroupCardState extends ConsumerState<RoomGroupCard> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Text(
-            'Szenen speichert Haven in einer Zigbee-Gruppe. Dieser Raum hat '
-            'noch keine. Haven kann sie anlegen, mit '
-            '${n == 1 ? 'der Zigbee-Lampe' : 'den $n Zigbee-Lampen'} des '
-            'Raums.',
+            ref.watch(repositoryProvider).canSceneDevices
+                ? 'Mit einer Zigbee-Gruppe schalten die Zigbee-Lampen bei '
+                      'Szenen und beim Dimmen gleichzeitig. Haven kann sie '
+                      'anlegen, mit '
+                      '${n == 1 ? 'der Zigbee-Lampe' : 'den $n Zigbee-Lampen'} '
+                      'des Raums.'
+                : 'Szenen speichert Haven in einer Zigbee-Gruppe. Dieser Raum '
+                      'hat noch keine. Haven kann sie anlegen, mit '
+                      '${n == 1 ? 'der Zigbee-Lampe' : 'den $n Zigbee-Lampen'} '
+                      'des Raums.',
             style: HavenText.body.copyWith(color: hv.tx2, fontSize: 13.5),
           ),
+          if (widget.room.scenes.any((s) => s.own)) ...[
+            const SizedBox(height: 6),
+            Text(
+              'Die Szenen, die Haven bisher für den Raum führt, gelten danach '
+              'nicht mehr. Speichere sie mit der Gruppe neu.',
+              style: HavenText.caption.copyWith(color: hv.warn),
+            ),
+          ],
           if (other > 0) ...[
             const SizedBox(height: 6),
             Text(

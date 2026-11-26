@@ -367,6 +367,13 @@ class _RoomBody extends ConsumerWidget {
                 ),
               ),
             ),
+          // Szenen gehen auch ohne Gruppe, mit Gruppe schalten Zigbee-Lampen
+          // aber gleichzeitig: anbieten, solange es keine gibt.
+          if (canEditScenes && canCreateGroup)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 4, 20, 0),
+              child: RoomGroupCard(room: room),
+            ),
           // Lampen
           const SizedBox(height: 14),
           SectionHeader(

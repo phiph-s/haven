@@ -241,6 +241,9 @@ class HaRepository extends BaseRepository {
     if (data?['kind'] == 'automations') return _auto.notifyChanged();
     if (data?['kind'] == 'heating') return _heat.notifyChanged();
     if (data?['kind'] == 'render') return _renderCtrl.add(null);
+    if (data?['kind'] == 'scenes') {
+      return unawaited(reloadRooms().then((_) => _pushNow()));
+    }
     final kind = AppDataKind.parse(data?['kind']);
     if (kind == null) return;
     if (kind == AppDataKind.prefs) {
@@ -435,6 +438,7 @@ class HaRepository extends BaseRepository {
             groupsRes,
             _entities,
             sceneCommands: _features.contains('scenes'),
+            roomScenes: _features.contains('room_scenes'),
           );
     _devices = roomsRes == null ? const [] : devicesFromHaven(roomsRes);
     _lampModels = lampModelsOf(devices: _devices, zigbee: _zbLamps);
@@ -493,6 +497,7 @@ class HaRepository extends BaseRepository {
     Map<String, dynamic>? groupsRes,
     Map<String, EntityState> entities, {
     bool sceneCommands = false,
+    bool roomScenes = false,
   }) {
     final groups = <int, Map<String, dynamic>>{
       for (final g in (groupsRes?['groups'] as List? ?? const []))
@@ -576,6 +581,7 @@ class HaRepository extends BaseRepository {
               stored: look != null,
               sync: SceneSync.parse(s['sync']),
               checkedAt: DateTime.tryParse('${s['checked_at'] ?? ''}'),
+              devices: _deviceIds(s['devices']),
             ),
           );
         }
@@ -593,6 +599,27 @@ class HaRepository extends BaseRepository {
           );
         }
       }
+      if (g == null && roomScenes) {
+        // Raum ohne Zigbee-Gruppe: Szenen, die Haven selbst führt
+        for (final s in (room['scenes'] as List? ?? const [])) {
+          final name = '${s['name']}';
+          final look = SceneLook.fromJson(s['look']);
+          final style = sceneStyleFor(name);
+          scenes.add(
+            RoomScene(
+              id: slugify(name),
+              name: name,
+              colors: look?.cardColors ?? style.colors,
+              brightness: look?.brightness ?? style.brightness,
+              kelvin: look == null ? style.kelvin : look.kelvin,
+              number: (s['id'] as num?)?.toInt(),
+              stored: look != null,
+              devices: _deviceIds(s['devices']),
+              own: true,
+            ),
+          );
+        }
+      }
       rooms.add(
         Room(
           id: '${room['area_id']}',
@@ -606,11 +633,24 @@ class HaRepository extends BaseRepository {
           groupEntityId: groupEntity,
           lightGroupIds: groupIds.toList()..sort(),
           zigbeeGroupId: (g?['id'] as num?)?.toInt(),
+          sceneLightIds: [
+            for (final l in (room['outside_lights'] as List? ?? const []))
+              if (lights.contains('$l')) '$l',
+          ],
+          switchIds: [
+            for (final s in (room['switches'] as List? ?? const [])) '$s',
+          ],
         ),
       );
     }
     return rooms;
   }
+
+  static List<String> _deviceIds(Object? raw) => [
+    if (raw is List)
+      for (final d in raw)
+        if (d is Map && d['entity_id'] is String) d['entity_id'] as String,
+  ];
 
   void _onStateChanged(dynamic event) {
     final data = (event as Map?)?['data'] as Map?;
@@ -822,6 +862,15 @@ class HaRepository extends BaseRepository {
     if (!scene.editable && scene.entityId == null) return;
     _activeScenes[roomId] = sceneId;
     _pushNow();
+    if (scene.editable && _roomScenes) {
+      // Zigbee-Teil und Zusatzgeräte in einem Befehl
+      await client.send({
+        'type': 'haven/scenes/recall',
+        'area_id': r.areaId ?? r.id,
+        'scene_id': scene.number,
+      });
+      return;
+    }
     if (scene.editable) {
       await client.send({
         'type': 'haven/zigbee/scene_recall',
@@ -839,8 +888,18 @@ class HaRepository extends BaseRepository {
   }
 
   @override
-  bool canEditScenes(String roomId) =>
-      _features.contains('scenes') && _room(roomId)?.zigbeeGroupId != null;
+  bool canEditScenes(String roomId) {
+    final r = _room(roomId);
+    if (r == null || !_features.contains('scenes')) return false;
+    if (r.zigbeeGroupId != null) return true;
+    return _roomScenes &&
+        (r.sceneLightIds.isNotEmpty || r.switchIds.isNotEmpty);
+  }
+
+  bool get _roomScenes => _features.contains('room_scenes');
+
+  @override
+  bool get canSceneDevices => _roomScenes;
 
   /// Alle Lampen der Raumgruppe, auch ausgenommene: Z2M speichert die Szene
   /// für jedes Mitglied.
@@ -850,23 +909,51 @@ class HaRepository extends BaseRepository {
   ];
 
   @override
-  Future<int> storeScene(String roomId, {String? name, int? number}) async {
+  Future<int> storeScene(
+    String roomId, {
+    String? name,
+    int? number,
+    List<String>? devices,
+  }) async {
     final r = _room(roomId);
-    if (r?.zigbeeGroupId == null) {
+    if (r == null || (r.zigbeeGroupId == null && !_roomScenes)) {
       throw HavenException(
         'Dieser Raum hat keine Zigbee-Gruppe',
         code: 'not_found',
       );
     }
-    final res =
-        await client.send({
-              'type': 'haven/zigbee/scene_store',
-              'group_id': r!.zigbeeGroupId,
-              'scene_id': ?number,
-              'name': ?name,
-              'look': sceneLookOf(_sceneLamps(r)).toJson(),
-            })
-            as Map;
+    final Map res;
+    if (_roomScenes) {
+      final chosen = devices ?? const <String>[];
+      // Ohne Gruppe zeigt die Karte die Farben der gewählten Lampen
+      final lamps = r.zigbeeGroupId != null
+          ? _sceneLamps(r)
+          : [
+              for (final id in chosen)
+                if (_entities[id] != null && id.startsWith('light.'))
+                  Lamp.fromEntity(_entities[id]!),
+            ];
+      res =
+          await client.send({
+                'type': 'haven/scenes/store',
+                'area_id': r.areaId ?? r.id,
+                'scene_id': ?number,
+                'name': ?name,
+                'look': sceneLookOf(lamps).toJson(),
+                'devices': chosen,
+              })
+              as Map;
+    } else {
+      res =
+          await client.send({
+                'type': 'haven/zigbee/scene_store',
+                'group_id': r.zigbeeGroupId,
+                'scene_id': ?number,
+                'name': ?name,
+                'look': sceneLookOf(_sceneLamps(r)).toJson(),
+              })
+              as Map;
+    }
     final stored = (res['scene_id'] as num).toInt();
     await reloadRooms();
     final scene = _room(
@@ -882,25 +969,59 @@ class HaRepository extends BaseRepository {
   @override
   Future<void> renameScene(String roomId, int number, String name) async {
     final r = _room(roomId);
-    await client.send({
-      'type': 'haven/zigbee/scene_rename',
-      'group_id': r?.zigbeeGroupId,
-      'scene_id': number,
-      'name': name,
-    });
+    await client.send(
+      _roomScenes
+          ? {
+              'type': 'haven/scenes/rename',
+              'area_id': r?.areaId ?? roomId,
+              'scene_id': number,
+              'name': name,
+            }
+          : {
+              'type': 'haven/zigbee/scene_rename',
+              'group_id': r?.zigbeeGroupId,
+              'scene_id': number,
+              'name': name,
+            },
+    );
     await reloadRooms();
   }
 
   @override
   Future<void> removeScene(String roomId, int number) async {
     final r = _room(roomId);
-    await client.send({
-      'type': 'haven/zigbee/scene_remove',
-      'group_id': r?.zigbeeGroupId,
-      'scene_id': number,
-    });
+    await client.send(
+      _roomScenes
+          ? {
+              'type': 'haven/scenes/remove',
+              'area_id': r?.areaId ?? roomId,
+              'scene_id': number,
+            }
+          : {
+              'type': 'haven/zigbee/scene_remove',
+              'group_id': r?.zigbeeGroupId,
+              'scene_id': number,
+            },
+    );
     _activeScenes.remove(roomId);
     await reloadRooms();
+  }
+
+  @override
+  Future<void> setSceneDevices(
+    String roomId,
+    int number,
+    List<String> devices,
+  ) async {
+    final r = _room(roomId);
+    await client.send({
+      'type': 'haven/scenes/set_devices',
+      'area_id': r?.areaId ?? roomId,
+      'scene_id': number,
+      'devices': devices,
+    });
+    await reloadRooms();
+    _pushNow();
   }
 
   // ---- Szenen-Abgleich (Feature `scene_sync`) --------------------------------

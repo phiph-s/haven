@@ -118,8 +118,8 @@ List<DashboardSection> knobSections(
       step: 3,
       title: 'Szenen',
       icon: Icons.palette_outlined,
-      lines: room?.group == null
-          ? const ['Keine Z2M-Gruppe, daher ohne Szenen']
+      lines: room?.canScenes != true
+          ? const ['Noch keine Szenen im Raum']
           : [
               cycle.isEmpty ? 'Keine im Umlauf' : cycle.join(' → '),
               'Beim Einschalten: $onScene',
