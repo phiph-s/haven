@@ -16,6 +16,7 @@ import '../room/widgets/brightness_slider.dart';
 import '../settings/settings_widgets.dart';
 import '../zigbee/zigbee_model.dart';
 import '../zigbee/zigbee_providers.dart';
+import 'duration_picker.dart';
 import 'haven_automations_provider.dart';
 import 'knob_editor_screen.dart';
 import 'knob_widgets.dart';
@@ -1344,6 +1345,21 @@ class _MotionDelayStepState extends State<MotionDelayStep> {
                 selected: o.delay == d,
                 onTap: () => _opts(o.copyWith(delay: d)),
               ),
+            OptionChip(
+              key: const ValueKey('motion-delay-custom'),
+              label: delays.contains(o.delay)
+                  ? 'Eigene …'
+                  : 'Eigene: ${delayLabel(o.delay)}',
+              selected: !delays.contains(o.delay),
+              onTap: () async {
+                final v = await showDurationPicker(
+                  context,
+                  title: 'Nachlauf',
+                  initial: o.delay,
+                );
+                if (v != null) _opts(widget.options.copyWith(delay: v));
+              },
+            ),
           ],
         ),
         const SizedBox(height: 18),
@@ -1389,6 +1405,24 @@ class _MotionDelayStepState extends State<MotionDelayStep> {
                   selected: o.manualDelay == d,
                   onTap: () => _opts(o.copyWith(manualDelay: d)),
                 ),
+              OptionChip(
+                key: const ValueKey('motion-manual-delay-custom'),
+                label: manual.contains(o.manualDelay)
+                    ? 'Eigene …'
+                    : 'Eigene: ${delayLabel(o.manualDelay!)}',
+                selected: !manual.contains(o.manualDelay),
+                onTap: () async {
+                  final v = await showDurationPicker(
+                    context,
+                    title: 'Von Hand verstellt: aus nach',
+                    initial: o.manualDelay!,
+                    max: 24 * 3600,
+                  );
+                  if (v != null) {
+                    _opts(widget.options.copyWith(manualDelay: v));
+                  }
+                },
+              ),
             ],
           ),
         ],

@@ -200,6 +200,9 @@ void main() {
       expect(delayLabel(90), '1,5 min');
       expect(delayLabel(120), '2 min');
       expect(delayLabel(3600), '1 h');
+      expect(delayLabel(125), '2 min 5 s');
+      expect(delayLabel(5400), '1 h 30 min');
+      expect(delayLabel(3725), '1 h 2 min 5 s');
       expect(
         sunWindowLabel(
           const SunWindow(
@@ -335,6 +338,15 @@ void main() {
       expect(find.text('Nachlauf und Optionen'), findsOneWidget);
       await tester.tap(find.text('5 min'));
       await tester.pumpAndSettle();
+      // Eigene Zeit: 5 min + 1 min + 5 s
+      await tester.tap(find.byKey(const ValueKey('motion-delay-custom')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('duration-m-up')));
+      await tester.tap(find.byKey(const ValueKey('duration-s-up')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('duration-done')));
+      await tester.pumpAndSettle();
+      expect(find.text('Eigene: 6 min 5 s'), findsOneWidget);
       await _next(tester);
 
       // Live-Test
@@ -351,7 +363,7 @@ void main() {
       expect(saved.roomAreaId, 'waschraum');
       expect(saved.devices, [FakeAutomations.waschraumPresence]);
       expect(saved.name, 'Bewegungslicht Waschraum');
-      expect(saved.motion!.delay, 300);
+      expect(saved.motion!.delay, 365);
       expect(find.text('Haven-Automationen'), findsOneWidget);
     });
 

@@ -57,9 +57,13 @@ String sunWindowLabel(SunWindow w) {
 String delayLabel(int seconds) {
   if (seconds < 60) return '$seconds s';
   if (seconds % 3600 == 0) return '${seconds ~/ 3600} h';
-  if (seconds % 60 == 0) return '${seconds ~/ 60} min';
-  final min = seconds / 60;
-  return '${min.toStringAsFixed(1).replaceAll('.', ',')} min';
+  if (seconds % 60 == 0 && seconds < 3600) return '${seconds ~/ 60} min';
+  // Halbe Minuten wie bisher als Komma, sonst ausgeschrieben (2 min 5 s).
+  if (seconds % 30 == 0 && seconds < 3600) {
+    return '${(seconds / 60).toStringAsFixed(1).replaceAll('.', ',')} min';
+  }
+  final h = seconds ~/ 3600, m = seconds % 3600 ~/ 60, s = seconds % 60;
+  return [if (h > 0) '$h h', if (m > 0) '$m min', if (s > 0) '$s s'].join(' ');
 }
 
 /// `1:20` für 80 s.

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:haven/app.dart';
 import 'package:haven/core/state/providers.dart';
+import 'package:haven/core/widgets/haven_switch.dart';
 import 'package:haven/data/models/haven_automation.dart';
 import 'package:haven/data/storage/settings_store.dart';
 import 'package:haven/dev/fake_automations.dart';
@@ -147,6 +148,84 @@ void main() {
     // zurück im Tab, die neue Karte ist da
     expect(find.text('Haven-Automationen'), findsOneWidget);
     expect(find.text('3 von 3 Haven-Automationen aktiv'), findsOneWidget);
+  });
+
+  testWidgets('Drehen schaltet Szenen, Lampen beim Dimmen ausnehmen', (
+    tester,
+  ) async {
+    await _pump(
+      tester,
+      '/automations',
+      before: () => _repo.deleteHavenAutomation('demo-salon'),
+    );
+    await tester.tap(find.text('Neue Automation'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Drehregler für einen Raum'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Salon'));
+    await tester.pumpAndSettle();
+    await _next(tester);
+    await _next(tester);
+
+    // Drehen: Szene vor/zurück
+    await tester.tap(find.text('Drehen'));
+    await tester.pumpAndSettle();
+    expect(find.text('Rechts nächste, links vorige Szene'), findsOneWidget);
+    await tester.tap(find.text('Szene vor/zurück'));
+    await tester.pumpAndSettle();
+    expect(find.text('Szene vor/zurück'), findsOneWidget);
+    // Wieder auf Helligkeit für die Dimm-Optionen
+    await tester.tap(find.text('Drehen'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Helligkeit').last);
+    await tester.pumpAndSettle();
+    await _next(tester);
+    await _next(tester);
+
+    // Optionen: eine Lampe nicht mitdimmen
+    final rows = find.byWidgetPredicate(
+      (w) =>
+          w.key is ValueKey<String> &&
+          (w.key! as ValueKey<String>).value.startsWith('dim-lamp-'),
+    );
+    expect(rows, findsWidgets);
+    final first = tester.widget(rows.first).key! as ValueKey<String>;
+    final id = first.value.substring('dim-lamp-'.length);
+    await tester.ensureVisible(rows.first);
+    await tester.tap(
+      find.descendant(of: rows.first, matching: find.byType(HavenSwitch)),
+    );
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Lampen'), findsWidgets);
+    await _next(tester);
+    await _next(tester);
+    expect(find.textContaining('1 Lampe ausgenommen'), findsOneWidget);
+    await tester.tap(find.text('Speichern'));
+    await tester.pumpAndSettle();
+
+    var saved = (await _repo.havenAutomations()).automations.firstWhere(
+      (a) => a.roomAreaId == 'salon',
+    );
+    expect(saved.options.dimExclude, [id]);
+
+    // Drehen auf Szenen gespeichert: rechts nächste, links vorige
+    await tester.runAsync(
+      () => _repo.saveHavenAutomation(
+        saved.copyWith(
+          options: saved.options.withBinding(
+            KnobGesture.rotate,
+            const GestureBinding(GestureAction.sceneStep),
+          ),
+        ),
+      ),
+    );
+    saved = (await _repo.havenAutomations()).automations.firstWhere(
+      (a) => a.roomAreaId == 'salon',
+    );
+    expect(
+      saved.toJson()['options']['gestures']['rotate'],
+      containsPair('action', 'scene_step'),
+    );
   });
 
   testWidgets('Halten stellt eigene Lampen ein (an, aus, Farbe)', (

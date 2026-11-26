@@ -86,6 +86,13 @@ abstract class HavenRepository
   /// (Integration mit Feature `knob_lights`).
   bool get knobLightActions;
 
+  /// Drehen kann Szenen vor/zurück schalten (Feature `knob_scene_step`).
+  bool get knobSceneStep;
+
+  /// Lampen lassen sich beim Dimmen per Drehregler ausnehmen (Feature
+  /// `knob_dim_exclude`).
+  bool get knobDimExclude;
+
   /// Kann für Räume ohne Zigbee-Gruppe eine anlegen (Feature `room_groups`).
   bool get canCreateRoomGroups;
 

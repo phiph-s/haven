@@ -912,6 +912,12 @@ class HaRepository extends BaseRepository {
   bool get knobLightActions => _features.contains('knob_lights');
 
   @override
+  bool get knobSceneStep => _features.contains('knob_scene_step');
+
+  @override
+  bool get knobDimExclude => _features.contains('knob_dim_exclude');
+
+  @override
   bool get canCreateRoomGroups => _features.contains('room_groups');
 
   @override

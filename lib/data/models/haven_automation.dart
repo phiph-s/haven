@@ -32,6 +32,9 @@ enum GestureAction {
   scene('scene'),
   off('off'),
 
+  /// Drehen: rechts nächste, links vorige Szene (Feature `knob_scene_step`).
+  sceneStep('scene_step'),
+
   /// Eigene Aktion: bestimmte Lampen auf einen festen Zustand
   /// (Integration mit Feature `knob_lights`).
   lights('lights');
@@ -49,7 +52,11 @@ enum GestureAction {
   /// Erlaubte Aktionen je Geste.
   static List<GestureAction> forGesture(KnobGesture g) =>
       g == KnobGesture.rotate
-      ? const [GestureAction.brightness, GestureAction.none]
+      ? const [
+          GestureAction.brightness,
+          GestureAction.sceneStep,
+          GestureAction.none,
+        ]
       : const [
           GestureAction.toggle,
           GestureAction.nextScene,
@@ -208,6 +215,7 @@ class KnobOptions {
     this.transition = kDefaultTransition,
     this.minBrightness = kDefaultMinBrightness,
     this.offAtMin = false,
+    this.dimExclude = const [],
     this.extra = const {},
   });
 
@@ -225,6 +233,10 @@ class KnobOptions {
   final int minBrightness;
   final bool offAtMin;
 
+  /// Lampen, die beim Drehen nicht mitgedimmt werden (Feature
+  /// `knob_dim_exclude`).
+  final List<String> dimExclude;
+
   /// Unbekannte Schlüssel (neuere Integration), bleiben beim Speichern erhalten.
   final Map<String, dynamic> extra;
 
@@ -239,6 +251,7 @@ class KnobOptions {
     'transition',
     'min_brightness',
     'off_at_min',
+    'dim_exclude',
   };
 
   factory KnobOptions.fromJson(Object? raw) {
@@ -267,6 +280,11 @@ class KnobOptions {
       transition: n('transition')?.toDouble() ?? kDefaultTransition,
       minBrightness: n('min_brightness')?.toInt() ?? kDefaultMinBrightness,
       offAtMin: j['off_at_min'] == true,
+      dimExclude: [
+        if (j['dim_exclude'] case final List l)
+          for (final e in l)
+            if (e is String) e,
+      ],
       extra: {
         for (final e in j.entries)
           if (!_known.contains(e.key)) e.key: e.value,
@@ -286,6 +304,7 @@ class KnobOptions {
     'transition': transition,
     'min_brightness': minBrightness,
     'off_at_min': offAtMin,
+    'dim_exclude': dimExclude,
   };
 
   KnobOptions copyWith({
@@ -298,6 +317,7 @@ class KnobOptions {
     double? transition,
     int? minBrightness,
     bool? offAtMin,
+    List<String>? dimExclude,
   }) => KnobOptions(
     gestures: gestures ?? this.gestures,
     scenes: clearScenes ? null : (scenes ?? this.scenes),
@@ -306,6 +326,7 @@ class KnobOptions {
     transition: transition ?? this.transition,
     minBrightness: minBrightness ?? this.minBrightness,
     offAtMin: offAtMin ?? this.offAtMin,
+    dimExclude: dimExclude ?? this.dimExclude,
     extra: extra,
   );
 
@@ -322,6 +343,7 @@ class KnobOptions {
       other.transition == transition &&
       other.minBrightness == minBrightness &&
       other.offAtMin == offAtMin &&
+      listEquals(other.dimExclude, dimExclude) &&
       mapEquals(other.extra, extra);
 
   @override
@@ -335,6 +357,7 @@ class KnobOptions {
     transition,
     minBrightness,
     offAtMin,
+    Object.hashAll(dimExclude),
   );
 }
 

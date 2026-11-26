@@ -412,7 +412,7 @@ class _KnobEditorScreenState extends ConsumerState<KnobEditorScreen> {
       1 => KnobDeviceStep(draft: d, all: all, onChanged: _update),
       2 => KnobGestureStep(draft: d, room: room, onChanged: _update),
       3 => KnobSceneStep(draft: d, room: room, onChanged: _update),
-      4 => KnobOptionsStep(draft: d, onChanged: _update),
+      4 => KnobOptionsStep(draft: d, room: room, onChanged: _update),
       5 => KnobLiveTest(automation: d, demo: widget.demo),
       _ => _SummaryStep(
         draft: d,
@@ -792,6 +792,7 @@ class KnobGestureStep extends ConsumerWidget {
     BuildContext context,
     KnobGesture g, {
     required bool lightActions,
+    required bool sceneStep,
   }) async {
     final scenes = room?.scenes ?? const <GroupScene>[];
     final current = draft.options.binding(g);
@@ -804,6 +805,11 @@ class KnobGestureStep extends ConsumerWidget {
             current.action == GestureAction.lights ? current : GestureBinding(a)
           else if (current.action == GestureAction.lights)
             current
+          else
+            ...[]
+        else if (a == GestureAction.sceneStep)
+          if ((sceneStep && room?.group != null) || current.action == a)
+            GestureBinding(a)
           else
             ...[]
         else if (a != GestureAction.nextScene || room?.group != null)
@@ -864,6 +870,7 @@ class KnobGestureStep extends ConsumerWidget {
     GestureAction.brightness => 'Rechts heller, links dunkler',
     GestureAction.toggle => 'An, wenn alles aus ist, sonst aus',
     GestureAction.nextScene => 'Szenen der Reihe nach',
+    GestureAction.sceneStep => 'Rechts nächste, links vorige Szene',
     GestureAction.off => 'Alle Lichter im Raum aus',
     GestureAction.lights => 'Bestimmte Lampen auf einen festen Zustand',
     _ => null,
@@ -875,6 +882,9 @@ class KnobGestureStep extends ConsumerWidget {
     final scenes = room?.scenes ?? const <GroupScene>[];
     final lightActions = ref.watch(
       repositoryProvider.select((r) => r.knobLightActions),
+    );
+    final sceneStep = ref.watch(
+      repositoryProvider.select((r) => r.knobSceneStep),
     );
     return StepScroll(
       title: 'Was soll passieren?',
@@ -890,7 +900,12 @@ class KnobGestureStep extends ConsumerWidget {
               excludeSemantics: true,
               child: PressScale(
                 pressedScale: 0.985,
-                onTap: () => _pick(context, g, lightActions: lightActions),
+                onTap: () => _pick(
+                  context,
+                  g,
+                  lightActions: lightActions,
+                  sceneStep: sceneStep,
+                ),
                 child: HavenCard(
                   padding: const EdgeInsets.fromLTRB(14, 14, 10, 14),
                   child: Row(
@@ -990,7 +1005,7 @@ class KnobSceneStep extends StatelessWidget {
         Text('Szenen', style: HavenText.section.copyWith(color: hv.tx)),
         const SizedBox(height: 4),
         Text(
-          'Doppelt drücken schaltet in dieser Reihenfolge weiter. Zum Sortieren '
+          'In dieser Reihenfolge schaltet der Regler weiter. Zum Sortieren '
           'am Griff ziehen.',
           style: HavenText.body.copyWith(color: hv.tx2, fontSize: 14.5),
         ),
@@ -1140,20 +1155,22 @@ class OptionChip extends StatelessWidget {
 
 // ---- 5. Optionen -------------------------------------------------------------
 
-class KnobOptionsStep extends StatefulWidget {
+class KnobOptionsStep extends ConsumerStatefulWidget {
   const KnobOptionsStep({
     super.key,
     required this.draft,
+    this.room,
     required this.onChanged,
   });
   final HavenAutomation draft;
+  final AutomationRoom? room;
   final ValueChanged<HavenAutomation> onChanged;
 
   @override
-  State<KnobOptionsStep> createState() => _KnobOptionsStepState();
+  ConsumerState<KnobOptionsStep> createState() => _KnobOptionsStepState();
 }
 
-class _KnobOptionsStepState extends State<KnobOptionsStep> {
+class _KnobOptionsStepState extends ConsumerState<KnobOptionsStep> {
   late final _name = TextEditingController(text: widget.draft.name);
 
   @override
@@ -1262,12 +1279,61 @@ class _KnobOptionsStepState extends State<KnobOptionsStep> {
                   value: o.offAtMin,
                   onChanged: (v) => _opts(o.copyWith(offAtMin: v)),
                 ),
+                ..._dimLamps(context, o),
               ],
             ),
           ),
         ),
       ],
     );
+  }
+}
+
+extension on _KnobOptionsStepState {
+  /// Welche Lampen beim Drehen mitdimmen. Mindestens eine bleibt dabei.
+  List<Widget> _dimLamps(BuildContext context, KnobOptions o) {
+    final lamps = widget.room?.lights ?? const <String>[];
+    final available = ref.watch(
+      repositoryProvider.select((r) => r.knobDimExclude),
+    );
+    if (!available || lamps.length < 2) return const [];
+    final hv = context.hv;
+    final entities = ref.watch(snapshotProvider.select((s) => s.entities));
+    final excluded = o.dimExclude.toSet();
+    final dimmed = lamps.where((l) => !excluded.contains(l)).length;
+    return [
+      const SizedBox(height: 18),
+      ValueHeader('Mitdimmen', '$dimmed von ${lamps.length} Lampen'),
+      Text(
+        'Ausgeschaltete Lampen bleiben beim Drehen, wie sie sind. Ein/Aus und '
+        'Szenen gelten weiter für alle.',
+        style: HavenText.caption.copyWith(color: hv.tx2),
+      ),
+      const SizedBox(height: 10),
+      for (final id in lamps)
+        Padding(
+          key: ValueKey('dim-lamp-$id'),
+          padding: const EdgeInsets.only(bottom: 8),
+          child: SwitchRow(
+            title: entities[id]?.name ?? id,
+            value: !excluded.contains(id),
+            onChanged: (v) {
+              if (!v && dimmed <= 1) {
+                showHavenToast(context, 'Mindestens eine Lampe dimmt mit.');
+                return;
+              }
+              _opts(
+                o.copyWith(
+                  dimExclude: [
+                    for (final l in lamps)
+                      if (l == id ? !v : excluded.contains(l)) l,
+                  ],
+                ),
+              );
+            },
+          ),
+        ),
+    ];
   }
 }
 
@@ -1403,12 +1469,17 @@ class _SummaryStep extends ConsumerWidget {
                     ? 'wie zuletzt'
                     : 'Szene ${scenes.where((s) => s.id == o.onScene).firstOrNull?.name ?? o.onScene}',
               ),
-              line(
-                'Drehen',
-                '${stepPercent(o.step)} % je Rastung, mindestens '
-                    '${stepPercent(o.minBrightness)} %'
-                    '${o.offAtMin ? ', dann aus' : ''}',
-              ),
+              if (o.binding(KnobGesture.rotate).action ==
+                  GestureAction.brightness)
+                line(
+                  'Drehen',
+                  '${stepPercent(o.step)} % je Rastung, mindestens '
+                      '${stepPercent(o.minBrightness)} %'
+                      '${o.offAtMin ? ', dann aus' : ''}'
+                      '${o.dimExclude.isEmpty ? '' : ', ${o.dimExclude.length} '
+                                '${o.dimExclude.length == 1 ? 'Lampe' : 'Lampen'} '
+                                'ausgenommen'}',
+                ),
               if (room != null && room.group == null)
                 line('Steuerung', 'Lichter einzeln über Home Assistant'),
             ],

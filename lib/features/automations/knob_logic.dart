@@ -42,6 +42,7 @@ String bindingLabel(
   GestureAction.brightness => 'Helligkeit',
   GestureAction.toggle => 'Ein/Aus',
   GestureAction.nextScene => 'Nächste Szene',
+  GestureAction.sceneStep => 'Szene vor/zurück',
   GestureAction.off => 'Alles aus im Raum',
   GestureAction.lights => switch (b.lights.length) {
     0 => 'Lampen wählen',
@@ -95,10 +96,13 @@ Map<int, String> validateKnobDraft(
     }
   }
   final usesScenes = KnobGesture.values.any(
-    (g) => draft.options.binding(g).action == GestureAction.nextScene,
+    (g) => const {
+      GestureAction.nextScene,
+      GestureAction.sceneStep,
+    }.contains(draft.options.binding(g).action),
   );
   if (usesScenes && room != null && room.group == null) {
-    errors[2] ??= 'Nächste Szene geht nur mit einer Z2M-Gruppe im Raum';
+    errors[2] ??= 'Szenen schalten geht nur mit einer Z2M-Gruppe im Raum';
   }
   final chosen = draft.options.scenes;
   if (usesScenes && chosen != null && chosen.isEmpty) {

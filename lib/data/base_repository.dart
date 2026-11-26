@@ -84,6 +84,12 @@ abstract class BaseRepository implements HavenRepository {
   bool get knobLightActions => false;
 
   @override
+  bool get knobSceneStep => false;
+
+  @override
+  bool get knobDimExclude => false;
+
+  @override
   bool get canCreateRoomGroups => false;
 
   @override

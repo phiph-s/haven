@@ -904,6 +904,12 @@ class FakeRepository extends BaseRepository {
   bool get knobLightActions => true;
 
   @override
+  bool get knobSceneStep => true;
+
+  @override
+  bool get knobDimExclude => true;
+
+  @override
   bool get canCreateRoomGroups => true;
 
   /// Im Fake angelegte Gruppen (wie `z2m_groups` in den Beispieldaten).

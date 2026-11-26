@@ -437,15 +437,19 @@ class FakeAutomations {
         await repo.setRoomBrightness(roomId, 0);
       case GestureAction.scene:
         await recall(b.scene);
-      case GestureAction.nextScene:
+      case GestureAction.nextScene || GestureAction.sceneStep:
         final cycle = [
           for (final id in (a.options.scenes ?? [for (final s in scenes) s.id]))
             if (scenes.any((s) => s.id == id)) id,
         ];
         if (cycle.isEmpty) return;
+        final back = action == 'rotate_left';
         final last = _lastScene[roomId];
         final idx = last == null ? -1 : cycle.indexOf(last);
-        await recall(cycle[(idx + 1) % cycle.length]);
+        final next = idx < 0
+            ? (back ? cycle.length - 1 : 0)
+            : (idx + (back ? -1 : 1)) % cycle.length;
+        await recall(cycle[next]);
       case GestureAction.lights:
         for (final t in b.lights) {
           final c = t.rgb;
