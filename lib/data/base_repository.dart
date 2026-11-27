@@ -116,6 +116,16 @@ abstract class BaseRepository implements HavenRepository {
   );
 
   @override
+  bool get canCompleteRoomGroups => false;
+
+  @override
+  Future<({int added, List<String> failed})> completeRoomGroup(String roomId) =>
+      throw HavenException(
+        'Gruppen lassen sich hier nicht ändern',
+        code: 'not_supported',
+      );
+
+  @override
   Future<SceneCheck> checkScene(String roomId, int number) =>
       throw HavenException(
         'Szenen lassen sich hier nicht prüfen',

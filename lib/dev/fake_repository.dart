@@ -946,13 +946,56 @@ class FakeRepository extends BaseRepository {
   /// Im Fake angelegte Gruppen (wie `z2m_groups` in den Beispieldaten).
   final List<Map<String, dynamic>> _newGroups = [];
 
-  /// Beispieldaten samt angelegter Gruppen.
-  Map<String, dynamic> get _inventory => _newGroups.isEmpty
+  /// Im Fake aufgenommene Gruppenmitglieder (Gruppen-ID → Namen).
+  final Map<int, List<String>> _addedMembers = {};
+
+  /// Beispieldaten samt angelegter Gruppen und aufgenommener Mitglieder.
+  Map<String, dynamic> get _inventory =>
+      _newGroups.isEmpty && _addedMembers.isEmpty
       ? inventory
       : {
           ...inventory,
-          'z2m_groups': [...inventory['z2m_groups'] as List, ..._newGroups],
+          'z2m_groups': [
+            for (final g in [...inventory['z2m_groups'] as List, ..._newGroups])
+              if (_addedMembers[(g as Map<String, dynamic>)['id']]
+                  case final extra?)
+                <String, dynamic>{
+                  ...g,
+                  'members': [...g['members'] as List, ...extra],
+                }
+              else
+                g,
+          ],
         };
+
+  @override
+  bool get canCompleteRoomGroups => true;
+
+  @override
+  Future<({int added, List<String> failed})> completeRoomGroup(
+    String roomId,
+  ) async {
+    final r = _room(roomId);
+    if (r == null) throw HavenException('Unbekannter Raum', code: 'not_found');
+    final gid = r.zigbeeGroupId;
+    if (gid == null) {
+      throw HavenException(
+        '${r.name} hat keine Zigbee-Gruppe',
+        code: 'no_group',
+      );
+    }
+    final names = [
+      for (final d in inventory['z2m_devices'] as List)
+        if ((d as Map)['room'] == roomId &&
+            d['device_type'] == 'light' &&
+            (d['entities'] as Map).keys.any(r.groupMissingLightIds.contains))
+          '${d['friendly_name']}',
+    ];
+    await _sceneDelay();
+    (_addedMembers[gid] ??= []).addAll(names);
+    _rebuildRooms();
+    return (added: names.length, failed: const <String>[]);
+  }
 
   @override
   Future<String> createRoomGroup(String roomId) async {

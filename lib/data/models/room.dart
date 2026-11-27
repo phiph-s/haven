@@ -128,6 +128,7 @@ class Room {
     this.zigbeeGroupId,
     this.sceneLightIds = const [],
     this.switchIds = const [],
+    this.groupMissingLightIds = const [],
   });
 
   final String id;
@@ -140,6 +141,10 @@ class Room {
 
   /// Steckdosen und Schalter im Raum (für Szenen, nicht vorausgewählt).
   final List<String> switchIds;
+
+  /// Zigbee-Lampen des Raums, die in seiner Zigbee-Gruppe fehlen. Sie
+  /// schalten bei Szenen der Gruppe nicht mit.
+  final List<String> groupMissingLightIds;
 
   /// Lampen des Raums, ohne Lichtgruppen. Ausgenommene Lampen stehen hier
   /// noch drin, `HavenSnapshot.controlledLightIds` filtert sie.

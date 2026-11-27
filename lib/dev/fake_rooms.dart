@@ -98,10 +98,25 @@ class FakeRooms {
 
       // Szenen der Gruppe dieses Raums.
       final roomScenes = <RoomScene>[];
+      final missing = <String>[];
       int? groupId;
       for (final g in _groups) {
         if (g['room'] != id) continue;
         final gid = g['id'] as int;
+        if (groupId == null) {
+          final members = {for (final m in g['members'] as List) '$m'};
+          for (final d in devs) {
+            if (d['device_type'] != 'light' ||
+                members.contains(d['friendly_name'])) {
+              continue;
+            }
+            missing.addAll(
+              (d['entities'] as Map).keys.cast<String>().where(
+                (e) => e.startsWith('light.'),
+              ),
+            );
+          }
+        }
         groupId ??= gid;
         for (final s in (scenes?[gid] ?? (g['scenes'] as List))) {
           final name = s['name'] as String;
@@ -142,8 +157,9 @@ class FakeRooms {
           scenes: roomScenes,
           controls: controls,
           zigbeeGroupId: groupId,
-          sceneLightIds: groupId == null ? lights : outside,
+          sceneLightIds: groupId == null ? lights : [...outside, ...missing],
           switchIds: switches,
+          groupMissingLightIds: missing,
         ),
       );
     }

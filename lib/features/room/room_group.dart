@@ -235,3 +235,91 @@ class _MissingRoomGroupsCardState extends ConsumerState<MissingRoomGroupsCard> {
     );
   }
 }
+
+/// Zeigt Haven [GroupMissingCard] für [r]? (Integration kann es, Raum hat
+/// eine Gruppe, aber Zigbee-Lampen fehlen darin.)
+bool canCompleteGroupFor(HavenRepository repo, Room r) =>
+    repo.canCompleteRoomGroups &&
+    r.zigbeeGroupId != null &&
+    r.groupMissingLightIds.isNotEmpty;
+
+/// Hinweis in der Raumansicht: Zigbee-Lampen des Raums fehlen in seiner
+/// Gruppe (schalten bei Szenen und beim Dimmen über die Gruppe nicht mit).
+/// Knopf nimmt sie auf.
+class GroupMissingCard extends ConsumerStatefulWidget {
+  const GroupMissingCard({super.key, required this.room});
+  final Room room;
+
+  @override
+  ConsumerState<GroupMissingCard> createState() => _GroupMissingCardState();
+}
+
+class _GroupMissingCardState extends ConsumerState<GroupMissingCard> {
+  bool _busy = false;
+
+  Future<void> _complete() async {
+    setState(() => _busy = true);
+    final repo = ref.read(repositoryProvider);
+    try {
+      final res = await repo.completeRoomGroup(widget.room.id);
+      Haptics.tap();
+      if (mounted) {
+        showHavenToast(
+          context,
+          [
+            if (res.added > 0)
+              '${res.added == 1 ? '1 Lampe' : '${res.added} Lampen'} '
+                  'aufgenommen. Speichere die Szenen neu, damit sie '
+                  'mitschalten.',
+            if (res.failed.isNotEmpty)
+              '${res.failed.length == 1 ? '1 Lampe' : '${res.failed.length} Lampen'} '
+                  '${res.failed.length == 1 ? 'ging' : 'gingen'} nicht: '
+                  '${res.failed.first}. Ist die Lampe an und erreichbar?',
+          ].join(' '),
+        );
+      }
+    } on HavenException catch (e) {
+      if (mounted) showHavenToast(context, e.message);
+    }
+    if (mounted) setState(() => _busy = false);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final hv = context.hv;
+    final ids = widget.room.groupMissingLightIds;
+    final entities = ref.watch(snapshotProvider.select((s) => s.entities));
+    final names = [for (final id in ids) entities[id]?.name ?? id].join(', ');
+    final n = ids.length;
+    return HavenCard(
+      key: const ValueKey('group-missing-card'),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            n == 1
+                ? '1 Lampe fehlt in der Zigbee-Gruppe'
+                : '$n Lampen fehlen in der Zigbee-Gruppe',
+            style: HavenText.label.copyWith(color: hv.tx),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            '$names ${n == 1 ? 'ist' : 'sind'} im Raum, aber nicht in der '
+            'Gruppe. Szenen schalten sie deshalb nicht mit. Nimm sie auf und '
+            'speichere die Szenen danach neu.',
+            style: HavenText.body.copyWith(color: hv.tx2, fontSize: 13.5),
+          ),
+          const SizedBox(height: 12),
+          HavenButton(
+            key: const ValueKey('group-missing-add'),
+            label: n == 1 ? 'In die Gruppe aufnehmen' : 'Alle aufnehmen',
+            icon: Icons.group_add_outlined,
+            primary: true,
+            busy: _busy,
+            onTap: _busy ? null : _complete,
+          ),
+        ],
+      ),
+    );
+  }
+}

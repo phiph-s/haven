@@ -374,6 +374,11 @@ class _RoomBody extends ConsumerWidget {
               padding: const EdgeInsets.fromLTRB(20, 4, 20, 0),
               child: RoomGroupCard(room: room),
             ),
+          if (canCompleteGroupFor(repo, room))
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 4, 20, 0),
+              child: GroupMissingCard(room: room),
+            ),
           // Lampen
           const SizedBox(height: 14),
           SectionHeader(

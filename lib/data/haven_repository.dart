@@ -117,6 +117,14 @@ abstract class HavenRepository
   /// Namen der Gruppe. Wirft [HavenException], z. B. ohne Zigbee-Lampen.
   Future<String> createRoomGroup(String roomId);
 
+  /// Kann Zigbee-Lampen, die in der Raumgruppe fehlen, aufnehmen (Feature
+  /// `room_group_complete`).
+  bool get canCompleteRoomGroups;
+
+  /// Nimmt die Lampen aus [Room.groupMissingLightIds] in die Zigbee-Gruppe
+  /// des Raums auf. Liefert, wie viele es geschafft haben, und die Fehler.
+  Future<({int added, List<String> failed})> completeRoomGroup(String roomId);
+
   /// Ruft die Szene [number] der Raumgruppe auf, misst jede Lampe und stellt
   /// das vorherige Licht wieder her. Dauert einige Sekunden.
   Future<SceneCheck> checkScene(String roomId, int number);

@@ -640,6 +640,12 @@ class HaRepository extends BaseRepository {
           switchIds: [
             for (final s in (room['switches'] as List? ?? const [])) '$s',
           ],
+          groupMissingLightIds: [
+            if (g != null)
+              for (final l
+                  in (room['group_missing_lights'] as List? ?? const []))
+                if (lights.contains('$l')) '$l',
+          ],
         ),
       );
     }
@@ -1062,6 +1068,39 @@ class HaRepository extends BaseRepository {
       await Future<void>.delayed(const Duration(milliseconds: 500));
     }
     return name;
+  }
+
+  @override
+  bool get canCompleteRoomGroups => _features.contains('room_group_complete');
+
+  @override
+  Future<({int added, List<String> failed})> completeRoomGroup(
+    String roomId,
+  ) async {
+    final r = _room(roomId);
+    if (r == null) {
+      throw HavenException('Unbekannter Raum', code: 'not_found');
+    }
+    final res =
+        await client.send({
+              'type': 'haven/zigbee/complete_room_group',
+              'area_id': r.areaId ?? r.id,
+            })
+            as Map;
+    final added = (res['added'] as List? ?? const []).length;
+    final failed = [
+      for (final f in (res['failed'] as List? ?? const []))
+        '${(f as Map)['error'] ?? f['ieee']}',
+    ];
+    // Z2M meldet die geänderte Gruppe kurz danach: neu laden, bis die
+    // Lampen drin sind.
+    for (var i = 0; i < 6 && added > 0; i++) {
+      await reloadRooms();
+      final now = _room(roomId)?.groupMissingLightIds.length ?? 0;
+      if (now <= r.groupMissingLightIds.length - added) break;
+      await Future<void>.delayed(const Duration(milliseconds: 500));
+    }
+    return (added: added, failed: failed);
   }
 
   /// Messen und Abgleichen schalten Lampen und warten auf sie: mehr Zeit als
